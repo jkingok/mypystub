@@ -172,6 +172,13 @@ requires = [
     "std-nslog~=1.0.3",
 ]
 
+#[tool.briefcase.app.mypystub.iOS.app]
+# Enable the Files app directory for your app
+info."UIFileSharingEnabled" = true
+
+# Allow opening documents in place
+info."LSSupportsOpeningDocumentsInPlace" = true
+
 [tool.briefcase.app.mypystub.android]
 requires = [
     "toga-android~=0.5.0",
