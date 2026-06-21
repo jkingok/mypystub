@@ -120,8 +120,7 @@ def bootstrap_application():
     # If no manual overrides are present on the phone, execute the standard production path.
     return stub_main()
 
-if __name__ == "__main__":
+def main():
     # Initialize the app container and hand window lifecycle execution over to Toga
-    app = bootstrap_application() 
-    app.main_loop()
+    return bootstrap_application()
 
