@@ -33,10 +33,16 @@ class MyPyStub(toga.App):
         self.main_window.content = main_box
         self.main_window.show()
 
+    def greeting(self):
+        if self.name_input.value:
+            return f"Hello, {self.name_input.value}"
+        else:
+            return "Hello, stranger"
+
     async def say_hello(self, widget):
         await self.main_window.dialog(
             toga.InfoDialog(
-	        f"Hello, {self.name_input.value}",
+	        self.greeting(),
         	"Hi there!",
 	    )
 	)
