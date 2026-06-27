@@ -24,47 +24,6 @@ class LogRedirector:
         self.terminal.flush()
         self.log_file.flush()
 
-class MyPyStub(toga.App):
-    def startup(self):
-        main_box = toga.Box(direction=COLUMN)
-
-        name_label = toga.Label(
-            "Your name: ",
-            margin=(0, 5),
-        )
-        self.name_input = toga.TextInput(flex=1)
-
-        name_box = toga.Box(direction=ROW, margin=5)
-        name_box.add(name_label)
-        name_box.add(self.name_input)
-
-        button = toga.Button(
-            "Say Hello!",
-            on_press=self.say_hello,
-            margin=5,
-        )
-
-        main_box.add(name_box)
-        main_box.add(button)
-
-        self.main_window = toga.MainWindow(title=self.formal_name)
-        self.main_window.content = main_box
-        self.main_window.show()
-
-    def greeting(self):
-        if self.name_input.value:
-            return f"Hello, {self.name_input.value}"
-        else:
-            return "Hello, stranger"
-
-    async def say_hello(self, widget):
-        await self.main_window.dialog(
-            toga.InfoDialog(
-            self.greeting(),
-            "Hi there!",
-        )
-    )
-
 def stub_main():
     from . import launcher
     return launcher.main()
