@@ -66,7 +66,8 @@ class MyPyStub(toga.App):
     )
 
 def stub_main():
-    return MyPyStub()
+    from . import launcher
+    return launcher.main()
 
 def bootstrap_application():
     """
@@ -77,7 +78,7 @@ def bootstrap_application():
     """
     # 1. Target the iOS App's local writable Documents container
     # On an iPhone, this maps straight to the app's folder inside the Files App.
-    user_documents_dir = Path(os.path.expanduser("~/Documents")) # same as toga.App.paths.data
+    user_documents_dir = Path("~/Documents").expanduser() # same as toga.App.paths.data
     
     # Ensure the directory exists (it always should in an iOS sandbox)
     user_documents_dir.mkdir(parents=True, exist_ok=True)
