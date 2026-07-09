@@ -22,16 +22,10 @@ test_sources = [
 ]
 
 requires = [
-    "installer",
-    "unearth",
-    "packaging",
-    "httpcore",
-    "h11",
     "requests",
-    "urllib3",
-    "idna",
-    "charset_normalizer",
-    "certifi"
+    "resolvelib",
+    "tomlkit",
+    "unearth",
 ]
 test_requires = [
     "pytest",
