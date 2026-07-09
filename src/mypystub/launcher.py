@@ -1,13 +1,171 @@
 import importlib
 import importlib.util
+import os
 from pathlib import Path
+import shutil
 import sys
+import tomllib
 import zipfile
+
+def get_pip():
+    from resolvelib import BaseReporter, Resolver
+    from resolvelib.providers import AbstractProvider
+    from unearth import PackageFinder, TargetPython
+
+    # -------------------------------------------------------------------------
+    # 1. Define the Resolvelib Provider using Unearth's Finder
+    # -------------------------------------------------------------------------
+    class LauncherDependencyProvider(AbstractProvider):
+        def __init__(self, finder: PackageFinder):
+            self.finder = finder
+
+        def identify(self, requirement_or_candidate):
+            # Requirements are usually strings or unearth Requirement objects
+            return requirement_or_candidate
+
+        def get_preference(self, identifier, resolutions, candidates, information, backtrack_causes):
+            # Extract the sequence for this identifier from the candidates map
+            current_candidates = candidates.get(identifier, [])
+        
+            # If it's an itertools.chain object or an iterator, convert it to a list 
+            # so Python can safely evaluate its length
+            if not isinstance(current_candidates, (list, tuple)):
+                current_candidates = list(current_candidates)
+            
+            return len(current_candidates)
+            
+        def find_matches(self, identifier, requirements, incompatibilities):
+            # 1. Gather all potential release matches for this package ID
+            all_matches = self.finder.find_matches(identifier)
+        
+            # 2. Filter the matches strictly down to valid, applicable wheel files
+            wheel_candidates = []
+            for match in all_matches:
+                if match.link.filename.endswith(".whl"):
+                    wheel_candidates.append(match)
+                
+            # 3. Return the filtered list of packages to the resolver.
+            # (If you want just the single best wheel candidate, you can sort or pick the first)
+            if wheel_candidates:
+                # unearth automatically orders find_all_matches from best/newest to worst
+                return [wheel_candidates[0]]
+            
+            print(f"⚠️ Warning: No compatible pure-Python .whl found for {identifier}!")
+            return []
+
+        def is_satisfied_by(self, requirement, candidate):
+            # Simplified validation matching version strings
+            return True 
+
+        def get_dependencies(self, candidate):
+            # candidate is the unearth 'Package' object pinned by the resolver.
+            # We spin up unearth's internal metadata provider to read its requirements array cleanly.
+            try:
+                metadata_provider = self.finder.make_provider(candidate)
+                return metadata_provider.get_dependencies(candidate)
+            except Exception:
+                # Fallback if a candidate has no dependencies or lacks metadata
+                return []
+
+
+    # -------------------------------------------------------------------------
+    # 2. Main Pip-Like Downloader Engine
+    # -------------------------------------------------------------------------
+    def sync_launcher_dependencies(dependencies: list, output_dir: str):
+        target_path = Path(output_dir)
+        target_path.mkdir(parents=True, exist_ok=True)
+         
+        # B. Explicitly target pure-Python environment matching iOS execution contexts
+        running_version = sys.version_info[:2]
+        # We restrict target tags to 'py3' and 'none' (any architecture)
+        target_env = TargetPython(
+            py_ver=running_version,  # Match your runtime Python version
+            platforms=["any"],
+            impl="py",
+        )
+
+        finder = PackageFinder(
+            index_urls=["https://pypi.org/simple/"],
+            target_python=target_env
+        )
+
+        # C. Execute tree resolution
+        provider = LauncherDependencyProvider(finder)
+
+        # Pass an instance of BaseReporter as the required argument
+        reporter = BaseReporter()
+        resolver = Resolver(provider, reporter)
+    
+        print("🔍 Resolving dependency tree graph...")
+        result = resolver.resolve(dependencies)
+
+        # D. Download and extract wheels
+        # Temporary cache workspace for raw .whl archives
+        download_cache = target_path / ".cache"
+        download_cache.mkdir(exist_ok=True)
+
+        for name, candidate in result.mapping.items():
+            print(f"⬇️ Fetching candidate: {candidate.name}=={candidate.version}")
+
+            # E. Download the file archive securely using unearth's httpx session handler
+            link = candidate.link
+            wheel_filename = link.filename
+            wheel_path = download_cache / wheel_filename
+
+            # Instead of finder.session.get(..., stream=True), use finder.session.stream("GET", ...)
+            with finder.session.stream("GET", link.url) as response:
+                # Check that the download link is happy and valid
+                response.raise_for_status()
+            
+                with open(wheel_path, "wb") as whl_file:
+                    # iter_bytes() streams chunks out of memory to keep iOS happy
+                    for chunk in response.iter_bytes():
+                        whl_file.write(chunk)
+
+
+            # Unearth gives us a precise link asset to download
+            link = candidate.link
+            wheel_filename = link.filename
+            wheel_path = download_cache / wheel_filename
+
+            # F. Unpack the Wheel directly to your runtime folder
+            print(f"🔓 Extracting {wheel_filename} to target directory...")
+            with zipfile.ZipFile(wheel_path, "r") as zip_ref:
+                # We filter out metadata directories to avoid cluttering app paths
+                for file_info in zip_ref.infolist():
+                    if not (file_info.filename.endswith(".dist-info/") or file_info.filename.endswith(".egg-info/")):
+                        zip_ref.extract(file_info, target_path)
+
+        # Clean up file cache residues
+        shutil.rmtree(download_cache)
+        print("✅ Complete! All packages available in target workspace.")
+ 
+    def sync_launcher_dependencies_via_toml(pyproject_path: str, output_dir: str):
+        pyproject = Path(pyproject_path)
+
+        # A. Read dependencies from pyproject.toml
+        with pyproject.open("rb") as f:
+            config = tomllib.load(f)
+    
+        # Target dependencies under [project] dependencies array (PEP 621)
+        dependencies = config.get("project", {}).get("dependencies", [])
+        if not dependencies:
+            print("No dependencies found in pyproject.toml under [project.dependencies].")
+            return
+
+        print(f"📦 Found root requirements: {dependencies}")
+        return sync_launcher_dependencies(dependencies, output_dir)
+
+    # Example Usage:
+    # sync_launcher_dependencies("pyproject.toml", "src/launcher/packages")
+    return sync_launcher_dependencies
+
 
 # The official master manifest of required core runtime modules
 CORE_MANIFEST = {
     "installer": "installer-*-py3-none-any.whl",
     "unearth": "unearth-*-py3-none-any.whl",
+    "resolvelib": "resolvelib-*-py3-none-any.whl",
     "packaging": "packaging-*-py3-none-any.whl",
     "httpcore": "httpcore-*-py3-none-any.whl",
     "h11": "h11-*-py3-none-any.whl",
@@ -16,6 +174,8 @@ CORE_MANIFEST = {
     "idna": "idna-*-py3-none-any.whl",
     "charset_normalizer": "charset_normalizer-*-py3-none-any.whl",
     "certifi": "certifi-*-py3-none-any.whl",
+#    "tomlkit": "tomlkit-*-py3-none-any.whl",
+#    "markdown": "markdown-*-py3-none-any.whl"
 }
 
 def strict_manifest_preflight():
@@ -187,6 +347,7 @@ def scan_all_prototypes(base_dir_path):
                     # Target launch file path relative to its home folder
                     entry_filename = tool_meta.get("entry_point", "main.py")
                     entry_point = item / entry_filename
+                    folder_root = item / tool_meta.get("import_path", "src")
                     
                     icon_relative = tool_meta.get("icon")
                     icon_path = item / icon_relative if icon_relative else None
@@ -196,7 +357,7 @@ def scan_all_prototypes(base_dir_path):
                         "subtitle": desc,
                         "icon_path": icon_path,
                         "entry_point": entry_point,
-                        "folder_root": item,
+                        "folder_root": folder_root,
                         "dependencies": dependencies  # Pass the array forward
                     })
                 except Exception as e:
@@ -320,37 +481,19 @@ class LauncherApp(toga.App):
         # 1. Read the parsed dependency requirements array
         required_packages = getattr(selected_row, "dependencies", [])
         
+        target_user_packages = Path.home() / "Documents" / "site_packages"
+        
         # 2. Check and satisfy dependencies
-        if required_packages:            
-            for package_spec in required_packages:
-                # Clean up spec string to isolate the pure package name for a simple import test
-                # e.g., converts "pydantic>=2.0.0" -> "pydantic"
-                package_name = package_spec.split(">")[0].split("<")[0].split("=")[0].strip()
-                
-                # Check if it is already available globally or inside user_packages
-                if importlib.util.find_spec(package_name):
-                    print(f"{package_name} satisfied.")
-                else:
-                    print(f"[Launcher] Missing requirement detected: {package_spec}. Resolving...")
-                    
-                    # Update window title or status to keep the user informed
-                    self.main_window.title = f"Installing {package_name}..."
-
-                    resolve_and_install_everything(package_spec, self.user_packages_dir)
-                    
-                    success = importlib.util.find_spec(package_name)
-                    if not success:
-                        self.main_window.error_dialog(
-                            "Dependency Error", 
-                            f"Could not automatically fulfill requirement: {package_spec}"
-                        )
-                        return # Abort execution safely
-
+        if required_packages:
+            pip = get_pip()
+            pip(required_packages, target_user_packages)
+        
         # 3. Proceed to mount the folder root and load the module
         import sys
         folder_path = str(selected_row.folder_root)
         if folder_path not in sys.path:
             sys.path.insert(0, folder_path)
+        print(f"import path: {sys.path}") 
             
         # Clear out status title alterations and execute
         self.main_window.title = selected_row.title
