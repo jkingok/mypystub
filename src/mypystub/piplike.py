@@ -163,7 +163,6 @@ def get_pip():
 
 # The official master manifest of required core runtime modules
 CORE_MANIFEST = {
-    "installer": "installer-*-py3-none-any.whl",
     "unearth": "unearth-*-py3-none-any.whl",
     "resolvelib": "resolvelib-*-py3-none-any.whl",
     "packaging": "packaging-*-py3-none-any.whl",
@@ -174,8 +173,6 @@ CORE_MANIFEST = {
     "idna": "idna-*-py3-none-any.whl",
     "charset_normalizer": "charset_normalizer-*-py3-none-any.whl",
     "certifi": "certifi-*-py3-none-any.whl",
-#    "tomlkit": "tomlkit-*-py3-none-any.whl",
-#    "markdown": "markdown-*-py3-none-any.whl"
 }
 
 def strict_manifest_preflight():
@@ -254,41 +251,6 @@ def strict_manifest_preflight():
     print("========================================================\n")
     return True
 
-def resolve_and_install_everything(package_spec, target_user_packages):
-    from unearth import PackageFinder
-    from unearth.resolvelib.providers import PyPIProvider
-    from resolvelib import Resolver
-    
-    # 1. Set up the PyPI link hunter
-    finder = PackageFinder()
-    
-    # 2. Use unearth's built-in bridge to speak to resolvelib
-    provider = PyPIProvider(finder, wheel_cache=None)
-    
-    # 3. Hand the ruleset over to the resolvelib brain
-    resolver = Resolver(provider)
-    
-    print(f"[Resolver] Building complete dependency map for: {package_spec}")
-    try:
-        # This single step recursively crawls PyPI to calculate every required sub-package
-        result = resolver.resolve([package_spec])
-        
-        # 4. Extract the resolved download links and install them sequentially
-        from installer import PackageDistribution
-        from installer.sources import WheelFile
-        import requests, io
-        
-        for name, candidate in result.mapping.items():
-            link = candidate.link
-            print(f"[Resolver] Fulfilling tree requirement: {name} via {link.filename}")
-            
-            # Fetch and install via your existing pipeline
-            # (Using your SchemeDictionaryDestination pointing to user_packages)
-            ...
-            
-    except Exception as e:
-        print(f"Dependency resolution collapsed: {e}")
-
 # Use the modern native TOML parser
 if sys.version_info >= (3, 11):
     import tomllib
@@ -364,26 +326,6 @@ def scan_all_prototypes(base_dir_path):
                     print(f"Skipping malformed project folder {item.name}: {e}")
                     
     return compiled_items
-    
-from rubicon.objc import ObjCClass
-    
-def exit_to_springboard(self):
-    """
-    Instantly minimizes the active application frame and returns the 
-    user smoothly back to the iOS Springboard home screen canvas.
-    """
-    
-    try:
-        # 2. Access the native UIKit application instance wrapper
-        UIApplication = ObjCClass('UIApplication')
-        shared_app = UIApplication.sharedApplication
-        
-        # 3. Direct the system framework to cleanly minimize the active app
-        shared_app.suspend()
-        
-    except Exception as e:
-        # Fallback safety if the bridge layer acts up
-        print(f"Objective-C Suspend Failed: {e}")
 
 import toga
 from toga.style import Pack
@@ -496,34 +438,33 @@ class LauncherApp(toga.App):
         print(f"import path: {sys.path}") 
             
         # Clear out status title alterations and execute
-        self.main_window.title = selected_row.title
-            
         print(f"Launching {selected_row.title} from path: {selected_row.entry_point}")
         selected_file_path = Path(selected_row.entry_point)
 
         try:
             # Dynamically load the python module from an arbitrary path
             module_name = selected_file_path.parent.name
-            spec = importlib.util.spec_from_file_location(module_name, selected_file_path, submodule_search_locations=(selected_file_path.parent,))
+            spec = importlib.util.spec_from_file_location(module_name, selected_file_path, submodule_search_locations=(folder_path, selected_file_path.parent,))
             module = importlib.util.module_from_spec(spec)
             
             # Execute the module code so classes are defined
             spec.loader.exec_module(module)
-            
+            if not hasattr(module, "Prototype") and hasattr(module, "main"):
+                module.main()
             # Instantiate the prototype class. 
             # Convicting to the design, it must look for a class named 'Prototype'
-            if hasattr(module, "Prototype"):
+            elif hasattr(module, "Prototype"):
+                self.main_window.info_dialog("Deprecated", f"Using old 'Prototype' method with in {selected_file_path.name}")
                 # Pass the host app instance AND the done callback function straight down
                 self.current_prototype = module.Prototype(host_app=self, on_done=self.handle_prototype_done)
                 
                 # Update window context and inject the prototype layout
-                self.main_window.title = getattr(self.current_prototype, "title", "Running Prototype")
                 self.main_window.content = self.current_prototype.get_content()
             else:
                 self.main_window.info_dialog("Error", f"No 'Prototype' class found in {selected_file_path.name}")
                 
         except Exception as e:
-            self.main_window.error_dialog("Load Failure", f"Failed to execute script:\n{str(e)}")
+            self.main_window.stack_trace_dialog("Load Failure", f"Failed to execute script:\n{str(e)}")
 
     def handle_prototype_done(self):
         """The absolute explicit callback contract to escape a prototype."""

@@ -8,11 +8,11 @@ import sys
 import traceback
 
 import toga
-from toga.style.pack import COLUMN, ROW
 
 class LogRedirector:
     """Redirects Python prints and errors to a persistent file on the iPhone."""
     def __init__(self, log_path):
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
         self.log_file = open(log_path, "a", encoding="utf-8", buffering=1)
         self.terminal = sys.__stdout__
 
@@ -24,9 +24,48 @@ class LogRedirector:
         self.terminal.flush()
         self.log_file.flush()
 
-def stub_main():
-    from . import launcher
-    return launcher.main()
+from . import ui
+
+class MyApp(toga.App):
+    def startup_into(app, fresh=False):
+        print("called MyApp.startup_into")
+        """Construct and show the Toga application.
+
+        Usually, you would add your application to a main content box.
+        We then create a main window (with a name matching the app), and
+        show the main window.
+        """
+        try:
+            # Cannot query main window before it is created!
+            if fresh: # not app.main_window:
+                app.main_window = toga.MainWindow(title=app.formal_name)
+
+            app.proto = ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))
+
+            # Update window context and inject the prototype layout
+            t = getattr(app.proto, "title", app.formal_name)
+            mw = app.main_window
+            if mw.content:
+                if not hasattr(mw, "content_stack"):
+                    mw.content_stack = []
+                mw.content_stack.append((mw.title, mw.content))
+            mw.title = t
+            mw.content = app.proto.get_content()
+        except Exception as e:
+            print(f"Exception occurred creating UI: {str(e)}")
+        finally:
+            if not app.main_window.visible:
+                mw.show()
+
+    def unstack_from(app):
+        if hasattr(app.main_window, "content_stack") and len(app.main_window.content_stack) > 0:
+            t, c = app.main_window.content_stack.pop()
+            app.main_window.title = t
+            app.main_window.content = c
+
+    def startup(self):
+        print("called self.startup")
+        return MyApp.startup_into(self, True)
 
 def bootstrap_application():
     """
@@ -78,9 +117,18 @@ def bootstrap_application():
 
     # 2. Standard Briefcase Fallback Loop
     # If no manual overrides are present on the phone, execute the standard production path.
-    return stub_main()
+    print("finished bootstrap_application")
+    return MyApp()
 
 def main():
-    # Initialize the app container and hand window lifecycle execution over to Toga
-    return bootstrap_application()
-
+    if not (a := toga.App.app):
+        print("calling bootstrap_application")
+        return bootstrap_application()
+    elif a.loop:
+        print("calling MyApp.startup_into soon")
+        a.loop.call_soon(lambda a=a: MyApp.startup_into(a))
+    else:
+        print("calling MyApp.startup_into now")
+        MyApp.startup_into(a)
+    print("returning nothing because the app already existed")
+    return None

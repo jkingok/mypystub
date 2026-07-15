@@ -1,3 +1,19 @@
+[project]
+name = "MyPyStub"
+description = "My first application for prototyping with iDevices and Python"
+dependencies = [
+    "markdown",
+    "requests",
+    "resolvelib",
+    "tomlkit",
+    "unearth",
+]
+
+[tool.stub_launcher]
+display_name = "MyPyStub"  # Overrides the folder/project name in the list
+entry_point = "src/mypystub/__main__.py"          # The script file the launcher should execute
+icon = "assets/custom_icon.png"       # Relative path to this prototype's icon
+
 # This project was generated with 0.4.2 using template: https://github.com/beeware/briefcase-template @ v0.4.2
 [tool.briefcase]
 project_name = "MyPyStub"
@@ -7,7 +23,7 @@ url = "https://github.com/jkingok/mypystub"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 author = "Joshua King"
-author_email = "joshua@jking.id.au"
+author_email = "jkingok@users.noreply.github.com"
 
 [tool.briefcase.app.mypystub]
 formal_name = "MyPyStub"
@@ -22,6 +38,7 @@ test_sources = [
 ]
 
 requires = [
+    "markdown",
     "requests",
     "resolvelib",
     "tomlkit",
@@ -30,6 +47,8 @@ requires = [
 test_requires = [
     "pytest",
 ]
+icon="assets/icon"
+splash_background_color="#000000"
 
 [tool.briefcase.app.mypystub.macOS]
 universal_build = true
@@ -210,4 +229,3 @@ build_gradle_dependencies = [
 requires = [
     "toga-web~=0.5.0",
 ]
-

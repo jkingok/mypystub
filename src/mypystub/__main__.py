@@ -1,4 +1,5 @@
-from mypystub.app import main
+from .app import main
 
 if __name__ == "__main__":
-    main().main_loop()
+    if (m := main()):
+        m.main_loop()
