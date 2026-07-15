@@ -28,7 +28,6 @@ from . import ui
 
 class MyApp(toga.App):
     def startup_into(app, fresh=False):
-        print("called MyApp.startup_into")
         """Construct and show the Toga application.
 
         Usually, you would add your application to a main content box.
@@ -64,7 +63,6 @@ class MyApp(toga.App):
             app.main_window.content = c
 
     def startup(self):
-        print("called self.startup")
         return MyApp.startup_into(self, True)
 
 def bootstrap_application():
@@ -100,7 +98,7 @@ def bootstrap_application():
     hot_patch_file = user_documents_dir / "patch_app.py"
     
     if hot_patch_file.exists():
-        print(f"⚡ Hot-Patch Intercepted on Device Storage: {hot_patch_file}")
+        print(f"??? Hot-Patch Intercepted on Device Storage: {hot_patch_file}")
         try:
             # Inject the Documents directory to the top of Python's import lookup array
             sys.path.insert(0, str(user_documents_dir))
@@ -108,27 +106,22 @@ def bootstrap_application():
             # Dynamically import the patch file you edited on your phone
             import patch_app
             
-            print("✔ Hot-patch workspace parsed and executed flawlessly.")
+            print("??? Hot-patch workspace parsed and executed flawlessly.")
             return patch_app.main()
             
         except Exception as e:
-            print(f"❌ Hot-patch execution runtime failure: {e}")
-            print("→ Gracefully routing application boot back to compiled factory core...")
+            print(f"??? Hot-patch execution runtime failure: {e}")
+            print("??? Gracefully routing application boot back to compiled factory core...")
 
     # 2. Standard Briefcase Fallback Loop
     # If no manual overrides are present on the phone, execute the standard production path.
-    print("finished bootstrap_application")
     return MyApp()
 
 def main():
     if not (a := toga.App.app):
-        print("calling bootstrap_application")
         return bootstrap_application()
     elif a.loop:
-        print("calling MyApp.startup_into soon")
         a.loop.call_soon(lambda a=a: MyApp.startup_into(a))
     else:
-        print("calling MyApp.startup_into now")
         MyApp.startup_into(a)
-    print("returning nothing because the app already existed")
     return None
