@@ -10,8 +10,8 @@ dependencies = [
 ]
 
 [tool.stub_launcher]
-display_name = "MyPyStub"  # Overrides the folder/project name in the list
-entry_point = "src/mypystub/__main__.py"          # The script file the launcher should execute
+display_name = "Launcher"  # Overrides the folder/project name in the list
+entry_point = "src/launcher/__main__.py"          # The script file the launcher should execute
 icon = "assets/custom_icon.png"       # Relative path to this prototype's icon
 
 # This project was generated with 0.4.2 using template: https://github.com/beeware/briefcase-template @ v0.4.2

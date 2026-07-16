@@ -40,6 +40,9 @@ class Prototype:
     
     async def todo(self, name):
         await self.app.main_window.dialog(toga.InfoDialog("TODO", name))
+        
+    async def info(self, text):
+        await self.app.main_window.dialog(toga.InfoDialog("Info", text))
 
     def close_keyboard(self, widget):
         """Triggered when the user presses 'Return' or 'Done' on the iPad keyboard."""
@@ -121,17 +124,18 @@ class Prototype:
             ]:
                 # Recursively scan files inside the newly extracted directory tree
                 for file_path in target.rglob("*"):
+                    
                     if file_path.is_file() and file_path.suffix in ['.py', '.toml', '.rst', '.md']:
-                        print(f"Replacing {old} with {new} in {file_path}")
                         # Read, replace token strings, and write back out safely
                         content = file_path.read_text(encoding="utf-8")
                         if old in content:
                             file_path.write_text(content.replace(old, new), encoding="utf-8")
 
-                        if file_path.stem == old:
-                            file_path.rename(file_path.parent / (new + file_path.suffix))
-                        elif file_path.is_dir() and file_path.name == old:
-                            file_path.rename(file_path.parent /new)
+                    if file_path.name == old:
+                        file_path.rename(file_path.parent / new)
+                    elif file_path.stem == old:
+                        file_path.rename(file_path.parent / (new + file_path.suffix))
+            asyncio.create_task(self.info(f"Created new project {project_name}"))
 
         if target.exists():
             asyncio.create_task(
