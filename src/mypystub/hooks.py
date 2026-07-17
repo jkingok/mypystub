@@ -43,11 +43,11 @@ class TogaStream(io.TextIOBase):
             self.pending = "" 
 
 class ScriptRunner:
-    def __init__(self, app, input_label, input_field, toggle_input):
+    def __init__(self, app, input_label, input_field, print_field, toggle_input):
         self.app = app
         self.input_label = input_label
         self.input_field = input_field
-        #self.print_field = app.widgets["print_text"]
+        self.print_field = print_field
         #self.scroll = scroll
         self.toggle_input = toggle_input
         self.input_field.on_confirm = self.handle_ui_submit
@@ -99,13 +99,11 @@ class ScriptRunner:
                 print(f"Scroll timer error: {e}")
 
     def mainthread_append_to_log(self, message: str) -> None:
-        if (w := self.app.widgets["print_text"]):
-            w.value += f"{message}"
+        if (w := self.print_field):
+            w.value += message
             #self.print_field.refresh()
             #await asyncio.sleep(0.01)
-            #self.scroll.vertical_position = self.scroll.max_vertical_position
-        elif self._original_print:
-            self._original_print(message) 
+            #self.scroll.vertical_position = self.scroll.max_vertical_position 
 
     def append_to_log(self, message: str) -> None:
         """
@@ -113,6 +111,8 @@ class ScriptRunner:
         The @ui.main_thread decorator guarantees this executes safely on 
         the main thread, even when called from a background thread.
         """
+        if self._original_print:
+            self._original_print(message)
         self.app.loop.call_soon(lambda: self.mainthread_append_to_log(message))
         #asyncio.create_task(self.mainthread_append_to_log(message))
 
@@ -224,7 +224,7 @@ class Prototype:
         layout.add(keyboard_box)
         layout.add(toga.Button("◀ Back", on_press=self.exit_back))
         
-        self.script_runner = ScriptRunner(self.app, prompt_lbl, input_txt, self.print_text, scroll_box, toggle_input)
+        self.script_runner = ScriptRunner(self.app, prompt_lbl, input_txt, self.print_text, toggle_input)
         file_path = Path("~/Documents/scripts/apply_my_template.py").expanduser()
         print(f"Launching from path: {file_path}")
         self.app.loop.call_soon(lambda s=file_path: self.start(s))

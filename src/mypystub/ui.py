@@ -9,6 +9,56 @@ from . import hooks as h
 from . import piplike as pip
 from . import settings as s
 
+class LabelledProgress(toga.Box):
+    def __init__(self, **kwargs):
+        self.bar = toga.ProgressBar(flex=1)
+        self.text = toga.Label("")
+        super().__init__(
+            direction="row",
+            children=[
+                self.bar,
+                self.text
+            ],
+            **kwargs
+        )
+
+    def start(self, limit:int=0):
+        self.bar.max = limit if limit > 0 else None
+        self.bar.start()
+        self.update(0)
+
+    def update(self, value:int):
+        if self.bar.max:
+            if self.bar.max == 100:
+                self.text.text = f"{value}%"
+            else:
+                self.text.text = f"{value}/{self.bar.max}"
+        else:
+            self.text.text = "" 
+        self.bar.value = value
+  
+    def stop(self):
+        if self.bar.max:
+            self.update(self.bar.max)
+        self.bar.stop() 
+
+class LabelledActivity(toga.Box):
+    def __init__(self, **kwargs):
+        self.activity = toga.ActivityIndicator()
+        self.text = toga.Label("", flex=1)
+        super().__init__(
+            direction="row",
+            children=[
+                self.activity,
+                self.text
+            ],
+            **kwargs
+        )
+
+    def update(self, value:str="", on:bool=True):
+        self.activity.start() if on else self.activity.stop()
+        self.text.text=value 
+
 class Prototype:
     def __init__(self, host_app, on_done):
         self.app = host_app
@@ -36,7 +86,9 @@ class Prototype:
                     ],
                     text_align="center"
                 )
-        self.script_runner = h.ScriptRunner(host_app, self.input_prompt, self. input_text, self.toggle_input)
+        self.print_text = toga.MultilineTextInput(readonly=True) 
+        self.script_runner = h.ScriptRunner(host_app, self.input_prompt, self.input_text, self.print_text, self.toggle_input)
+        self.script_activity = LabelledActivity()
     
     async def todo(self, name):
         await self.app.main_window.dialog(toga.InfoDialog("TODO", name))
@@ -155,11 +207,15 @@ class Prototype:
         print("Starting...")
         def script(spec, module):
             # Execute the module code so classes are defined
-            spec.loader.exec_module(module)
-            # Some modules need a nudge...
-            if hasattr(module, "main"):
-                #print("Running main()...")
-                module.main()
+            try:
+                spec.loader.exec_module(module)
+                # Some modules need a nudge...
+                if hasattr(module, "main"):
+                    module.main()
+            except Exception as e:
+                self.app.loop.call_soon(lambda e=e: self.app.main_window.error_dialog("Script Failure", f"Script failed with: {str(e)}"))
+            finally:
+                self.app.loop.call_soon(lambda: self.script_activity.update(on=False)) 
         self.script_runner.run_student_script(lambda s=s, m=m: script(s, m))
 
     def handle_row_selection(self, widget):
@@ -197,11 +253,12 @@ class Prototype:
             spec = importlib.util.spec_from_file_location(module_name, selected_file_path, submodule_search_locations=(folder_path, selected_file_path.parent,))
             module = importlib.util.module_from_spec(spec)
 
-            self.app.widgets["print_text"].value = ""
+            self.print_text.value = ""
             self.app.widgets["tabs"].current_tab = "Script"
+            self.script_activity.update(f"Running {selected_row.title}")
             self.app.loop.call_soon(lambda s=spec, m=module: self.start(s, m))
         except Exception as e:
-            self.main_window.error_dialog("Load Failure", f"Failed to execute script:\n{str(e)}")
+            self.app.main_window.error_dialog("Load Failure", f"Failed to execute script:\n{str(e)}")
 
     def clear_logs(self, widget=None):
         (self.data_path / "app_runtime.log").unlink()
@@ -246,11 +303,8 @@ class Prototype:
                     children=[
                         toga.ScrollContainer(
                             horizontal=False,
-                            content=toga.MultilineTextInput(
-                                value="",
-                                readonly=True,
-                                id="print_text"
-                            ),
+                            content=self.print_text,
+                            
                             style=Pack(flex=1)
                         ), 
                         toga.Box(
@@ -259,7 +313,8 @@ class Prototype:
                                 flex=1, 
                                 visibility="hidden"
                             ) 
-                        )
+                        ),
+                        self.script_activity
                     ] 
                 ), self.icon_path / "eye.png"), 
   
