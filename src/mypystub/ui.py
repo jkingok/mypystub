@@ -1,13 +1,118 @@
 import asyncio
+from datetime import datetime
+import io
 from markdown import markdown as md
 from pathlib import Path
+from rubicon.objc import ObjCClass
+
 import shutil
 import toga
 from toga.style import Pack
+from zipfile import ZipFile, ZIP_DEFLATED
 
 from . import hooks as h
 from . import piplike as pip
 from . import settings as s
+
+def zip_directory_to_bytes(source_dir: Path) -> bytes:
+    """Recursively archives a directory into a zip file stored in memory as bytes."""
+    zip_buffer = io.BytesIO()
+    
+    if source_dir.exists():
+        with ZipFile(zip_buffer, "w", ZIP_DEFLATED) as zip_file:
+            # rglob("*") grabs everything recursively
+            for item in source_dir.rglob("*"):
+                if item.is_file():
+                    # relative_to ensures we don't include absolute iOS system paths
+                    archive_name = item.relative_to(source_dir)
+                    zip_file.write(item, archive_name)
+                    
+    return zip_buffer.getvalue()
+
+
+def create_nested_app_backup(app) -> Path:
+    """
+    Creates a master backup zip containing data.zip and config.zip in memory,
+    then writes the master file out to the app's cache directory.
+    
+    Args:
+        app: The running toga.App instance (e.g., self inside an app class)
+        
+    Returns:
+        Path: The location of the final master zip file on disk.
+    """
+    # 1. Resolve Toga's native paths
+    data_dir = app.paths.data
+    config_dir = app.paths.config
+    
+    # 2. Build sub-archives in memory as bytes
+    print(f"Archiving data directory: {data_dir}")
+    data_zip_bytes = zip_directory_to_bytes(data_dir)
+    
+    print(f"Archiving config directory: {config_dir}")
+    config_zip_bytes = zip_directory_to_bytes(config_dir)
+    
+    # 3. Create the master zip filename using the app's identifier and timestamp
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    master_filename = f"{app.formal_name.lower().replace(' ', '_')}-{timestamp}.zip"
+    
+    # We write the final file to the app's cache directory (safe for transient shares)
+    master_zip_path = app.paths.cache / master_filename
+    app.paths.cache.mkdir(parents=True, exist_ok=True)
+    
+    # 4. Pack the memory archives into the final master zip on disk
+    with ZipFile(master_zip_path, "w", ZIP_DEFLATED) as master_zip:
+        # writestr allows passing raw bytes and assigning an internal archive filename
+        master_zip.writestr("data.zip", data_zip_bytes)
+        master_zip.writestr("config.zip", config_zip_bytes)
+        
+    print(f"Structured master archive created at: {master_zip_path}")
+    return master_zip_path
+
+# Load the required Objective-C classes
+UIActivityViewController = ObjCClass('UIActivityViewController')
+NSURL = ObjCClass('NSURL')
+NSMutableArray = ObjCClass('NSMutableArray')
+
+def open_share_sheet(w, file_path: str):
+    """
+    Opens the iOS native share sheet for a specific HTML file.
+        
+    :param w: The active Toga widget instance initiating the share.
+    :param file_path: Absolute string path to the local file.
+    """
+    # 1. Ensure the file path exists and convert it into a native file URL
+    absolute_path = str(Path(file_path).resolve())
+    file_url = NSURL.fileURLWithPath_(absolute_path)
+    
+    # 2. Add the URL asset into an Objective-C array of items to share
+    share_items = NSMutableArray.alloc().init()
+    share_items.addObject_(file_url)
+    
+    # 3. Initialize the native UIActivityViewController
+    # Pass None for custom applicationActivities to use standard system defaults
+    activity_vc = UIActivityViewController.alloc().initWithActivityItems(
+        share_items, 
+        applicationActivities=None
+    )
+    
+    # 4. Grab the native UIViewController backing your Toga Window
+    presenting_vc = w.app.main_window._impl.native.rootViewController
+    
+    # 5. Handle iPad popover configurations safely to prevent crashes
+    if activity_vc.popoverPresentationController:
+        # Anchor the popover menu to the center or bounds of the current view frame
+        activity_vc.popoverPresentationController.sourceView = presenting_vc.view
+        activity_vc.popoverPresentationController.sourceRect = presenting_vc.view.bounds
+        # Optional: restrict arrow directions if needed
+        # activity_vc.popoverPresentationController.permittedArrowDirections = 0
+        
+    # 6. Present the share sheet asynchronously over the top of the interface
+    presenting_vc.presentViewController(
+        activity_vc, 
+        animated=True, 
+        completion=None
+    )
 
 class LabelledProgress(toga.Box):
     def __init__(self, **kwargs):
@@ -283,6 +388,21 @@ class Prototype:
             self.app.widgets["script_box"].remove(self.input_box)
         self.pad_keyboard(on)
 
+    # Inside your Toga App class layout or commands:
+    def handle_backup_press(self, widget):
+        try:
+            # 1. Build the nested structured zip
+            backup_file = create_nested_app_backup(self.app)
+        
+            # 2. Open native iOS Share Sheet via Rubicon-ObjC
+            open_share_sheet(widget, backup_file)
+        
+        except Exception as e:
+            self.main_window.error_dialog(
+                "Backup Failed", 
+                f"An error occurred while creating the archive: {e}"
+            )
+
     def get_content(self):
         return toga.OptionContainer(
             id="tabs",
@@ -356,6 +476,11 @@ class Prototype:
                             ]
                         ),
                         toga.Divider(),
+                        toga.Button(
+                            "Backup",
+                            on_press=self.handle_backup_press
+                        ),
+                        toga.Divider(), 
                         toga.Button(
                             "Exit",
                             visibility="visible" if hasattr(self.app.main_window, "content_stack") and len(self.app.main_window.content_stack) > 0 else "hidden",
