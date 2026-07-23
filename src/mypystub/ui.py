@@ -175,9 +175,13 @@ class LabelledActivity(toga.Box):
         self.text.text=value
 
 class NotAnOptionContainer(toga.Box):
+    class CurrentTab:
+        def __init__(self, text):
+            self.text = text 
+
     def __init__(self, content, on_select=None, **kwargs):
         self.content = content
-        #self.on_selected = on_select
+        self.on_selected = on_select
         super().__init__(direction="column",
             children=[
                 toga.Column(
@@ -188,20 +192,28 @@ class NotAnOptionContainer(toga.Box):
                 ) 
             ],
             **kwargs)
-        self.swap_in_name(self.content[0][1]) 
+        self.swap_in_name(self.content[0][0]) 
 
     def swap_in_name(self, t):
-        print(f"swapping in {t}...")
         for tab in self.content:
             if tab[0] == t:
-                print("found tab")
                 tab[1].style.flex = 1
                 self.replace(self.children[0], tab[1])
-                #self.on_selected(w)
+                self._current_tab = NotAnOptionContainer.CurrentTab(t)
+                if self.on_selected:
+                    self.on_selected(self)
                 break
 
     def swap_in(self, w):
-        self.swap_in_name(w.text) 
+        self.swap_in_name(w.text)
+
+    @property
+    def current_tab(self):
+        return self._current_tab
+
+    @current_tab.setter
+    def current_tab(self, value):
+        self.swap_in_name(value)   
         
 class Prototype:
     def __init__(self, host_app, on_done):
@@ -444,7 +456,7 @@ class Prototype:
 
     def choose_container(self, *args, **kwargs):
         if is_ipad_from_window(self.app.main_window):
-            return NotAOptionContainer(*args, **kwargs)
+            return NotAnOptionContainer(*args, **kwargs)
         else:
             return toga.OptionContainer(*args, **kwargs) 
 
