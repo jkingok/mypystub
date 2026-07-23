@@ -14,6 +14,16 @@ from . import hooks as h
 from . import piplike as pip
 from . import settings as s
 
+UIUserInterfaceIdiomPad = 1
+
+def is_ipad_from_window(toga_window) -> bool:
+    """Detects iPad idiom via the native UIWindow / UIViewController trait collection."""
+    # Toga's underlying UIKit native object (UIWindow or UIViewController)
+    native_obj = toga_window._impl.native
+    
+    # Query the trait collection's idiom
+    return native_obj.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad
+
 def zip_directory_to_bytes(source_dir: Path) -> bytes:
     """Recursively archives a directory into a zip file stored in memory as bytes."""
     zip_buffer = io.BytesIO()
@@ -162,8 +172,37 @@ class LabelledActivity(toga.Box):
 
     def update(self, value:str="", on:bool=True):
         self.activity.start() if on else self.activity.stop()
-        self.text.text=value 
+        self.text.text=value
 
+class NotAnOptionContainer(toga.Box):
+    def __init__(self, content, on_select=None, **kwargs):
+        self.content = content
+        #self.on_selected = on_select
+        super().__init__(direction="column",
+            children=[
+                toga.Column(
+                    flex=1
+                ), 
+                toga.Row(
+                    children=[toga.Button(tab[0], on_press=self.swap_in, flex=1) for tab in content]
+                ) 
+            ],
+            **kwargs)
+        self.swap_in_name(self.content[0][1]) 
+
+    def swap_in_name(self, t):
+        print(f"swapping in {t}...")
+        for tab in self.content:
+            if tab[0] == t:
+                print("found tab")
+                tab[1].style.flex = 1
+                self.replace(self.children[0], tab[1])
+                #self.on_selected(w)
+                break
+
+    def swap_in(self, w):
+        self.swap_in_name(w.text) 
+        
 class Prototype:
     def __init__(self, host_app, on_done):
         self.app = host_app
@@ -403,8 +442,15 @@ class Prototype:
                 f"An error occurred while creating the archive: {e}"
             )
 
+    def choose_container(self, *args, **kwargs):
+        if is_ipad_from_window(self.app.main_window):
+            return NotAOptionContainer(*args, **kwargs)
+        else:
+            return toga.OptionContainer(*args, **kwargs) 
+
     def get_content(self):
-        return toga.OptionContainer(
+        #return toga.OptionContainer(
+        return self.choose_container(
             id="tabs",
             content=[
                 ("List", toga.Column(
