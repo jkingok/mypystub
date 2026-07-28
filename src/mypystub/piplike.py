@@ -1,11 +1,33 @@
 import importlib
+from importlib.metadata import distributions
 import importlib.util
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tomllib
 import zipfile
+
+
+def get_bundled_app_packages() -> set[str]:
+    """Scans the Briefcase app_packages directory on sys.path for installed package names."""
+    # Locate the app_packages entry in sys.path
+    app_packages_path = next(
+        (Path(p) for p in sys.path if p.endswith("app_packages")), 
+        None
+    )
+    
+    if not app_packages_path or not app_packages_path.exists():
+        return set()
+
+    # Query importlib.metadata specifically for distributions inside app_packages
+    bundled_names = set()
+    for dist in distributions(path=[str(app_packages_path)]):
+        # Canonicalize package names to lowercase (e.g. 'HTTPX' -> 'httpx')
+        bundled_names.add(dist.metadata["Name"].lower())
+        
+    return bundled_names
 
 def get_pip():
     from resolvelib import BaseReporter, Resolver
@@ -36,7 +58,7 @@ def get_pip():
             
         def find_matches(self, identifier, requirements, incompatibilities):
             # 1. Gather all potential release matches for this package ID
-            all_matches = self.finder.find_matches(identifier)
+            all_matches = self.finder.find_matches(identifier, allow_prereleases=False)
         
             # 2. Filter the matches strictly down to valid, applicable wheel files
             wheel_candidates = []
@@ -74,6 +96,23 @@ def get_pip():
     def sync_launcher_dependencies(dependencies: list, output_dir: str):
         target_path = Path(output_dir)
         target_path.mkdir(parents=True, exist_ok=True)
+        
+        bundled_packages = get_bundled_app_packages()
+
+        def get_req_name(req_str: str) -> str:
+            # Strip specifiers like 'httpx>=0.20.0' or 'httpx[http2]' down to 'httpx'
+            name = re.split(r"[<=><!=~;\[\s]", str(req_str))[0].strip().lower()
+            return name
+
+        # Keep only dependencies that aren't already in app_packages
+        needed_dependencies = [
+            dep for dep in dependencies 
+            if get_req_name(dep) not in bundled_packages
+        ]
+
+        if not needed_dependencies:
+            print("✅ All required packages are already provided by the app runtime.")
+            return
          
         # B. Explicitly target pure-Python environment matching iOS execution contexts
         running_version = sys.version_info[:2]
