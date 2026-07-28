@@ -1,47 +1,67 @@
 """
-My first application for prototyping with iDevices and Python
+Application initialization, log redirection, and dynamic hot-patching runtime.
+
+Manages application startup (`MyApp`), redirects standard output/error to disk (`LogRedirector`),
+and checks the iOS user sandbox (`~/Documents/patch_app.py`) for live runtime overrides.
 """
 
 import os
 from pathlib import Path
 import sys
-import traceback
-
 import toga
-
-class LogRedirector:
-    """Redirects Python prints and errors to a persistent file on the iPhone."""
-    def __init__(self, log_path):
-        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
-        self.log_file = open(log_path, "a", encoding="utf-8", buffering=1)
-        self.terminal = sys.__stdout__
-
-    def write(self, message):
-        self.terminal.write(message)
-        self.log_file.write(message)
-
-    def flush(self):
-        self.terminal.flush()
-        self.log_file.flush()
+import traceback
 
 from . import ui
 
-class MyApp(toga.App):
-    def startup_into(app, fresh=False):
-        """Construct and show the Toga application.
+class LogRedirector:
+    """
+    Redirects Python stdout and stderr streams to both standard output and a persistent file log.
 
-        Usually, you would add your application to a main content box.
-        We then create a main window (with a name matching the app), and
-        show the main window.
+    :param log_path: Path to target log file on disk.
+    :type log_path: str | Path
+    """
+    def __init__(self, log_path):
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+        self.log_file = open(log_path, "a", encoding="utf-8", buffering=1)
+        self.terminal = sys.__stdout__ # both out and err end up in out
+
+    def write(self, message: str) -> None:
         """
-        try:
-            # Cannot query main window before it is created!
-            if fresh: # not app.main_window:
-                app.main_window = toga.MainWindow(title=app.formal_name)
+        Writes a message string to terminal stdout and log file simultaneously.
 
+        :param message: String output message.
+        :type message: str
+        """
+        self.terminal.write(message)
+        self.log_file.write(message)
+
+    def flush(self) -> None:
+        """
+        Flushes terminal and log file buffers.
+        """
+        self.terminal.flush()
+        self.log_file.flush()
+
+class MyApp(toga.App):
+    """
+    Main Toga Application instance for Liveability.
+    """
+
+    def startup_into(app, fresh: bool = False):
+        """
+        Constructs and presents the application main window and prototype layout.
+
+        :param app: Toga application instance.
+        :type app: toga.App
+        :param fresh: True if creating the MainWindow for the first time.
+        :type fresh: bool
+        """
+        if fresh:
+            app.main_window = toga.MainWindow(title=app.formal_name)
+
+        try:
             app.proto = ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))
 
-            # Update window context and inject the prototype layout
             t = getattr(app.proto, "title", app.formal_name)
             mw = app.main_window
             if mw.content:
@@ -51,73 +71,85 @@ class MyApp(toga.App):
             mw.title = t
             mw.content = app.proto.get_content()
         except Exception as e:
-            print(f"Exception occurred creating UI: {str(e)}")
+            traceback.print_exc()
+            app.loop.call_soon(main_window.dialog(toga.ErrorDialog("Error Occurred", str(e))))
         finally:
             if not app.main_window.visible:
                 mw.show()
 
     def unstack_from(app):
+        """
+        Pops and restores the previous window view layout from the content stack.
+
+        :param app: Toga application instance.
+        :type app: toga.App
+        """
         if hasattr(app.main_window, "content_stack") and len(app.main_window.content_stack) > 0:
             t, c = app.main_window.content_stack.pop()
             app.main_window.title = t
             app.main_window.content = c
 
     def startup(self):
+        """
+        Standard Toga application startup callback. Initializes main window and UI content.
+
+        :returns: Result of :meth:`startup_into`.
+        """
         return MyApp.startup_into(self, True)
+
 
 def bootstrap_application():
     """
-    Checks the iOS device user sandbox folder dynamically on boot. 
-    If an updated 'patch_app.py' script exists in the app's Documents 
-    directory, it hooks it into the runtime engine instead of the 
-    factory-compiled bundle.
+    Bootstraps the application environment on device launch.
+
+    Sets up stdout/stderr logging in `~/Documents/app_runtime.log`.
+    If an updated `patch_app.py` script exists in the iOS user Documents folder,
+    it executes `patch_app.main()` to allow live code updates without recompiling.
+    Otherwise, returns a standard :class:`MyApp` instance.
+
+    :returns: Application instance or result of `patch_app.main()`.
+    :rtype: toga.App
     """
-    # 1. Target the iOS App's local writable Documents container
-    # On an iPhone, this maps straight to the app's folder inside the Files App.
-    user_documents_dir = Path("~/Documents").expanduser() # same as toga.App.paths.data
-    
-    # Ensure the directory exists (it always should in an iOS sandbox)
+
+    # This is equivalent to the toga.App.app.paths.data
+    user_documents_dir = Path("~/Documents").expanduser()
     user_documents_dir.mkdir(parents=True, exist_ok=True)
-    
-    # 2. Immediately intercept ALL stdout, stderr, and tracebacks
+
     log_path = user_documents_dir / "app_runtime.log"
 
     redirector = LogRedirector(log_path)
     sys.stdout = redirector
     sys.stderr = redirector
-    
-    # Define a hidden or marker file
+
     readme = user_documents_dir / "README"
-    
     if not readme.exists():
         try:
-            readme.write_text("Use this folder for logging and customising this app.")
+            readme.write_text("This folder is used for logging and customising this app.")
         except Exception as e:
             print(f"Failed to write placeholder: {e}")
-    
-    hot_patch_file = user_documents_dir / "patch_app.py"
-    
-    if hot_patch_file.exists():
-        print(f"??? Hot-Patch Intercepted on Device Storage: {hot_patch_file}")
-        try:
-            # Inject the Documents directory to the top of Python's import lookup array
-            sys.path.insert(0, str(user_documents_dir))
-            
-            # Dynamically import the patch file you edited on your phone
-            import patch_app
-            
-            print("??? Hot-patch workspace parsed and executed flawlessly.")
-            return patch_app.main()
-            
-        except Exception as e:
-            print(f"??? Hot-patch execution runtime failure: {e}")
-            print("??? Gracefully routing application boot back to compiled factory core...")
 
-    # 2. Standard Briefcase Fallback Loop
-    # If no manual overrides are present on the phone, execute the standard production path.
+    hot_patch_file = user_documents_dir / "patch_app.py"
+
+    if hot_patch_file.exists():
+        print(f"Hot-Patch Intercepted on Device Storage: {hot_patch_file}")
+        try:
+            sys.path.insert(0, str(user_documents_dir))
+            import patch_app
+            print("Hot-patch workspace parsed and executed flawlessly.")
+            return patch_app.main()
+        except Exception as e:
+            print(f"Hot-patch execution runtime failure: {e}")
+            print("Gracefully routing application boot back to compiled factory core...")
+
     return MyApp()
 
 def main():
+    """
+    Application entry point called by Briefcase or __main__.py.
+
+    :returns: Application instance or None if added to existing event loop.
+    :rtype: toga.App | None
+    """
     if not (a := toga.App.app):
         return bootstrap_application()
     elif a.loop:

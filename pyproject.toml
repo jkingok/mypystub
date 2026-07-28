@@ -2,8 +2,8 @@
 name = "MyPyStub"
 description = "My first application for prototyping with iDevices and Python"
 dependencies = [
+    "httpx",
     "markdown",
-    "requests",
     "resolvelib",
     "tomlkit",
     "unearth",
@@ -38,8 +38,8 @@ test_sources = [
 ]
 
 requires = [
+    "httpx",
     "markdown",
-    "requests",
     "resolvelib",
     "tomlkit",
     "unearth",

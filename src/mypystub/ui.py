@@ -52,15 +52,19 @@ def create_nested_app_backup(app) -> Path:
         Path: The location of the final master zip file on disk.
     """
     # 1. Resolve Toga's native paths
-    data_dir = app.paths.data
+    cache_dir = app.paths.cache 
     config_dir = app.paths.config
+    data_dir = app.paths.data
     
     # 2. Build sub-archives in memory as bytes
-    print(f"Archiving data directory: {data_dir}")
-    data_zip_bytes = zip_directory_to_bytes(data_dir)
+    print(f"Archiving cache directory: {cache_dir}")
+    cache_zip_bytes = zip_directory_to_bytes(cache_dir)
     
     print(f"Archiving config directory: {config_dir}")
     config_zip_bytes = zip_directory_to_bytes(config_dir)
+    
+    print(f"Archiving data directory: {data_dir}")
+    data_zip_bytes = zip_directory_to_bytes(data_dir)
     
     # 3. Create the master zip filename using the app's identifier and timestamp
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -73,8 +77,9 @@ def create_nested_app_backup(app) -> Path:
     # 4. Pack the memory archives into the final master zip on disk
     with ZipFile(master_zip_path, "w", ZIP_DEFLATED) as master_zip:
         # writestr allows passing raw bytes and assigning an internal archive filename
+        master_zip.writestr("cache.zip", cache_zip_bytes)
+        master_zip.writestr("config.zip", config_zip_bytes) 
         master_zip.writestr("data.zip", data_zip_bytes)
-        master_zip.writestr("config.zip", config_zip_bytes)
         
     print(f"Structured master archive created at: {master_zip_path}")
     return master_zip_path
@@ -221,12 +226,13 @@ class Prototype:
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Launcher" # host_app.formal_name
         self.app.settings = s.Settings(host_app.paths)
+        self.cache_path = self.app.paths.cache
         self.data_path = self.app.paths.data
         self.this_path = Path(__file__).resolve().parent
         self.icon_path = self.this_path / "resources" / "icons"
         self.template_path = self.this_path / "resources" / "templates"
         self.prototype_dir = self.data_path
-        self.bootstrapped = pip.strict_manifest_preflight()
+        self.bootstrapped = pip.strict_manifest_preflight(self.cache_path)
         self.input_prompt = toga.Label(
             "Input"
         )
@@ -236,15 +242,27 @@ class Prototype:
             on_lose_focus=lambda m: self.pad_keyboard(False)
         )
         self.input_box = toga.Column(
-                    children=[
-                         self.input_prompt,
-                         self.input_text
-                    ],
-                    text_align="center"
-                )
+            children=[
+                self.input_prompt,
+                self.input_text
+            ],
+            text_align="center"
+        )
         self.print_text = toga.MultilineTextInput(readonly=True) 
-        self.script_runner = h.ScriptRunner(host_app, self.input_prompt, self.input_text, self.print_text, self.toggle_input)
+        self.script_runner = h.ScriptRunner(host_app, self.input_prompt, self.input_text, self.print_text, self.toggle_input, self.toggle_print)
+        self.script_scroll = toga.ScrollContainer(
+            horizontal=False,
+            content=self.print_text,
+            style=Pack(
+                flex=1
+            )
+        )
         self.script_activity = LabelledActivity()
+        self.splash = toga.ImageView(
+            style=Pack(
+                flex=0
+            )
+        )
     
     async def todo(self, name):
         await self.app.main_window.dialog(toga.InfoDialog("TODO", name))
@@ -283,7 +301,7 @@ class Prototype:
             # Safely build a toga.Image if an icon path was specified and exists
             row_icon = None
             if proto["icon_path"] and proto["icon_path"].exists():
-                row_icon = toga.Image(proto["icon_path"])
+                row_icon = toga.Image(proto["icon_path"]) # This should be Icon, but it works
                 
             list_items.append({
                 "title": proto["title"],
@@ -371,7 +389,7 @@ class Prototype:
             except Exception as e:
                 self.app.loop.call_soon(lambda e=e: self.app.main_window.error_dialog("Script Failure", f"Script failed with: {str(e)}"))
             finally:
-                self.app.loop.call_soon(lambda: self.script_activity.update(on=False)) 
+                self.app.loop.call_soon(lambda: (self.script_activity.update(on=False), setattr(self.splash, "image", None), setattr(self.tabs, "current_tab", "List") if not self.print_text.value else None)) 
         self.script_runner.run_student_script(lambda s=s, m=m: script(s, m))
 
     def handle_row_selection(self, widget):
@@ -410,6 +428,10 @@ class Prototype:
             module = importlib.util.module_from_spec(spec)
 
             self.print_text.value = ""
+            if selected_row.icon:
+                self.splash.image = selected_row.icon
+                self.splash.style.flex = 1
+                self.script_scroll.style.flex = 0
             self.app.widgets["tabs"].current_tab = "Script"
             self.script_activity.update(f"Running {selected_row.title}")
             self.app.loop.call_soon(lambda s=spec, m=module: self.start(s, m))
@@ -439,6 +461,11 @@ class Prototype:
             self.app.widgets["script_box"].remove(self.input_box)
         self.pad_keyboard(on)
 
+    def toggle_print(self, on):
+        if on:
+            self.splash.style.flex = 0
+            self.script_scroll.style.flex = 1  
+
     # Inside your Toga App class layout or commands:
     def handle_backup_press(self, widget):
         try:
@@ -454,6 +481,10 @@ class Prototype:
                 f"An error occurred while creating the archive: {e}"
             )
 
+    def handle_wipe_cache(self, widget):
+        for f in Path(self.app.paths.cache).iterdir():
+            print(f) 
+
     def choose_container(self, *args, **kwargs):
         if is_ipad_from_window(self.app.main_window):
             return NotAnOptionContainer(*args, **kwargs)
@@ -462,7 +493,7 @@ class Prototype:
 
     def get_content(self):
         #return toga.OptionContainer(
-        return self.choose_container(
+        self.tabs = self.choose_container(
             id="tabs",
             content=[
                 ("List", toga.Column(
@@ -479,17 +510,12 @@ class Prototype:
                 ("Script", toga.Column(
                     id="script_box",
                     children=[
-                        toga.ScrollContainer(
-                            horizontal=False,
-                            content=self.print_text,
-                            
-                            style=Pack(flex=1)
-                        ), 
+                        self.splash,
+                        self.script_scroll, 
                         toga.Box(
                             id="keyboard_box",
                             style=Pack(
-                                flex=1, 
-                                visibility="hidden"
+                                flex=0
                             ) 
                         ),
                         self.script_activity
@@ -538,6 +564,10 @@ class Prototype:
                             "Backup",
                             on_press=self.handle_backup_press
                         ),
+                        toga.Button(
+                            "Wipe Cache",
+                            on_press=self.handle_wipe_cache
+                        ),
                         toga.Divider(), 
                         toga.Button(
                             "Exit",
@@ -567,3 +597,4 @@ class Prototype:
             ],
             on_select=self.tab_changed
         )
+        return self.tabs

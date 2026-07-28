@@ -163,22 +163,24 @@ def get_pip():
 
 # The official master manifest of required core runtime modules
 CORE_MANIFEST = {
-    "unearth": "unearth-*-py3-none-any.whl",
-    "resolvelib": "resolvelib-*-py3-none-any.whl",
-    "packaging": "packaging-*-py3-none-any.whl",
-    "httpcore": "httpcore-*-py3-none-any.whl",
-    "h11": "h11-*-py3-none-any.whl",
-    "requests": "requests-*-py3-none-any.whl",
-    "urllib3": "urllib3-*-py3-none-any.whl",
-    "idna": "idna-*-py3-none-any.whl",
-    "charset_normalizer": "charset_normalizer-*-py3-none-any.whl",
     "certifi": "certifi-*-py3-none-any.whl",
+    "charset_normalizer": "charset_normalizer-*-py3-none-any.whl",
+    "h11": "h11-*-py3-none-any.whl",
+    "httpcore": "httpcore-*-py3-none-any.whl",
+    "httpx": "httpx-*-py3-none-any.whl",
+    "idna": "idna-*-py3-none-any.whl",
+    "packaging": "packaging-*-py3-none-any.whl",
+    "resolvelib": "resolvelib-*-py3-none-any.whl",
+    "unearth": "unearth-*-py3-none-any.whl",
+    "urllib3": "urllib3-*-py3-none-any.whl"
 }
 
-def strict_manifest_preflight():
+def strict_manifest_preflight(prefix = None):
     app_root = Path(__file__).resolve().parent
-    bootstrap_cache_dir = Path.home() / "Documents" / "wheels"
-    target_user_packages = Path.home() / "Documents" / "site_packages"
+    if not prefix:
+        prefix = Path("~/Documents").expanduser()
+    bootstrap_cache_dir = prefix / "wheels"
+    target_user_packages = prefix / "site_packages"
     
     # Ensure local path is mapped
     target_user_packages.mkdir(parents=True, exist_ok=True)
@@ -327,157 +329,3 @@ def scan_all_prototypes(base_dir_path):
                     
     return compiled_items
 
-import toga
-from toga.style import Pack
-
-class LauncherApp(toga.App):
-    def startup(self):
-        self.main_window = toga.MainWindow(title="Launcher")
-        self.prototype_dir = Path.home() / "Documents"
-        self.bootstrapped = strict_manifest_preflight()
-        self.log_box = self.create_log_box()
-        self.menu_box = self.create_menu_box()
-        self.reload_menu()
-        self.load_launcher_menu()
-        self.main_window.show()
-
-    def create_log_box(self):
-        log_box = toga.Column()
-        self.log_text = toga.MultilineTextInput(readonly=True, style=Pack(flex=1))
-        scroll_box = toga.ScrollContainer(horizontal=False, content=self.log_text, style=Pack(flex=1))
-        log_box.add(scroll_box)
-        bottom_bar = toga.Row(style=Pack(margin=(10,), text_align="center"))
-        bottom_bar.add(toga.Button("< Back", on_press=self.load_launcher_menu))
-        bottom_bar.add(toga.Box(style=Pack(flex=1)))
-        bottom_bar.add(toga.Button("Clear", on_press=self.clear_logs))
-        log_box.add(bottom_bar)
-        return log_box
-        
-    def create_menu_box(self):
-        main_layout = toga.Column()
-        
-        # 3. Initialize the DetailedList widget
-        self.detailed_list = toga.DetailedList(
-            on_refresh=self.reload_menu,
-            on_select=self.handle_row_selection,
-            style=Pack(flex=1)
-        )
-        
-        # Add a refresh button layout at the bottom
-        bottom_bar = toga.Row(style=Pack(margin=(10,), text_align="center"))
-        bottom_bar.add(toga.Button("Exit", on_press=exit_to_springboard))
-        bottom_bar.add(toga.Box(style=Pack(flex=1)))
-        bottom_bar.add(toga.Button("Logs", on_press=self.show_logs))
-        
-        if not self.bootstrapped:
-            main_layout.add(toga.Label("Downloads Required!", style=Pack(color="red")))
-
-        main_layout.add(self.detailed_list)
-        main_layout.add(bottom_bar)
-        
-        return main_layout
-    
-    def show_logs(self, widget=None):
-        self.log_text.value = Path("~/Documents/app_runtime.log").expanduser().read_text()
-        self.main_window.content = self.log_box
-
-    def clear_logs(self):
-        pass
-
-    def reload_menu(self, widget=None):
-        # 1. Gather all of our TOML configuration profiles
-        self.prototypes_data = scan_all_prototypes(self.prototype_dir)
-        
-        # 2. Format the records specifically for Toga's DetailedList expectations
-        list_items = []
-        for proto in self.prototypes_data:
-            # Safely build a toga.Image if an icon path was specified and exists
-            row_icon = None
-            if proto["icon_path"] and proto["icon_path"].exists():
-                row_icon = toga.Image(proto["icon_path"])
-                
-            list_items.append({
-                "title": proto["title"],
-                "subtitle": proto["subtitle"],
-                "icon": row_icon,
-                # Toga ignores these custom keys for rendering, but holds onto them for callbacks!
-                "entry_point": proto["entry_point"],
-                "folder_root": proto["folder_root"],
-                "dependencies": proto["dependencies"]
-            })
-        
-        self.detailed_list.data = list_items
-
-    def load_launcher_menu(self, widget=None):        
-        self.main_window.content = self.menu_box
-
-    def handle_row_selection(self, widget):
-        """Triggered automatically when an iOS row is tapped."""
-        import importlib.util
-
-        # Grab the currently selected row data dictionary
-        selected_row = widget.selection
-        if not selected_row:
-            return
-
-        # 1. Read the parsed dependency requirements array
-        required_packages = getattr(selected_row, "dependencies", [])
-        
-        target_user_packages = Path.home() / "Documents" / "site_packages"
-        
-        # 2. Check and satisfy dependencies
-        if required_packages:
-            pip = get_pip()
-            pip(required_packages, target_user_packages)
-        
-        # 3. Proceed to mount the folder root and load the module
-        import sys
-        folder_path = str(selected_row.folder_root)
-        if folder_path not in sys.path:
-            sys.path.insert(0, folder_path)
-        print(f"import path: {sys.path}") 
-            
-        # Clear out status title alterations and execute
-        print(f"Launching {selected_row.title} from path: {selected_row.entry_point}")
-        selected_file_path = Path(selected_row.entry_point)
-
-        try:
-            # Dynamically load the python module from an arbitrary path
-            module_name = selected_file_path.parent.name
-            spec = importlib.util.spec_from_file_location(module_name, selected_file_path, submodule_search_locations=(folder_path, selected_file_path.parent,))
-            module = importlib.util.module_from_spec(spec)
-            
-            # Execute the module code so classes are defined
-            spec.loader.exec_module(module)
-            if not hasattr(module, "Prototype") and hasattr(module, "main"):
-                module.main()
-            # Instantiate the prototype class. 
-            # Convicting to the design, it must look for a class named 'Prototype'
-            elif hasattr(module, "Prototype"):
-                self.main_window.info_dialog("Deprecated", f"Using old 'Prototype' method with in {selected_file_path.name}")
-                # Pass the host app instance AND the done callback function straight down
-                self.current_prototype = module.Prototype(host_app=self, on_done=self.handle_prototype_done)
-                
-                # Update window context and inject the prototype layout
-                self.main_window.content = self.current_prototype.get_content()
-            else:
-                self.main_window.info_dialog("Error", f"No 'Prototype' class found in {selected_file_path.name}")
-                
-        except Exception as e:
-            self.main_window.stack_trace_dialog("Load Failure", f"Failed to execute script:\n{str(e)}")
-
-    def handle_prototype_done(self):
-        """The absolute explicit callback contract to escape a prototype."""
-        print("[Launcher] Prototype declared execution complete. Returning to menu.")
-        if self.current_prototype:
-            # Explicitly clear out references to help Python garbage collect the dynamic module
-            self.current_prototype = None 
-        
-        # Smoothly draw the picker back over the screen
-        self.load_launcher_menu()
-
-        # Run any cleanup on the previous layout if needed
-        # (You could track self.current_prototype to trigger on_deactivate)
-
-def main():
-    return LauncherApp()

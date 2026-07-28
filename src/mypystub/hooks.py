@@ -43,13 +43,14 @@ class TogaStream(io.TextIOBase):
             self.pending = "" 
 
 class ScriptRunner:
-    def __init__(self, app, input_label, input_field, print_field, toggle_input):
+    def __init__(self, app, input_label, input_field, print_field, toggle_input, toggle_print):
         self.app = app
         self.input_label = input_label
         self.input_field = input_field
         self.print_field = print_field
         #self.scroll = scroll
         self.toggle_input = toggle_input
+        self.toggle_print = toggle_print
         self.input_field.on_confirm = self.handle_ui_submit
         # Sync primitives
         self._input_event = threading.Event()
@@ -100,6 +101,8 @@ class ScriptRunner:
 
     def mainthread_append_to_log(self, message: str) -> None:
         if (w := self.print_field):
+            if self.toggle_print (not w.value) and message:
+                self.toggle_print(True)
             w.value += message
             #self.print_field.refresh()
             #await asyncio.sleep(0.01)
