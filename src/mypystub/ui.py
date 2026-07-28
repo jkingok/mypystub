@@ -387,9 +387,9 @@ class Prototype:
                 if hasattr(module, "main"):
                     module.main()
             except Exception as e:
-                self.app.loop.call_soon(lambda e=e: self.app.main_window.error_dialog("Script Failure", f"Script failed with: {str(e)}"))
+                self.app.loop.call_soon_threadsafe(self.app.main_window.dialog(toga.ErrorDialog("Script Failure", f"Script failed with: {str(e)}")))
             finally:
-                self.app.loop.call_soon(lambda: (self.script_activity.update(on=False), setattr(self.splash, "image", None), setattr(self.tabs, "current_tab", "List") if not self.print_text.value else None)) 
+                self.app.loop.call_soon_threadsafe(lambda: (self.script_activity.update(on=False), setattr(self.splash, "image", None), setattr(self.tabs, "current_tab", "List") if not self.print_text.value else None)) 
         self.script_runner.run_student_script(lambda s=s, m=m: script(s, m))
 
     def handle_row_selection(self, widget):
@@ -404,7 +404,7 @@ class Prototype:
         # 1. Read the parsed dependency requirements array
         required_packages = getattr(selected_row, "dependencies", [])
         
-        target_user_packages = self.data_path / "site_packages"
+        target_user_packages = self.cache_path / "site_packages"
         
         # 2. Check and satisfy dependencies
         if required_packages:

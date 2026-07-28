@@ -164,15 +164,13 @@ def get_pip():
 # The official master manifest of required core runtime modules
 CORE_MANIFEST = {
     "certifi": "certifi-*-py3-none-any.whl",
-    "charset_normalizer": "charset_normalizer-*-py3-none-any.whl",
     "h11": "h11-*-py3-none-any.whl",
     "httpcore": "httpcore-*-py3-none-any.whl",
     "httpx": "httpx-*-py3-none-any.whl",
     "idna": "idna-*-py3-none-any.whl",
     "packaging": "packaging-*-py3-none-any.whl",
     "resolvelib": "resolvelib-*-py3-none-any.whl",
-    "unearth": "unearth-*-py3-none-any.whl",
-    "urllib3": "urllib3-*-py3-none-any.whl"
+    "unearth": "unearth-*-py3-none-any.whl"
 }
 
 def strict_manifest_preflight(prefix = None):
