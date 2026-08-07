@@ -68,5 +68,31 @@ def main():
 
     run_in_process("pyflakes", "Pyflakes Linting", run_pyflakes)
 
+    # 3. In-Process Type Checking with Mypy
+    def run_mypy():
+        from mypy import api
+
+        # Pass CLI arguments directly as a list
+        # Mypy returns (stdout, stderr, exit_status)
+        stdout, stderr, exit_status = api.run(
+            [
+                "--ignore-missing-imports",
+                "--pretty",
+                ".",
+            ]
+        )
+
+        if stdout:
+            print(stdout)
+        if stderr:
+            print(stderr, file=sys.stderr)
+
+        if exit_status != 0:
+            raise RuntimeError(
+                f"Mypy found type errors (exit code {exit_status})."
+            )
+
+    run_in_process("mypy", "Static Type Analysis (Mypy)", run_mypy)
+
 if __name__ == "__main__":
     main()
