@@ -83,10 +83,6 @@ class MyApp(toga.App):
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(global_async_exception_handler)
 
-        self.main_window = toga.MainWindow(title=self.formal_name)
-        self.main_window.content = toga.Box()
-        self.main_window.show()
-
         try:
             app.proto = ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))
 
