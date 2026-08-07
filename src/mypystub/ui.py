@@ -263,6 +263,12 @@ class Prototype:
                 flex=0
             )
         )
+        self.script_list = toga.DetailedList(
+            on_refresh=self.reload_menu,
+            on_select=self.handle_row_selection,
+            style=Pack(flex=1)
+            #data=self.reload_menu()
+        )
     
     async def todo(self, name):
         await self.app.main_window.dialog(toga.InfoDialog("TODO", name))
@@ -387,7 +393,7 @@ class Prototype:
                 if hasattr(module, "main"):
                     module.main()
             except Exception as e:
-                self.app.loop.call_soon_threadsafe(self.app.main_window.dialog(toga.ErrorDialog("Script Failure", f"Script failed with: {str(e)}")))
+                self.app.loop.create_task(self.app.main_window.dialog(toga.ErrorDialog("Script Failure", f"Script failed with: {str(e)}")))
             finally:
                 self.app.loop.call_soon_threadsafe(lambda: (self.script_activity.update(on=False), setattr(self.splash, "image", None), setattr(self.tabs, "current_tab", "List") if not self.print_text.value else None)) 
         self.script_runner.run_student_script(lambda s=s, m=m: script(s, m))
@@ -446,7 +452,7 @@ class Prototype:
         if t := widget.current_tab:
             match t.text:
                 case "List":
-                    self.reload_menu(self.app.widgets["script_list"])
+                    self.reload_menu(self.script_list)
                 case "Logs":
                     self.reload_logs(widget) 
 
@@ -498,13 +504,7 @@ class Prototype:
             content=[
                 ("List", toga.Column(
                     children=[
-                        toga.DetailedList(
-                            id="script_list",
-                            on_refresh=self.reload_menu,
-                            on_select=self.handle_row_selection,
-                            style=Pack(flex=1),
-                            data=self.reload_menu()
-                        )
+                        self.script_list
                     ]
                 ), self.icon_path / "list.png"),
                 ("Script", toga.Column(
@@ -597,4 +597,5 @@ class Prototype:
             ],
             on_select=self.tab_changed
         )
+        self.app.loop.call_soon(lambda: self.reload_menu(self.script_list))
         return self.tabs
