@@ -5,9 +5,11 @@ Manages application startup (`MyApp`), redirects standard output/error to disk (
 and checks the iOS user sandbox (`~/Documents/patch_app.py`) for live runtime overrides.
 """
 
+import asyncio
 import os
 from pathlib import Path
 import sys
+import threading
 import toga
 import traceback
 
@@ -58,6 +60,32 @@ class MyApp(toga.App):
         """
         if fresh:
             app.main_window = toga.MainWindow(title=app.formal_name)
+
+        def global_async_exception_handler(loop, context):
+            exception = context.get("exception")
+            message = context.get("message")
+            traceback.print_exc()
+            app.loop.call_soon(main_window.dialog(toga.ErrorDialog("Error Occurred", message)))
+
+        def global_sync_exception_handler(exc_type, exc_value, exc_traceback):
+            traceback.print_exc()
+            app.loop.call_soon(main_window.dialog(toga.ErrorDialog("Error Occurred", str(exc_value))))
+
+        def global_thread_exception_handler(args):
+            traceback.print_exc()
+            app.loop.call_soon(main_window.dialog(toga.ErrorDialog("Error Occurred", str(args.exc_value))))
+
+        # Set up standard Python thread hooks
+        sys.excepthook = global_sync_exception_handler
+        threading.excepthook = global_thread_exception_handler
+
+        # Attach custom handler to Toga's asyncio loop
+        loop = asyncio.get_event_loop()
+        loop.set_exception_handler(global_async_exception_handler)
+
+        self.main_window = toga.MainWindow(title=self.formal_name)
+        self.main_window.content = toga.Box()
+        self.main_window.show()
 
         try:
             app.proto = ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))
