@@ -6,7 +6,6 @@ and checks the iOS user sandbox (`~/Documents/patch_app.py`) for live runtime ov
 """
 
 import asyncio
-import os
 from pathlib import Path
 import sys
 import threading
@@ -62,18 +61,18 @@ class MyApp(toga.App):
             app.main_window = toga.MainWindow(title=app.formal_name)
 
         def global_async_exception_handler(loop, context):
-            exception = context.get("exception")
+            # exception = context.get("exception")
             message = context.get("message")
             traceback.print_exc()
-            app.loop.call_soon(main_window.dialog(toga.ErrorDialog("Error Occurred", message)))
+            app.loop.call_soon(app.main_window.dialog(toga.ErrorDialog("Error Occurred", message)))
 
         def global_sync_exception_handler(exc_type, exc_value, exc_traceback):
             traceback.print_exc()
-            app.loop.call_soon(main_window.dialog(toga.ErrorDialog("Error Occurred", str(exc_value))))
+            app.loop.call_soon(app.main_window.dialog(toga.ErrorDialog("Error Occurred", str(exc_value))))
 
         def global_thread_exception_handler(args):
             traceback.print_exc()
-            app.loop.call_soon(main_window.dialog(toga.ErrorDialog("Error Occurred", str(args.exc_value))))
+            app.loop.call_soon(app.main_window.dialog(toga.ErrorDialog("Error Occurred", str(args.exc_value))))
 
         # Set up standard Python thread hooks
         sys.excepthook = global_sync_exception_handler
@@ -96,7 +95,7 @@ class MyApp(toga.App):
             mw.content = app.proto.get_content()
         except Exception as e:
             traceback.print_exc()
-            app.loop.call_soon(main_window.dialog(toga.ErrorDialog("Error Occurred", str(e))))
+            app.loop.call_soon(app.main_window.dialog(toga.ErrorDialog("Error Occurred", str(e))))
         finally:
             if not app.main_window.visible:
                 mw.show()

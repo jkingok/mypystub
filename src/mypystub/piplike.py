@@ -1,14 +1,17 @@
 import importlib
 from importlib.metadata import distributions
 import importlib.util
-import os
 from pathlib import Path
 import re
 import shutil
 import sys
-import tomllib
 import zipfile
 
+# Use the modern native TOML parser
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib  # Fallback for older environments
 
 def get_bundled_app_packages() -> set[str]:
     """Scans the Briefcase app_packages directory on sys.path for installed package names."""
@@ -213,7 +216,7 @@ CORE_MANIFEST = {
 }
 
 def strict_manifest_preflight(prefix = None):
-    app_root = Path(__file__).resolve().parent
+    # app_root = Path(__file__).resolve().parent
     if not prefix:
         prefix = Path("~/Documents").expanduser()
     bootstrap_cache_dir = prefix / "wheels"
@@ -289,12 +292,6 @@ def strict_manifest_preflight(prefix = None):
     print("All internal core runtime dependencies verified clean.")
     print("========================================================\n")
     return True
-
-# Use the modern native TOML parser
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib  # Fallback for older environments
 
 def scan_all_prototypes(base_dir_path):
     compiled_items = []
