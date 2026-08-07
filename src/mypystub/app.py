@@ -14,6 +14,7 @@ import traceback
 
 from . import ui
 
+
 class LogRedirector:
     """
     Redirects Python stdout and stderr streams to both standard output and a persistent file log.
@@ -21,10 +22,11 @@ class LogRedirector:
     :param log_path: Path to target log file on disk.
     :type log_path: str | Path
     """
+
     def __init__(self, log_path):
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
         self.log_file = open(log_path, "a", encoding="utf-8", buffering=1)
-        self.terminal = sys.__stdout__ # both out and err end up in out
+        self.terminal = sys.__stdout__  # both out and err end up in out
 
     def write(self, message: str) -> None:
         """
@@ -42,6 +44,7 @@ class LogRedirector:
         """
         self.terminal.flush()
         self.log_file.flush()
+
 
 class MyApp(toga.App):
     """
@@ -64,15 +67,25 @@ class MyApp(toga.App):
             # exception = context.get("exception")
             message = context.get("message")
             traceback.print_exc()
-            app.loop.call_soon(app.main_window.dialog(toga.ErrorDialog("Error Occurred", message)))
+            app.loop.call_soon(
+                app.main_window.dialog(toga.ErrorDialog("Error Occurred", message))
+            )
 
         def global_sync_exception_handler(exc_type, exc_value, exc_traceback):
             traceback.print_exc()
-            app.loop.call_soon(app.main_window.dialog(toga.ErrorDialog("Error Occurred", str(exc_value))))
+            app.loop.call_soon(
+                app.main_window.dialog(
+                    toga.ErrorDialog("Error Occurred", str(exc_value))
+                )
+            )
 
         def global_thread_exception_handler(args):
             traceback.print_exc()
-            app.loop.call_soon(app.main_window.dialog(toga.ErrorDialog("Error Occurred", str(args.exc_value))))
+            app.loop.call_soon(
+                app.main_window.dialog(
+                    toga.ErrorDialog("Error Occurred", str(args.exc_value))
+                )
+            )
 
         # Set up standard Python thread hooks
         sys.excepthook = global_sync_exception_handler
@@ -83,7 +96,9 @@ class MyApp(toga.App):
         loop.set_exception_handler(global_async_exception_handler)
 
         try:
-            app.proto = ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))
+            app.proto = ui.Prototype(
+                host_app=app, on_done=lambda _: MyApp.unstack_from(app)
+            )
 
             t = getattr(app.proto, "title", app.formal_name)
             mw = app.main_window
@@ -95,7 +110,9 @@ class MyApp(toga.App):
             mw.content = app.proto.get_content()
         except Exception as e:
             traceback.print_exc()
-            app.loop.call_soon(app.main_window.dialog(toga.ErrorDialog("Error Occurred", str(e))))
+            app.loop.call_soon(
+                app.main_window.dialog(toga.ErrorDialog("Error Occurred", str(e)))
+            )
         finally:
             if not app.main_window.visible:
                 mw.show()
@@ -107,7 +124,10 @@ class MyApp(toga.App):
         :param app: Toga application instance.
         :type app: toga.App
         """
-        if hasattr(app.main_window, "content_stack") and len(app.main_window.content_stack) > 0:
+        if (
+            hasattr(app.main_window, "content_stack")
+            and len(app.main_window.content_stack) > 0
+        ):
             t, c = app.main_window.content_stack.pop()
             app.main_window.title = t
             app.main_window.content = c
@@ -147,7 +167,9 @@ def bootstrap_application():
     readme = user_documents_dir / "README"
     if not readme.exists():
         try:
-            readme.write_text("This folder is used for logging and customising this app.")
+            readme.write_text(
+                "This folder is used for logging and customising this app."
+            )
         except Exception as e:
             print(f"Failed to write placeholder: {e}")
 
@@ -158,13 +180,17 @@ def bootstrap_application():
         try:
             sys.path.insert(0, str(user_documents_dir))
             import patch_app
+
             print("Hot-patch workspace parsed and executed flawlessly.")
             return patch_app.main()
         except Exception as e:
             print(f"Hot-patch execution runtime failure: {e}")
-            print("Gracefully routing application boot back to compiled factory core...")
+            print(
+                "Gracefully routing application boot back to compiled factory core..."
+            )
 
     return MyApp()
+
 
 def main():
     """
