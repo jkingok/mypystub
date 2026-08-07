@@ -1,5 +1,17 @@
 # MyPyStub Release Notes
 
+## 0.0.2 (7 Aug 2026)
+
+* Start to implement development tooling
+* Catch more exceptions from running scripts for display
+* Do not install development versions of PyPI packages
+* Workaround for Liquid Glass issues on iPad
+* Basic Backup implementation (no restore yet)
+* Provide an (out-of-date) template for building a complex script (simple scripts are fine)
+* Add documentation
+* Add AI icon/splash
+* Improve PIP simulation
+
 ## 0.0.1 (21 Jun 2026)
 
 * Initial release

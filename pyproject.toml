@@ -18,7 +18,7 @@ icon = "assets/custom_icon.png"       # Relative path to this prototype's icon
 [tool.briefcase]
 project_name = "MyPyStub"
 bundle = "au.id.jking"
-version = "0.0.1"
+version = "0.0.2"
 url = "https://github.com/jkingok/mypystub"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]

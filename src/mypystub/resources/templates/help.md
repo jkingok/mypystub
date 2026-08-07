@@ -9,6 +9,10 @@ Or a more sophisticated UI using BeeWare's *Toga* can be used.
 
 _There are some important steps to integrating your own Toga script within the limitations of iOS, so I recommend you start with my template._
 
+Simple scripts _might_ work but long running ones can detect the Toga environment and understand that they are initially on a background thread.
+They can return to the main thread via the `asyncio` features. To gracefully hold control back rather than exiting the background thread early,
+hold it open with a `threading.Event`.
+
 The app is made up of the following views:
 
 ## List
