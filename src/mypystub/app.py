@@ -11,7 +11,8 @@ import sys
 import threading
 import toga
 import traceback
-
+from types import TracebackType
+from typing import Any
 from . import ui
 
 
@@ -23,9 +24,12 @@ class LogRedirector:
     :type log_path: str | Path
     """
 
-    def __init__(self, log_path):
-        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
-        self.log_file = open(log_path, "a", encoding="utf-8", buffering=1)
+    def __init__(self, log_path: Path):
+        """
+        Creates the log redirector that will duplicate output to the given log_path.
+        """
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.log_file = log_path.open(mode="a", buffering=1, encoding="utf-8")
         self.terminal = sys.__stdout__  # both out and err end up in out
 
     def write(self, message: str) -> None:
@@ -35,14 +39,16 @@ class LogRedirector:
         :param message: String output message.
         :type message: str
         """
-        self.terminal.write(message)
+        if self.terminal:
+            self.terminal.write(message)
         self.log_file.write(message)
 
     def flush(self) -> None:
         """
         Flushes terminal and log file buffers.
         """
-        self.terminal.flush()
+        if self.terminal:
+            self.terminal.flush()
         self.log_file.flush()
 
 
@@ -51,7 +57,7 @@ class MyApp(toga.App):
     Main Toga Application instance for Liveability.
     """
 
-    def startup_into(app, fresh: bool = False):
+    def startup_into(app, fresh: bool = False) -> None:
         """
         Constructs and presents the application main window and prototype layout.
 
@@ -63,28 +69,51 @@ class MyApp(toga.App):
         if fresh:
             app.main_window = toga.MainWindow(title=app.formal_name)
 
-        def global_async_exception_handler(loop, context):
-            # exception = context.get("exception")
-            message = context.get("message")
-            traceback.print_exc()
-            app.loop.call_soon(
-                app.main_window.dialog(toga.ErrorDialog("Error Occurred", message))
-            )
-
-        def global_sync_exception_handler(exc_type, exc_value, exc_traceback):
-            traceback.print_exc()
-            app.loop.call_soon(
+        def global_generic_exception_handler(
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            exc_traceback: TracebackType | None,
+            exc_message: str | None = None,
+        ) -> None:
+            """
+            Generic handler of uncaught exceptions into a Toga dialog via a threadsafe task.
+            """
+            if exc_traceback:
+                traceback.print_tb(exc_traceback)
+            app.loop.call_soon_threadsafe(
                 app.main_window.dialog(
-                    toga.ErrorDialog("Error Occurred", str(exc_value))
+                    toga.ErrorDialog(
+                        "Error Occurred", exc_message if exc_message else str(exc_value)
+                    )
                 )
             )
 
-        def global_thread_exception_handler(args):
-            traceback.print_exc()
-            app.loop.call_soon(
-                app.main_window.dialog(
-                    toga.ErrorDialog("Error Occurred", str(args.exc_value))
-                )
+        def global_async_exception_handler(
+            loop: asyncio.AbstractEventLoop, context: dict[str, Any]
+        ) -> None:
+            """
+            Trigger for uncaught exceptions via the asyncio event loop.
+            """
+            global_generic_exception_handler(
+                None, context.get("exception"), context.get("source_traceback")
+            )
+
+        def global_sync_exception_handler(
+            exc_type: type[BaseException],
+            exc_value: BaseException,
+            exc_traceback: TracebackType | None,
+        ) -> None:
+            """
+            Trigger for normal uncaught exceptions.
+            """
+            global_generic_exception_handler(exc_type, exc_value, exc_traceback)
+
+        def global_thread_exception_handler(args: threading.ExceptHookArgs) -> None:
+            """
+            Trigger for threaded uncaught exceptions.
+            """
+            global_generic_exception_handler(
+                args.exc_type, args.exc_value, args.exc_traceback
             )
 
         # Set up standard Python thread hooks
@@ -117,7 +146,7 @@ class MyApp(toga.App):
             if not app.main_window.visible:
                 mw.show()
 
-    def unstack_from(app):
+    def unstack_from(app: toga.App) -> None:
         """
         Pops and restores the previous window view layout from the content stack.
 
@@ -132,16 +161,16 @@ class MyApp(toga.App):
             app.main_window.title = t
             app.main_window.content = c
 
-    def startup(self):
+    def startup(self) -> None:
         """
         Standard Toga application startup callback. Initializes main window and UI content.
 
         :returns: Result of :meth:`startup_into`.
         """
-        return MyApp.startup_into(self, True)
+        MyApp.startup_into(self, True)
 
 
-def bootstrap_application():
+def bootstrap_application() -> Any:
     """
     Bootstraps the application environment on device launch.
 
@@ -192,7 +221,7 @@ def bootstrap_application():
     return MyApp()
 
 
-def main():
+def main() -> toga.App | None:
     """
     Application entry point called by Briefcase or __main__.py.
 

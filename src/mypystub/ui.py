@@ -1,5 +1,7 @@
 import asyncio
 from datetime import datetime
+from importlib.machinery import ModuleSpec
+import importlib.util
 import io
 from markdown import markdown as md
 from pathlib import Path
@@ -8,6 +10,8 @@ from rubicon.objc import ObjCClass
 import shutil
 import toga
 from toga.style import Pack
+from types import ModuleType
+from typing import Any, Callable, cast, Iterable, Mapping
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from . import hooks as h
@@ -17,7 +21,7 @@ from . import settings as s
 UIUserInterfaceIdiomPad = 1
 
 
-def is_ipad_from_window(toga_window) -> bool:
+def is_ipad_from_window(toga_window: toga.Window) -> bool:
     """Detects iPad idiom via the native UIWindow / UIViewController trait collection."""
     # Toga's underlying UIKit native object (UIWindow or UIViewController)
     native_obj = toga_window._impl.native
@@ -42,7 +46,7 @@ def zip_directory_to_bytes(source_dir: Path) -> bytes:
     return zip_buffer.getvalue()
 
 
-def create_nested_app_backup(app) -> Path:
+def create_nested_app_backup(app: toga.App) -> Path:
     """
     Creates a master backup zip containing data.zip and config.zip in memory,
     then writes the master file out to the app's cache directory.
@@ -93,7 +97,7 @@ NSURL = ObjCClass("NSURL")
 NSMutableArray = ObjCClass("NSMutableArray")
 
 
-def open_share_sheet(w, file_path: str):
+def open_share_sheet(w: toga.Widget, file_path: Path) -> None:
     """
     Opens the iOS native share sheet for a specific HTML file.
 
@@ -101,7 +105,7 @@ def open_share_sheet(w, file_path: str):
     :param file_path: Absolute string path to the local file.
     """
     # 1. Ensure the file path exists and convert it into a native file URL
-    absolute_path = str(Path(file_path).resolve())
+    absolute_path = str(file_path.resolve())
     file_url = NSURL.fileURLWithPath_(absolute_path)
 
     # 2. Add the URL asset into an Objective-C array of items to share
@@ -130,17 +134,17 @@ def open_share_sheet(w, file_path: str):
 
 
 class LabelledProgress(toga.Box):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.bar = toga.ProgressBar(flex=1)
         self.text = toga.Label("")
         super().__init__(direction="row", children=[self.bar, self.text], **kwargs)
 
-    def start(self, limit: int = 0):
+    def start(self, limit: int = 0) -> None:
         self.bar.max = limit if limit > 0 else None
         self.bar.start()
         self.update(0)
 
-    def update(self, value: int):
+    def update(self, value: int) -> None:
         if self.bar.max:
             if self.bar.max == 100:
                 self.text.text = f"{value}%"
@@ -150,29 +154,34 @@ class LabelledProgress(toga.Box):
             self.text.text = ""
         self.bar.value = value
 
-    def stop(self):
+    def stop(self) -> None:
         if self.bar.max:
             self.update(self.bar.max)
         self.bar.stop()
 
 
 class LabelledActivity(toga.Box):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.activity = toga.ActivityIndicator()
         self.text = toga.Label("", flex=1)
         super().__init__(direction="row", children=[self.activity, self.text], **kwargs)
 
-    def update(self, value: str = "", on: bool = True):
+    def update(self, value: str = "", on: bool = True) -> None:
         self.activity.start() if on else self.activity.stop()
         self.text.text = value
 
 
 class NotAnOptionContainer(toga.Box):
     class CurrentTab:
-        def __init__(self, text):
+        def __init__(self, text: str) -> None:
             self.text = text
 
-    def __init__(self, content, on_select=None, **kwargs):
+    def __init__(
+        self,
+        content: toga.Widget,
+        on_select: Callable[[toga.Widget], None] | None = None,
+        **kwargs: Any,
+    ) -> None:
         self.content = content
         self.on_selected = on_select
         super().__init__(
@@ -190,7 +199,7 @@ class NotAnOptionContainer(toga.Box):
         )
         self.swap_in_name(self.content[0][0])
 
-    def swap_in_name(self, t):
+    def swap_in_name(self, t: str) -> None:
         for tab in self.content:
             if tab[0] == t:
                 tab[1].style.flex = 1
@@ -200,20 +209,20 @@ class NotAnOptionContainer(toga.Box):
                     self.on_selected(self)
                 break
 
-    def swap_in(self, w):
+    def swap_in(self, w: toga.Widget) -> None:
         self.swap_in_name(w.text)
 
     @property
-    def current_tab(self):
+    def current_tab(self) -> CurrentTab:
         return self._current_tab
 
     @current_tab.setter
-    def current_tab(self, value):
+    def current_tab(self, value: str) -> None:
         self.swap_in_name(value)
 
 
 class Prototype:
-    def __init__(self, host_app, on_done):
+    def __init__(self, host_app: toga.App, on_done: Callable[[Any], None]) -> None:
         self.app = host_app
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Launcher"  # host_app.formal_name
@@ -255,13 +264,18 @@ class Prototype:
             # data=self.reload_menu()
         )
 
-    async def todo(self, name):
+    async def todo(self, name: str) -> None:
         await self.app.main_window.dialog(toga.InfoDialog("TODO", name))
 
-    async def info(self, text):
+    async def info(self, text: str) -> None:
         await self.app.main_window.dialog(toga.InfoDialog("Info", text))
 
-    def close_keyboard(self, widget):
+    async def error(self, text: str, title: str | None = None) -> None:
+        await self.app.main_window.dialog(
+            toga.ErrorDialog(title if title else "Error", text)
+        )
+
+    def close_keyboard(self, widget: toga.Widget) -> None:
         """Triggered when the user presses 'Return' or 'Done' on the iPad keyboard."""
         # Dismiss the keyboard by resigning First Responder status
         try:
@@ -276,13 +290,15 @@ class Prototype:
             # Graceful fallback for macOS/Windows desktop development runners
             print(f"[Platform Fallback] Could not reach native interface: {e}")
 
-    def reload_logs(self, widget=None):
+    def reload_logs(self, widget: toga.Widget | None = None) -> str:
         logs = (self.data_path / "app_runtime.log").read_text()
         if widget:
             widget.app.widgets["log_text"].value = logs
         return logs
 
-    def reload_menu(self, widget=None):
+    def reload_menu(
+        self, widget: toga.Widget | None = None
+    ) -> Iterable[Mapping[str, Any]]:
         # 1. Gather all of our TOML configuration profiles
         self.prototypes_data = pip.scan_all_prototypes(self.prototype_dir)
 
@@ -312,15 +328,15 @@ class Prototype:
             widget.data = list_items
         return list_items
 
-    def new_project(self, widget=None):
-        def snake(s):
+    def new_project(self, widget: toga.Widget | None = None) -> None:
+        def snake(s: str) -> str:
             return "_".join(s.lower().split())
 
         project_name = self.app.widgets["new_project_name"].value
         template_zip = self.template_path / "my_template.zip"
         target = self.data_path / snake(project_name)
 
-        def do_new_project():
+        def do_new_project() -> None:
             target.mkdir(parents=True, exist_ok=True)
 
             from zipfile import ZipFile
@@ -332,10 +348,10 @@ class Prototype:
 
             original = "My Template"
 
-            def pascal(s):
+            def pascal(s: str) -> str:
                 return "".join(s.split())
 
-            def running(s):
+            def running(s: str) -> str:
                 return "".join(s.lower().split())
 
             for old, new in [
@@ -377,13 +393,20 @@ class Prototype:
         else:
             do_new_project()
 
-    def start(self, s, m):
+    def end_script(self) -> None:
+        self.script_activity.update(on=False)
+        self.splash.image = None
+        if not self.print_text.value:
+            self.splash.tabs.current_tab = "List"
+
+    def start(self, s: ModuleSpec, m: ModuleType) -> None:
         print("Starting...")
 
-        def script(spec, module):
+        def script(spec: ModuleSpec, module: ModuleType) -> None:
             # Execute the module code so classes are defined
             try:
-                spec.loader.exec_module(module)
+                if spec and spec.loader:
+                    spec.loader.exec_module(module)
                 # Some modules need a nudge...
                 if hasattr(module, "main"):
                     module.main()
@@ -396,24 +419,14 @@ class Prototype:
                     )
                 )
             finally:
-                self.app.loop.call_soon_threadsafe(
-                    lambda: (
-                        self.script_activity.update(on=False),
-                        setattr(self.splash, "image", None),
-                        (
-                            setattr(self.tabs, "current_tab", "List")
-                            if not self.print_text.value
-                            else None
-                        ),
-                    )
-                )
+                self.app.loop.call_soon_threadsafe(self.end_script)
 
-        self.script_runner.run_student_script(lambda s=s, m=m: script(s, m))
+        self.script_runner.run_student_script(
+            cast(Callable[[], None], lambda s=s, m=m: script(s, m))
+        )
 
-    def handle_row_selection(self, widget):
+    def handle_row_selection(self, widget: toga.DetailedList) -> None:
         """Triggered automatically when an iOS row is tapped."""
-        import importlib.util
-
         # Grab the currently selected row data dictionary
         selected_row = widget.selection
         if not selected_row:
@@ -446,33 +459,34 @@ class Prototype:
             spec = importlib.util.spec_from_file_location(
                 module_name,
                 selected_file_path,
-                submodule_search_locations=(
+                submodule_search_locations=[
                     folder_path,
-                    selected_file_path.parent,
-                ),
+                    str(selected_file_path.parent),
+                ],
             )
-            module = importlib.util.module_from_spec(spec)
+            if spec:
+                module = importlib.util.module_from_spec(spec)
 
-            self.print_text.value = ""
-            if selected_row.icon:
-                self.splash.image = selected_row.icon
-                self.splash.style.flex = 1
-                self.script_scroll.style.flex = 0
-            self.app.widgets["tabs"].current_tab = "Script"
-            self.script_activity.update(f"Running {selected_row.title}")
-            self.app.loop.call_soon(lambda s=spec, m=module: self.start(s, m))
+                self.print_text.value = ""
+                if selected_row.icon:
+                    self.splash.image = selected_row.icon
+                    self.splash.style.flex = 1
+                    self.script_scroll.style.flex = 0
+                self.app.widgets["tabs"].current_tab = "Script"
+                self.script_activity.update(f"Running {selected_row.title}")
+                self.app.loop.call_soon(lambda s=spec, m=module: self.start(s, m))
         except Exception as e:
-            self.app.main_window.error_dialog(
-                "Load Failure", f"Failed to execute script:\n{str(e)}"
+            asyncio.create_task(
+                self.error(f"Failed to execute script:\n{str(e)}", "Load Failure")
             )
 
-    def clear_logs(self, widget=None):
+    def clear_logs(self, widget: toga.Widget | None = None) -> None:
         (self.data_path / "app_runtime.log").unlink()
         self.app.main_window.info_dialog(
             "Logs Cleared", "You will need to close and re-open the app."
         )
 
-    def tab_changed(self, widget):
+    def tab_changed(self, widget: toga.Widget) -> None:
         if t := widget.current_tab:
             match t.text:
                 case "List":
@@ -480,24 +494,24 @@ class Prototype:
                 case "Logs":
                     self.reload_logs(widget)
 
-    def pad_keyboard(self, on):
+    def pad_keyboard(self, on: bool) -> None:
         # keyboard_box.style.visibility = "visible" if on else "hidden"
         self.app.widgets["keyboard_box"].style.flex = 1 if on else 0
 
-    def toggle_input(self, on):
+    def toggle_input(self, on: bool) -> None:
         if on:
             self.app.widgets["script_box"].insert(0, self.input_box)
         elif self.input_box:
             self.app.widgets["script_box"].remove(self.input_box)
         self.pad_keyboard(on)
 
-    def toggle_print(self, on):
+    def toggle_print(self, on: bool) -> None:
         if on:
             self.splash.style.flex = 0
             self.script_scroll.style.flex = 1
 
     # Inside your Toga App class layout or commands:
-    def handle_backup_press(self, widget):
+    def handle_backup_press(self, widget: toga.Widget) -> None:
         try:
             # 1. Build the nested structured zip
             backup_file = create_nested_app_backup(self.app)
@@ -506,21 +520,24 @@ class Prototype:
             open_share_sheet(widget, backup_file)
 
         except Exception as e:
-            self.main_window.error_dialog(
-                "Backup Failed", f"An error occurred while creating the archive: {e}"
+            asyncio.create_task(
+                self.error(
+                    f"An error occurred while creating the archive: {e}",
+                    "Backup Failed",
+                )
             )
 
-    def handle_wipe_cache(self, widget):
+    def handle_wipe_cache(self, widget: toga.Widget | None) -> None:
         for f in Path(self.app.paths.cache).iterdir():
             print(f)
 
-    def choose_container(self, *args, **kwargs):
+    def choose_container(self, *args: Any, **kwargs: Any) -> toga.Widget:
         if is_ipad_from_window(self.app.main_window):
             return NotAnOptionContainer(*args, **kwargs)
         else:
             return toga.OptionContainer(*args, **kwargs)
 
-    def get_content(self):
+    def get_content(self) -> toga.Widget:
         # return toga.OptionContainer(
         self.tabs = self.choose_container(
             id="tabs",

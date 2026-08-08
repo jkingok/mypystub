@@ -1,6 +1,9 @@
 from pathlib import Path
 import shutil
+from toga.paths import Paths
 import tomlkit  # Pure-Python style-preserving library
+from tomlkit.toml_document import TOMLDocument as TOMLDocument
+from typing import Any, Self
 
 DEFAULTS_NAME = "config.toml"
 CONFIG_NAME = "launcher.toml"
@@ -8,8 +11,9 @@ CONFIG_NAME = "launcher.toml"
 
 class Settings:
     _instance = None
+    _initialized = False
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls._instance is None:
             # Create the single instance and cache it on the class
             cls._instance = super().__new__(cls)
@@ -17,7 +21,7 @@ class Settings:
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, paths):
+    def __init__(self, paths: Paths):
         # __init__ runs EVERY time you call,
         # so guard it to ensure it only initializes once.
         if self._initialized:
@@ -28,23 +32,22 @@ class Settings:
         self.config_defaults = (
             self.this_path / "resources" / "templates" / DEFAULTS_NAME
         )
-        self.config_doc = None
-        self.load()
+        self.config_doc = self._load()
         self._initialized = True
 
-    def load(self):
+    def _load(self) -> TOMLDocument:
         if not self.config_file.exists():
             shutil.copy(self.config_defaults, self.config_file)
         with open(self.config_file, "r", encoding="utf-8") as f:
-            self.config_doc = tomlkit.load(f)
+            return tomlkit.load(f)
 
-    def save(self):
+    def _save(self) -> None:
         self.config_file.write_text(tomlkit.dumps(self.config_doc))
 
-    def get(self, k):
-        self.load()  # allow on disk changes
+    def get(self, k: str) -> str:
+        self.config_doc = self._load()  # allow on disk changes
         return self.config_doc[k]
 
-    def set(self, k, v):
+    def set(self, k: str, v: str) -> None:
         self.config_doc[k] = v
-        self.save()  # preserve immediately
+        self._save()  # preserve immediately

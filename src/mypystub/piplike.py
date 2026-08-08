@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shutil
 import sys
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 import zipfile
 
 # Use the modern native TOML parser
@@ -33,36 +34,49 @@ def get_bundled_app_packages() -> set[str]:
     return bundled_names
 
 
-def get_pip():
+def get_pip() -> Callable[[list[str], str], None]:
     from resolvelib import BaseReporter, Resolver
-    from resolvelib.providers import AbstractProvider
+    from resolvelib.providers import AbstractProvider, Preference
+    from resolvelib.structs import CT, KT, Matches, RT, RequirementInformation
     from unearth import PackageFinder, TargetPython
 
     # -------------------------------------------------------------------------
     # 1. Define the Resolvelib Provider using Unearth's Finder
     # -------------------------------------------------------------------------
     class LauncherDependencyProvider(AbstractProvider):
-        def __init__(self, finder: PackageFinder):
+        def __init__(self, finder: PackageFinder) -> None:
             self.finder = finder
 
-        def identify(self, requirement_or_candidate):
+        def identify(self, requirement_or_candidate: RT | CT) -> KT:
             # Requirements are usually strings or unearth Requirement objects
             return requirement_or_candidate
 
         def get_preference(
-            self, identifier, resolutions, candidates, information, backtrack_causes
-        ):
+            self,
+            identifier: KT,
+            resolutions: Mapping[KT, CT],
+            candidates: Mapping[KT, Iterator[CT]],
+            information: Mapping[KT, Iterator[RequirementInformation[RT, CT]]],
+            backtrack_causes: Sequence[RequirementInformation[RT, CT]],
+        ) -> Preference:
             # Extract the sequence for this identifier from the candidates map
-            current_candidates = candidates.get(identifier, [])
+            if current_candidates := candidates.get(identifier):
+                # TODO Still needed?
+                # If it's an itertools.chain object or an iterator, convert it to a list
+                # so Python can safely evaluate its length
+                # if not isinstance(current_candidates, (list, tuple)):
+                #    current_candidates = list(current_candidates)
 
-            # If it's an itertools.chain object or an iterator, convert it to a list
-            # so Python can safely evaluate its length
-            if not isinstance(current_candidates, (list, tuple)):
-                current_candidates = list(current_candidates)
+                return len(list(current_candidates))
+            else:
+                return 0
 
-            return len(current_candidates)
-
-        def find_matches(self, identifier, requirements, incompatibilities):
+        def find_matches(
+            self,
+            identifier: KT,
+            requirements: Mapping[KT, Iterator[RT]],
+            incompatibilities: Mapping[KT, Iterator[CT]],
+        ) -> Matches[CT]:
             # 1. Gather all potential release matches for this package ID
             all_matches = self.finder.find_matches(identifier, allow_prereleases=False)
 
@@ -81,11 +95,11 @@ def get_pip():
             print(f"⚠️ Warning: No compatible pure-Python .whl found for {identifier}!")
             return []
 
-        def is_satisfied_by(self, requirement, candidate):
+        def is_satisfied_by(self, requirement: RT, candidate: CT) -> bool:
             # Simplified validation matching version strings
             return True
 
-        def get_dependencies(self, candidate):
+        def get_dependencies(self, candidate: CT) -> Iterable[RT]:
             # candidate is the unearth 'Package' object pinned by the resolver.
             # We spin up unearth's internal metadata provider to read its requirements array cleanly.
             try:
@@ -98,7 +112,7 @@ def get_pip():
     # -------------------------------------------------------------------------
     # 2. Main Pip-Like Downloader Engine
     # -------------------------------------------------------------------------
-    def sync_launcher_dependencies(dependencies: list, output_dir: str):
+    def sync_launcher_dependencies(dependencies: list[str], output_dir: str) -> None:
         target_path = Path(output_dir)
         target_path.mkdir(parents=True, exist_ok=True)
 
@@ -184,7 +198,9 @@ def get_pip():
         shutil.rmtree(download_cache)
         print("✅ Complete! All packages available in target workspace.")
 
-    def sync_launcher_dependencies_via_toml(pyproject_path: str, output_dir: str):
+    def sync_launcher_dependencies_via_toml(
+        pyproject_path: str, output_dir: str
+    ) -> None:
         pyproject = Path(pyproject_path)
 
         # A. Read dependencies from pyproject.toml
@@ -220,12 +236,11 @@ CORE_MANIFEST = {
 }
 
 
-def strict_manifest_preflight(prefix=None):
+def strict_manifest_preflight(prefix: str | None = None) -> bool:
     # app_root = Path(__file__).resolve().parent
-    if not prefix:
-        prefix = Path("~/Documents").expanduser()
-    bootstrap_cache_dir = prefix / "wheels"
-    target_user_packages = prefix / "site_packages"
+    prefix_path = Path(prefix) if prefix else Path("~/Documents").expanduser()
+    bootstrap_cache_dir = prefix_path / "wheels"
+    target_user_packages = prefix_path / "site_packages"
 
     # Ensure local path is mapped
     target_user_packages.mkdir(parents=True, exist_ok=True)
@@ -309,15 +324,15 @@ def strict_manifest_preflight(prefix=None):
     return True
 
 
-def scan_all_prototypes(base_dir_path):
-    compiled_items = []
-    base_dir = Path(base_dir_path)
+def scan_all_prototypes(base_dir: str) -> Iterable[Mapping[str, Any]]:
+    compiled_items: list[Mapping[str, Any]] = []
+    base_dir_path = Path(base_dir)
 
-    if not base_dir.exists():
+    if not base_dir_path.exists():
         return compiled_items
 
     # Loop through everything inside the directory
-    for item in sorted(base_dir.iterdir(), key=lambda x: x.name.lower()):
+    for item in sorted(base_dir_path.iterdir(), key=lambda x: x.name.lower()):
         # Skip hidden files/folders (like .DS_Store or system bits)
         if item.name.startswith("."):
             continue
