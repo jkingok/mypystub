@@ -32,6 +32,10 @@ class LogRedirector:
         self.log_file = log_path.open(mode="a", buffering=1, encoding="utf-8")
         self.terminal = sys.__stdout__  # both out and err end up in out
 
+    def isatty(self) -> bool:
+        # Hopefully this only prevents fancy not all input!
+        return False
+
     def write(self, message: str) -> None:
         """
         Writes a message string to terminal stdout and log file simultaneously.

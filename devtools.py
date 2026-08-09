@@ -12,6 +12,8 @@ def resolve_target_dir() -> Path:
         target = Path(sys.argv[1]).resolve()
         # Remove path argument so downstream tools inspecting sys.argv don't break
         sys.argv.pop(1)
+    elif sys.platform == "ios":
+        target = (Path("~/Documents").expanduser() / input("Path to code?")).resolve()
     else:
         target = Path.cwd().resolve()
 
@@ -62,6 +64,51 @@ def main():
     print("    Passed: Bytecode compilation\n")
 
     # ------------------------------------------------------------------
+    # 2. AUTO-TYPE: In-process type inference via LibCST
+    # ------------------------------------------------------------------
+    def run_autotyping():
+        import libcst as cst
+        from autotyping.autotyping import AutotypingCommand
+        from libcst.codemod import CodemodContext
+
+        modified_count = 0
+        for py_file in target_dir.rglob("*.py"):
+            if any(part.startswith(".") for part in py_file.parts):
+                continue
+
+            source_code = py_file.read_text(encoding="utf-8")
+            try:
+                module = cst.parse_module(source_code)
+                context = CodemodContext()
+
+                # Configure autotyping transformations (safe heuristics)
+                transform = AutotypingCommand(
+                    context,
+                    none_return=True,  # Adds -> None to functions with no return statement
+                    scalar_return=True,  # Annotates returns of literal primitives (str, int, bool)
+                    bool_param=True,  # Annotates params with default=True/False as : bool
+                    int_param=True,
+                    str_param=True,
+                )
+
+                new_module = transform.transform_module(module)
+                if new_module.code != source_code:
+                    py_file.write_text(new_module.code, encoding="utf-8")
+                    modified_count += 1
+            except Exception:
+                # If a file fails parsing here, compileall or mypy will catch it
+                continue
+
+        print(f"    Autotyping modified {modified_count} file(s).")
+
+    # TODO Disable when no Rust available
+    # run_strict_step(
+    #    "autotyping",
+    #    "[2/6] Auto-inserting baseline type hints (Autotyping)",
+    #    run_autotyping,
+    # )
+
+    # ------------------------------------------------------------------
     # 3. FORMAT: In-place code formatting (Black)
     # ------------------------------------------------------------------
     def run_black():
@@ -80,7 +127,7 @@ def main():
             verbose=False,
             quiet=False,
         ):
-            if formatted := black.format_file_in_place(
+            if black.format_file_in_place(
                 py_file, fast=False, mode=mode, write_back=black.WriteBack.YES
             ):
                 print(f"changed {py_file}")
@@ -109,29 +156,28 @@ def main():
         if exit_status != 0:
             raise RuntimeError("Missing or incomplete type annotations found.")
 
-    run_strict_step(
-        "mypy", "[4/6] Omission Check: Type Hints (Mypy)", check_type_omissions
-    )
+    if sys.platform != "ios":
+        run_strict_step(
+            "mypy", "[4/6] Omission Check: Type Hints (Mypy)", check_type_omissions
+        )
 
     def check_docstring_omissions():
         from interrogate import coverage
 
         cov = coverage.InterrogateCoverage(paths=[str(target_dir)])
         results = cov.get_coverage()
-        print(
-            f"    Docstring Coverage: ({results.covered}/{results.total})"
-        )
+        print(f"    Docstring Coverage: ({results.covered}/{results.total})")
         if results.missing > 0:
             cov.print_results(results, None, 2)
             raise RuntimeError(
                 f"{results.missing} items missing docstrings (target: 100%)."
             )
 
-    #run_strict_step(
+    # run_strict_step(
     #    "interrogate",
     #    "[4/6] Omission Check: Docstrings (Interrogate)",
     #    check_docstring_omissions,
-    #)
+    # )
 
     # ------------------------------------------------------------------
     # 5. LINT: Logic & Style errors
@@ -156,14 +202,17 @@ def main():
 
             def unexpectedError(self, filename, msg):
                 self.count += 1
+                print(f"{filename}: {msg}")
                 super().unexpectedError(filename, msg)
 
             def syntaxError(self, filename, msg, lineno, offset, text):
                 self.count += 1
+                print(f"{filename} L{lineno}: {msg}")
                 super().syntaxError(filename, msg, lineno, offset, text)
 
             def flake(self, message):
                 self.count += 1
+                print(f"{message}")
                 super().flake(message)
 
         reporter = CounterReporter(sys.stdout, sys.stderr)
@@ -171,10 +220,21 @@ def main():
         if reporter.count > 0:
             raise RuntimeError(f"Pyflakes reported {reporter.count} issue(s).")
 
-    if importlib.util.find_spec("flake8"):
+    def run_pycodestyle():
+        import pycodestyle
+
+        if (
+            count := pycodestyle.StyleGuide(max_line_length=88, ignore=["E501", "W503"])
+            .check_files([str(target_dir)])
+            .total_errors
+        ) > 0:
+            raise RuntimeError(f"PyCodeStyle reported {count} issue(s).")
+
+    if sys.platform != "ios" and importlib.util.find_spec("flake8"):
         run_strict_step("flake8", "[5/6] Linting (Flake8)", run_flake8)
     else:
         run_strict_step("pyflakes", "[5/6] Linting (Pyflakes)", run_pyflakes)
+        run_strict_step("pycodestyle", "[5/6] Linting (PyCodeStyle]", run_pycodestyle)
 
     # ------------------------------------------------------------------
     # 6. GENERATE DOCS: Extract HTML API documentation (pdoc)
@@ -193,5 +253,5 @@ def main():
     print("=" * 60)
 
 
-if __name__ == "__main__":
+if sys.platform == "ios" or __name__ == "__main__":
     main()
