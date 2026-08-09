@@ -3,9 +3,9 @@ from datetime import datetime
 from importlib.machinery import ModuleSpec
 import importlib.util
 import io
+import sys
 from markdown import markdown as md
 from pathlib import Path
-from rubicon.objc import ObjCClass
 
 import shutil
 import toga
@@ -24,10 +24,7 @@ UIUserInterfaceIdiomPad = 1
 def is_ipad_from_window(toga_window: toga.Window) -> bool:
     """Detects iPad idiom via the native UIWindow / UIViewController trait collection."""
     # Toga's underlying UIKit native object (UIWindow or UIViewController)
-    native_obj = toga_window._impl.native
-
-    # Query the trait collection's idiom
-    return native_obj.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad
+    return sys.platform == "ios" and toga_window._impl.native.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad # pyright: ignore[reportPrivateUsage]
 
 
 def zip_directory_to_bytes(source_dir: Path) -> bytes:
@@ -90,13 +87,6 @@ def create_nested_app_backup(app: toga.App) -> Path:
     print(f"Structured master archive created at: {master_zip_path}")
     return master_zip_path
 
-
-# Load the required Objective-C classes
-UIActivityViewController = ObjCClass("UIActivityViewController")
-NSURL = ObjCClass("NSURL")
-NSMutableArray = ObjCClass("NSMutableArray")
-
-
 def open_share_sheet(w: toga.Widget, file_path: Path) -> None:
     """
     Opens the iOS native share sheet for a specific HTML file.
@@ -104,33 +94,42 @@ def open_share_sheet(w: toga.Widget, file_path: Path) -> None:
     :param w: The active Toga widget instance initiating the share.
     :param file_path: Absolute string path to the local file.
     """
-    # 1. Ensure the file path exists and convert it into a native file URL
-    absolute_path = str(file_path.resolve())
-    file_url = NSURL.fileURLWithPath_(absolute_path)
+    if sys.platform == "ios":
+        from rubicon.objc import ObjCClass
 
-    # 2. Add the URL asset into an Objective-C array of items to share
-    share_items = NSMutableArray.alloc().init()
-    share_items.addObject_(file_url)
+        # Load the required Objective-C classes
+        UIActivityViewController = ObjCClass("UIActivityViewController")
+        NSURL = ObjCClass("NSURL")
+        NSMutableArray = ObjCClass("NSMutableArray")
+        # 1. Ensure the file path exists and convert it into a native file URL
+        absolute_path = str(file_path.resolve())
+        file_url = NSURL.fileURLWithPath_(absolute_path)
 
-    # 3. Initialize the native UIActivityViewController
-    # Pass None for custom applicationActivities to use standard system defaults
-    activity_vc = UIActivityViewController.alloc().initWithActivityItems(
-        share_items, applicationActivities=None
-    )
+        # 2. Add the URL asset into an Objective-C array of items to share
+        share_items = NSMutableArray.alloc().init()
+        share_items.addObject_(file_url)
 
-    # 4. Grab the native UIViewController backing your Toga Window
-    presenting_vc = w.app.main_window._impl.native.rootViewController
+        # 3. Initialize the native UIActivityViewController
+        # Pass None for custom applicationActivities to use standard system defaults
+        activity_vc = UIActivityViewController.alloc().initWithActivityItems(
+            share_items, applicationActivities=None
+        )
 
-    # 5. Handle iPad popover configurations safely to prevent crashes
-    if activity_vc.popoverPresentationController:
-        # Anchor the popover menu to the center or bounds of the current view frame
-        activity_vc.popoverPresentationController.sourceView = presenting_vc.view
-        activity_vc.popoverPresentationController.sourceRect = presenting_vc.view.bounds
-        # Optional: restrict arrow directions if needed
-        # activity_vc.popoverPresentationController.permittedArrowDirections = 0
+        # 4. Grab the native UIViewController backing your Toga Window
+        if w.app and w.app.main_window:
+            assert isinstance(w.app.main_window, toga.MainWindow)
+            presenting_vc = w.app.main_window._impl.native.rootViewController
 
-    # 6. Present the share sheet asynchronously over the top of the interface
-    presenting_vc.presentViewController(activity_vc, animated=True, completion=None)
+            # 5. Handle iPad popover configurations safely to prevent crashes
+            if activity_vc.popoverPresentationController:
+                # Anchor the popover menu to the center or bounds of the current view frame
+                activity_vc.popoverPresentationController.sourceView = presenting_vc.view
+                activity_vc.popoverPresentationController.sourceRect = presenting_vc.view.bounds
+                # Optional: restrict arrow directions if needed
+                # activity_vc.popoverPresentationController.permittedArrowDirections = 0
+
+            # 6. Present the share sheet asynchronously over the top of the interface
+            presenting_vc.presentViewController(activity_vc, animated=True, completion=None)
 
 
 class LabelledProgress(toga.Box):
@@ -156,12 +155,12 @@ class LabelledProgress(toga.Box):
 
     def stop(self) -> None:
         if self.bar.max:
-            self.update(self.bar.max)
+            self.update(int(self.bar.max))
         self.bar.stop()
 
 
 class LabelledActivity(toga.Box):
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, **kwargs) -> None:
         self.activity = toga.ActivityIndicator()
         self.text = toga.Label("", flex=1)
         super().__init__(direction="row", children=[self.activity, self.text], **kwargs)
@@ -190,7 +189,7 @@ class NotAnOptionContainer(toga.Box):
                 toga.Column(flex=1),
                 toga.Row(
                     children=[
-                        toga.Button(tab[0], on_press=self.swap_in, flex=1)
+                        toga.Button(tab[0], on_press=self.swap_in, flex=1) # type: ignore[arg-type]
                         for tab in content
                     ]
                 ),
@@ -209,7 +208,7 @@ class NotAnOptionContainer(toga.Box):
                     self.on_selected(self)
                 break
 
-    def swap_in(self, w: toga.Widget) -> None:
+    def swap_in(self, w: toga.Button, **kwargs: Any) -> None:
         self.swap_in_name(w.text)
 
     @property
@@ -226,7 +225,7 @@ class Prototype:
         self.app = host_app
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Launcher"  # host_app.formal_name
-        self.app.settings = s.Settings(host_app.paths)
+        setattr(self.app, "settings", s.Settings(host_app.paths))
         self.cache_path = self.app.paths.cache
         self.data_path = self.app.paths.data
         self.this_path = Path(__file__).resolve().parent
@@ -237,8 +236,8 @@ class Prototype:
         self.input_prompt = toga.Label("Input")
         self.input_text = toga.TextInput(
             style=Pack(flex=1),
-            on_gain_focus=lambda m: self.pad_keyboard(True),
-            on_lose_focus=lambda m: self.pad_keyboard(False),
+            on_gain_focus=self.gain_focus,
+            on_lose_focus=self.lose_focus,
         )
         self.input_box = toga.Column(
             children=[self.input_prompt, self.input_text], text_align="center"
@@ -263,19 +262,36 @@ class Prototype:
             style=Pack(flex=1),
             # data=self.reload_menu()
         )
+        self.log_text = toga.MultilineTextInput(
+                                    readonly=True,
+                                    style=Pack(flex=1),
+                                )
 
     async def todo(self, name: str) -> None:
+        assert isinstance(self.app.main_window, toga.MainWindow)
         await self.app.main_window.dialog(toga.InfoDialog("TODO", name))
 
-    async def info(self, text: str) -> None:
-        await self.app.main_window.dialog(toga.InfoDialog("Info", text))
+    async def info(self, text: str, title: str | None = None) -> None:
+        assert isinstance(self.app.main_window, toga.MainWindow)
+        await self.app.main_window.dialog(toga.InfoDialog(title if title else "Info", text))
 
     async def error(self, text: str, title: str | None = None) -> None:
+        assert isinstance(self.app.main_window, toga.MainWindow)
         await self.app.main_window.dialog(
             toga.ErrorDialog(title if title else "Error", text)
         )
 
-    def close_keyboard(self, widget: toga.Widget) -> None:
+    async def question(self, text: str, title: str | None = None, positive: Callable[[], None] | None = None, negative: Callable[[], None] | None = None) -> None:
+        assert isinstance(self.app.main_window, toga.MainWindow)
+        if await self.app.main_window.dialog(
+            toga.QuestionDialog(title if title else "Question", text)):
+            if positive:
+                positive()
+        else:
+            if negative:
+                negative()
+
+    def close_keyboard(self, widget: toga.TextInput, **kwargs: Any) -> None:
         """Triggered when the user presses 'Return' or 'Done' on the iPad keyboard."""
         # Dismiss the keyboard by resigning First Responder status
         try:
@@ -290,15 +306,13 @@ class Prototype:
             # Graceful fallback for macOS/Windows desktop development runners
             print(f"[Platform Fallback] Could not reach native interface: {e}")
 
-    def reload_logs(self, widget: toga.Widget | None = None) -> str:
+    def reload_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         logs = (self.data_path / "app_runtime.log").read_text()
-        if widget:
-            widget.app.widgets["log_text"].value = logs
-        return logs
+        self.log_text.value = logs
 
     def reload_menu(
-        self, widget: toga.Widget | None = None
-    ) -> Iterable[Mapping[str, Any]]:
+        self, widget: toga.DetailedList, **kwargs: Any
+    ) -> None:
         # 1. Gather all of our TOML configuration profiles
         self.prototypes_data = pip.scan_all_prototypes(self.prototype_dir)
 
@@ -324,11 +338,9 @@ class Prototype:
                 }
             )
 
-        if widget:
-            widget.data = list_items
-        return list_items
+        widget.data = list_items # type: ignore[assignment]
 
-    def new_project(self, widget: toga.Widget | None = None) -> None:
+    def new_project(self, widget: toga.Button, **kwargs: Any) -> None:
         def snake(s: str) -> str:
             return "_".join(s.lower().split())
 
@@ -383,13 +395,7 @@ class Prototype:
             asyncio.create_task(self.info(f"Created new project {project_name}"))
 
         if target.exists():
-            asyncio.create_task(
-                self.app.main_window.dialog(
-                    toga.QuestionDialog(
-                        "Folder Exists", f"Replace existing {snake(project_name)}?"
-                    )
-                )
-            ).add_done_callback(lambda t: do_new_project() if t.result() else None)
+            asyncio.create_task(self.question(f"Replace existing {snake(project_name)}?", "Folder Exists", do_new_project))
         else:
             do_new_project()
 
@@ -411,13 +417,7 @@ class Prototype:
                 if hasattr(module, "main"):
                     module.main()
             except Exception as e:
-                self.app.loop.create_task(
-                    self.app.main_window.dialog(
-                        toga.ErrorDialog(
-                            "Script Failure", f"Script failed with: {str(e)}"
-                        )
-                    )
-                )
+                asyncio.create_task(self.error(f"Script failed with: {str(e)}", "Script Failure"))
             finally:
                 self.app.loop.call_soon_threadsafe(self.end_script)
 
@@ -425,7 +425,7 @@ class Prototype:
             cast(Callable[[], None], lambda s=s, m=m: script(s, m))
         )
 
-    def handle_row_selection(self, widget: toga.DetailedList) -> None:
+    def handle_row_selection(self, widget: toga.DetailedList, **kwargs: Any) -> None:
         """Triggered automatically when an iOS row is tapped."""
         # Grab the currently selected row data dictionary
         selected_row = widget.selection
@@ -444,14 +444,14 @@ class Prototype:
         # 3. Proceed to mount the folder root and load the module
         import sys
 
-        folder_path = str(selected_row.folder_root)
+        folder_path = str(getattr(selected_row, "folder_root", Path(".")).resolve())
         if folder_path not in sys.path:
             sys.path.insert(0, folder_path)
         print(f"import path: {sys.path}")
 
         # Clear out status title alterations and execute
-        print(f"Launching {selected_row.title} from path: {selected_row.entry_point}")
-        selected_file_path = Path(selected_row.entry_point)
+        print(f"Launching {getattr(selected_row, "title")} from path: {getattr(selected_row, "entry_point")}")
+        selected_file_path = Path(getattr(selected_row, "entry_point"))
 
         try:
             # Dynamically load the python module from an arbitrary path
@@ -468,23 +468,22 @@ class Prototype:
                 module = importlib.util.module_from_spec(spec)
 
                 self.print_text.value = ""
-                if selected_row.icon:
-                    self.splash.image = selected_row.icon
+                if icon := getattr(selected_row, "icon", None):
+                    self.splash.image = icon
                     self.splash.style.flex = 1
                     self.script_scroll.style.flex = 0
                 self.app.widgets["tabs"].current_tab = "Script"
-                self.script_activity.update(f"Running {selected_row.title}")
-                self.app.loop.call_soon(lambda s=spec, m=module: self.start(s, m))
+                self.script_activity.update(f"Running {getattr(selected_row, 'title', "script")}")
+                self.app.loop.call_soon(cast(Callable[[], None], lambda s=spec, m=module: self.start(s, m)))
         except Exception as e:
             asyncio.create_task(
                 self.error(f"Failed to execute script:\n{str(e)}", "Load Failure")
             )
 
-    def clear_logs(self, widget: toga.Widget | None = None) -> None:
+    def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         (self.data_path / "app_runtime.log").unlink()
-        self.app.main_window.info_dialog(
-            "Logs Cleared", "You will need to close and re-open the app."
-        )
+        self.log_text.value = ""
+        asyncio.create_task(self.info("You will need to close and re-open the app.", "Logs Cleared"))
 
     def tab_changed(self, widget: toga.Widget) -> None:
         if t := widget.current_tab:
@@ -497,6 +496,12 @@ class Prototype:
     def pad_keyboard(self, on: bool) -> None:
         # keyboard_box.style.visibility = "visible" if on else "hidden"
         self.app.widgets["keyboard_box"].style.flex = 1 if on else 0
+
+    def gain_focus(self, widget: toga.TextInput, **kwargs: Any) -> None:
+        self.pad_keyboard(True)
+
+    def lose_focus(self, widget: toga.TextInput, **kwargs: Any) -> None:
+        self.pad_keyboard(False)
 
     def toggle_input(self, on: bool) -> None:
         if on:
@@ -511,7 +516,7 @@ class Prototype:
             self.script_scroll.style.flex = 1
 
     # Inside your Toga App class layout or commands:
-    def handle_backup_press(self, widget: toga.Widget) -> None:
+    def handle_backup_press(self, widget: toga.Button, **kwargs: Any) -> None:
         try:
             # 1. Build the nested structured zip
             backup_file = create_nested_app_backup(self.app)
@@ -527,15 +532,19 @@ class Prototype:
                 )
             )
 
-    def handle_wipe_cache(self, widget: toga.Widget | None) -> None:
+    def handle_wipe_cache(self, widget: toga.Button, **kwargs: Any) -> None:
         for f in Path(self.app.paths.cache).iterdir():
             print(f)
 
     def choose_container(self, *args: Any, **kwargs: Any) -> toga.Widget:
+        assert isinstance(self.app.main_window, toga.MainWindow)
         if is_ipad_from_window(self.app.main_window):
             return NotAnOptionContainer(*args, **kwargs)
         else:
             return toga.OptionContainer(*args, **kwargs)
+
+    def do_on_done_callback(self, widget: toga.Widget, **kwargs: Any) -> None:
+        self.on_done_callback(widget)
 
     def get_content(self) -> toga.Widget:
         # return toga.OptionContainer(
@@ -566,12 +575,7 @@ class Prototype:
                         children=[
                             toga.ScrollContainer(
                                 horizontal=False,
-                                content=toga.MultilineTextInput(
-                                    readonly=True,
-                                    style=Pack(flex=1),
-                                    id="log_text",
-                                    value=self.reload_logs(),
-                                ),
+                                content=self.log_text,
                                 style=Pack(flex=1),
                             ),
                             toga.Row(
@@ -613,10 +617,10 @@ class Prototype:
                                 visibility=(
                                     "visible"
                                     if hasattr(self.app.main_window, "content_stack")
-                                    and len(self.app.main_window.content_stack) > 0
+                                    and len(getattr(self.app.main_window, "content_stack", [])) > 0
                                     else "hidden"
                                 ),
-                                on_press=self.on_done_callback,
+                                on_press=self.do_on_done_callback,
                             ),
                         ]
                     ),

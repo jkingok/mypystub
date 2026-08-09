@@ -169,15 +169,16 @@ class ScriptRunner:
             self.input_field.value = ""
             self.input_field.focus()
 
-        toga.App.app.loop.call_soon(setup_ui)
+        if app := toga.App.app:
+            app.loop.call_soon(setup_ui)
 
-        # 3. Block the student's background thread until the event is set
-        self._input_event.wait()
+            # 3. Block the student's background thread until the event is set
+            self._input_event.wait()
 
         # 4. Return the captured value back to the student's script
         return self._input_value
 
-    def handle_ui_submit(self, widget: toga.Widget) -> None:
+    def handle_ui_submit(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Triggered by the Toga TextInput's on_confirm handler."""
         # Capture the text
         self._input_value = self.input_field.value

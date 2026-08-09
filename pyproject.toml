@@ -1,6 +1,7 @@
 [project]
 name = "MyPyStub"
 description = "My first application for prototyping with iDevices and Python"
+version = "0.0.2"
 dependencies = [
     "httpx",
     "markdown",

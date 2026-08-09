@@ -12,7 +12,7 @@ import threading
 import toga
 import traceback
 from types import TracebackType
-from typing import Any
+from typing import Any, Callable, cast
 from . import ui
 
 
@@ -57,7 +57,8 @@ class MyApp(toga.App):
     Main Toga Application instance for Liveability.
     """
 
-    def startup_into(app, fresh: bool = False) -> None:
+    @staticmethod
+    def startup_into(app: toga.App, fresh: bool = False) -> None:
         """
         Constructs and presents the application main window and prototype layout.
 
@@ -68,6 +69,8 @@ class MyApp(toga.App):
         """
         if fresh:
             app.main_window = toga.MainWindow(title=app.formal_name)
+        mw = app.main_window
+        assert isinstance(mw, toga.MainWindow)
 
         def global_generic_exception_handler(
             exc_type: type[BaseException] | None,
@@ -81,15 +84,17 @@ class MyApp(toga.App):
             if exc_traceback:
                 traceback.print_tb(exc_traceback)
             app.loop.call_soon_threadsafe(
-                app.main_window.dialog(
-                    toga.ErrorDialog(
-                        "Error Occurred", exc_message if exc_message else str(exc_value)
+                cast(Callable[[], None], lambda mw=mw: asyncio.create_task(
+                    mw.dialog(
+                        toga.ErrorDialog(
+                            "Error Occurred", exc_message if exc_message else str(exc_value)
+                        )
                     )
-                )
+                ))
             )
 
         def global_async_exception_handler(
-            loop: asyncio.AbstractEventLoop, context: dict[str, Any]
+            _loop: asyncio.AbstractEventLoop, context: dict[str, Any]
         ) -> None:
             """
             Trigger for uncaught exceptions via the asyncio event loop.
@@ -125,27 +130,27 @@ class MyApp(toga.App):
         loop.set_exception_handler(global_async_exception_handler)
 
         try:
-            app.proto = ui.Prototype(
+            setattr(app, "proto", p := ui.Prototype(
                 host_app=app, on_done=lambda _: MyApp.unstack_from(app)
-            )
+            ))
 
-            t = getattr(app.proto, "title", app.formal_name)
-            mw = app.main_window
+            t = p.title or app.formal_name
             if mw.content:
                 if not hasattr(mw, "content_stack"):
-                    mw.content_stack = []
-                mw.content_stack.append((mw.title, mw.content))
+                    setattr(mw, "content_stack", [])
+                getattr(mw, "content_stack", []).append((mw.title, mw.content))
             mw.title = t
-            mw.content = app.proto.get_content()
+            mw.content = p.get_content()
         except Exception as e:
             traceback.print_exc()
-            app.loop.call_soon(
-                app.main_window.dialog(toga.ErrorDialog("Error Occurred", str(e)))
+            app.loop.create_task(
+                mw.dialog(toga.ErrorDialog("Error Occurred", str(e)))
             )
         finally:
-            if not app.main_window.visible:
+            if not mw.visible:
                 mw.show()
 
+    @staticmethod
     def unstack_from(app: toga.App) -> None:
         """
         Pops and restores the previous window view layout from the content stack.
@@ -154,12 +159,13 @@ class MyApp(toga.App):
         :type app: toga.App
         """
         if (
-            hasattr(app.main_window, "content_stack")
-            and len(app.main_window.content_stack) > 0
+            hasattr(mw := app.main_window, "content_stack")
+            and len(cs := getattr(mw, "content_stack", [])) > 0
         ):
-            t, c = app.main_window.content_stack.pop()
-            app.main_window.title = t
-            app.main_window.content = c
+            t, c = cs.pop()
+            assert isinstance(mw, toga.MainWindow)
+            mw.title = t
+            mw.content = c
 
     def startup(self) -> None:
         """
@@ -208,7 +214,7 @@ def bootstrap_application() -> Any:
         print(f"Hot-Patch Intercepted on Device Storage: {hot_patch_file}")
         try:
             sys.path.insert(0, str(user_documents_dir))
-            import patch_app
+            import patch_app # type: ignore
 
             print("Hot-patch workspace parsed and executed flawlessly.")
             return patch_app.main()
@@ -231,7 +237,7 @@ def main() -> toga.App | None:
     if not (a := toga.App.app):
         return bootstrap_application()
     elif a.loop:
-        a.loop.call_soon(lambda a=a: MyApp.startup_into(a))
+        a.loop.call_soon(cast(Callable[[], None], lambda a=a: MyApp.startup_into(a)))
     else:
         MyApp.startup_into(a)
     return None

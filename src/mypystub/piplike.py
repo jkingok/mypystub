@@ -34,7 +34,7 @@ def get_bundled_app_packages() -> set[str]:
     return bundled_names
 
 
-def get_pip() -> Callable[[list[str], str], None]:
+def get_pip() -> Callable[[list[str], Path], None]:
     from resolvelib import BaseReporter, Resolver
     from resolvelib.providers import AbstractProvider, Preference
     from resolvelib.structs import CT, KT, Matches, RT, RequirementInformation
@@ -112,9 +112,8 @@ def get_pip() -> Callable[[list[str], str], None]:
     # -------------------------------------------------------------------------
     # 2. Main Pip-Like Downloader Engine
     # -------------------------------------------------------------------------
-    def sync_launcher_dependencies(dependencies: list[str], output_dir: str) -> None:
-        target_path = Path(output_dir)
-        target_path.mkdir(parents=True, exist_ok=True)
+    def sync_launcher_dependencies(dependencies: list[str], output_dir: Path) -> None:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         bundled_packages = get_bundled_app_packages()
 
@@ -157,7 +156,7 @@ def get_pip() -> Callable[[list[str], str], None]:
 
         # D. Download and extract wheels
         # Temporary cache workspace for raw .whl archives
-        download_cache = target_path / ".cache"
+        download_cache = output_dir / ".cache"
         download_cache.mkdir(exist_ok=True)
 
         for name, candidate in result.mapping.items():
@@ -192,14 +191,14 @@ def get_pip() -> Callable[[list[str], str], None]:
                         file_info.filename.endswith(".dist-info/")
                         or file_info.filename.endswith(".egg-info/")
                     ):
-                        zip_ref.extract(file_info, target_path)
+                        zip_ref.extract(file_info, output_dir)
 
         # Clean up file cache residues
         shutil.rmtree(download_cache)
         print("✅ Complete! All packages available in target workspace.")
 
     def sync_launcher_dependencies_via_toml(
-        pyproject_path: str, output_dir: str
+        pyproject_path: str, output_dir: Path
     ) -> None:
         pyproject = Path(pyproject_path)
 
@@ -236,11 +235,12 @@ CORE_MANIFEST = {
 }
 
 
-def strict_manifest_preflight(prefix: str | None = None) -> bool:
+def strict_manifest_preflight(prefix: Path | None = None) -> bool:
     # app_root = Path(__file__).resolve().parent
-    prefix_path = Path(prefix) if prefix else Path("~/Documents").expanduser()
-    bootstrap_cache_dir = prefix_path / "wheels"
-    target_user_packages = prefix_path / "site_packages"
+    if not prefix:
+        prefix = Path("~/Documents").expanduser()
+    bootstrap_cache_dir = prefix / "wheels"
+    target_user_packages = prefix / "site_packages"
 
     # Ensure local path is mapped
     target_user_packages.mkdir(parents=True, exist_ok=True)
@@ -324,15 +324,14 @@ def strict_manifest_preflight(prefix: str | None = None) -> bool:
     return True
 
 
-def scan_all_prototypes(base_dir: str) -> Iterable[Mapping[str, Any]]:
+def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
     compiled_items: list[Mapping[str, Any]] = []
-    base_dir_path = Path(base_dir)
 
-    if not base_dir_path.exists():
+    if not base_dir.exists():
         return compiled_items
 
     # Loop through everything inside the directory
-    for item in sorted(base_dir_path.iterdir(), key=lambda x: x.name.lower()):
+    for item in sorted(base_dir.iterdir(), key=lambda x: x.name.lower()):
         # Skip hidden files/folders (like .DS_Store or system bits)
         if item.name.startswith("."):
             continue

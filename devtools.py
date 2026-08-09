@@ -62,51 +62,6 @@ def main():
     print("    Passed: Bytecode compilation\n")
 
     # ------------------------------------------------------------------
-    # 2. AUTO-TYPE: In-process type inference via LibCST
-    # ------------------------------------------------------------------
-    def run_autotyping():
-        import libcst as cst
-        from autotyping.autotyping import AutotypingCommand
-        from libcst.codemod import CodemodContext
-
-        modified_count = 0
-        for py_file in target_dir.rglob("*.py"):
-            if any(part.startswith(".") for part in py_file.parts):
-                continue
-
-            source_code = py_file.read_text(encoding="utf-8")
-            try:
-                module = cst.parse_module(source_code)
-                context = CodemodContext()
-
-                # Configure autotyping transformations (safe heuristics)
-                transform = AutotypingCommand(
-                    context,
-                    none_return=True,  # Adds -> None to functions with no return statement
-                    scalar_return=True,  # Annotates returns of literal primitives (str, int, bool)
-                    bool_param=True,  # Annotates params with default=True/False as : bool
-                    int_param=True,
-                    str_param=True,
-                )
-
-                new_module = transform.transform_module(module)
-                if new_module.code != source_code:
-                    py_file.write_text(new_module.code, encoding="utf-8")
-                    modified_count += 1
-            except Exception:
-                # If a file fails parsing here, compileall or mypy will catch it
-                continue
-
-        print(f"    Autotyping modified {modified_count} file(s).")
-
-    # TODO Disable when no Rust available
-    #run_strict_step(
-    #    "autotyping",
-    #    "[2/6] Auto-inserting baseline type hints (Autotyping)",
-    #    run_autotyping,
-    #)
-
-    # ------------------------------------------------------------------
     # 3. FORMAT: In-place code formatting (Black)
     # ------------------------------------------------------------------
     def run_black():
