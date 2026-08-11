@@ -427,7 +427,7 @@ class Prototype:
         self.script_activity.update(on=False)
         self.splash.image = None
         if not self.print_text.value:
-            self.splash.tabs.current_tab = "List"
+            self.tabs.current_tab = "List"
 
     def start(self, s: ModuleSpec, m: ModuleType) -> None:
         print("Starting...")
@@ -443,7 +443,7 @@ class Prototype:
             except Exception as e:
                 asyncio.run_coroutine_threadsafe(
                     self.error(f"Script failed with: {str(e)}", "Script Failure"),
-                    toga.App.app.loop,
+                    self.app.loop,
                 )
             finally:
                 self.app.loop.call_soon_threadsafe(self.end_script)
