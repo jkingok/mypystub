@@ -88,13 +88,17 @@ class MyApp(toga.App):
             if exc_traceback:
                 traceback.print_tb(exc_traceback)
             app.loop.call_soon_threadsafe(
-                cast(Callable[[], None], lambda mw=mw: asyncio.create_task(
-                    mw.dialog(
-                        toga.ErrorDialog(
-                            "Error Occurred", exc_message if exc_message else str(exc_value)
+                cast(
+                    Callable[[], None],
+                    lambda mw=mw: asyncio.create_task(
+                        mw.dialog(
+                            toga.ErrorDialog(
+                                "Error Occurred",
+                                exc_message if exc_message else str(exc_value),
+                            )
                         )
-                    )
-                ))
+                    ),
+                )
             )
 
         def global_async_exception_handler(
@@ -134,9 +138,13 @@ class MyApp(toga.App):
         loop.set_exception_handler(global_async_exception_handler)
 
         try:
-            setattr(app, "proto", p := ui.Prototype(
-                host_app=app, on_done=lambda _: MyApp.unstack_from(app)
-            ))
+            setattr(
+                app,
+                "proto",
+                p := ui.Prototype(
+                    host_app=app, on_done=lambda _: MyApp.unstack_from(app)
+                ),
+            )
 
             t = p.title or app.formal_name
             if mw.content:
@@ -147,9 +155,7 @@ class MyApp(toga.App):
             mw.content = p.get_content()
         except Exception as e:
             traceback.print_exc()
-            app.loop.create_task(
-                mw.dialog(toga.ErrorDialog("Error Occurred", str(e)))
-            )
+            app.loop.create_task(mw.dialog(toga.ErrorDialog("Error Occurred", str(e))))
         finally:
             if not mw.visible:
                 mw.show()
@@ -218,7 +224,7 @@ def bootstrap_application() -> Any:
         print(f"Hot-Patch Intercepted on Device Storage: {hot_patch_file}")
         try:
             sys.path.insert(0, str(user_documents_dir))
-            import patch_app # type: ignore
+            import patch_app  # type: ignore
 
             print("Hot-patch workspace parsed and executed flawlessly.")
             return patch_app.main()

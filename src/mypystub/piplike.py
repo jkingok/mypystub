@@ -36,7 +36,7 @@ def get_bundled_app_packages() -> set[str]:
 
 def get_pip() -> Callable[[list[str], Path], None]:
     from resolvelib import BaseReporter, Resolver
-    from resolvelib.providers import AbstractProvider, Preference
+    from resolvelib.providers import AbstractProvider
     from resolvelib.structs import CT, KT, Matches, RT, RequirementInformation
     from unearth import PackageFinder, TargetPython
 

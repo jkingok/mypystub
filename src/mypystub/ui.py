@@ -11,7 +11,7 @@ import shutil
 import toga
 from toga.style import Pack
 from types import ModuleType
-from typing import Any, Callable, cast, Iterable, Mapping
+from typing import Any, Callable, cast
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from . import hooks as h
@@ -24,7 +24,11 @@ UIUserInterfaceIdiomPad = 1
 def is_ipad_from_window(toga_window: toga.Window) -> bool:
     """Detects iPad idiom via the native UIWindow / UIViewController trait collection."""
     # Toga's underlying UIKit native object (UIWindow or UIViewController)
-    return sys.platform == "ios" and toga_window._impl.native.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad # pyright: ignore[reportPrivateUsage]
+    return (
+        sys.platform == "ios"
+        and toga_window._impl.native.traitCollection.userInterfaceIdiom
+        == UIUserInterfaceIdiomPad
+    )  # pyright: ignore[reportPrivateUsage]
 
 
 def zip_directory_to_bytes(source_dir: Path) -> bytes:
@@ -87,6 +91,7 @@ def create_nested_app_backup(app: toga.App) -> Path:
     print(f"Structured master archive created at: {master_zip_path}")
     return master_zip_path
 
+
 def open_share_sheet(w: toga.Widget, file_path: Path) -> None:
     """
     Opens the iOS native share sheet for a specific HTML file.
@@ -123,13 +128,19 @@ def open_share_sheet(w: toga.Widget, file_path: Path) -> None:
             # 5. Handle iPad popover configurations safely to prevent crashes
             if activity_vc.popoverPresentationController:
                 # Anchor the popover menu to the center or bounds of the current view frame
-                activity_vc.popoverPresentationController.sourceView = presenting_vc.view
-                activity_vc.popoverPresentationController.sourceRect = presenting_vc.view.bounds
+                activity_vc.popoverPresentationController.sourceView = (
+                    presenting_vc.view
+                )
+                activity_vc.popoverPresentationController.sourceRect = (
+                    presenting_vc.view.bounds
+                )
                 # Optional: restrict arrow directions if needed
                 # activity_vc.popoverPresentationController.permittedArrowDirections = 0
 
             # 6. Present the share sheet asynchronously over the top of the interface
-            presenting_vc.presentViewController(activity_vc, animated=True, completion=None)
+            presenting_vc.presentViewController(
+                activity_vc, animated=True, completion=None
+            )
 
 
 class LabelledProgress(toga.Box):
@@ -189,7 +200,7 @@ class NotAnOptionContainer(toga.Box):
                 toga.Column(flex=1),
                 toga.Row(
                     children=[
-                        toga.Button(tab[0], on_press=self.swap_in, flex=1) # type: ignore[arg-type]
+                        toga.Button(tab[0], on_press=self.swap_in, flex=1)  # type: ignore[arg-type]
                         for tab in content
                     ]
                 ),
@@ -263,9 +274,9 @@ class Prototype:
             # data=self.reload_menu()
         )
         self.log_text = toga.MultilineTextInput(
-                                    readonly=True,
-                                    style=Pack(flex=1),
-                                )
+            readonly=True,
+            style=Pack(flex=1),
+        )
 
     async def todo(self, name: str) -> None:
         assert isinstance(self.app.main_window, toga.MainWindow)
@@ -273,7 +284,9 @@ class Prototype:
 
     async def info(self, text: str, title: str | None = None) -> None:
         assert isinstance(self.app.main_window, toga.MainWindow)
-        await self.app.main_window.dialog(toga.InfoDialog(title if title else "Info", text))
+        await self.app.main_window.dialog(
+            toga.InfoDialog(title if title else "Info", text)
+        )
 
     async def error(self, text: str, title: str | None = None) -> None:
         assert isinstance(self.app.main_window, toga.MainWindow)
@@ -281,10 +294,17 @@ class Prototype:
             toga.ErrorDialog(title if title else "Error", text)
         )
 
-    async def question(self, text: str, title: str | None = None, positive: Callable[[], None] | None = None, negative: Callable[[], None] | None = None) -> None:
+    async def question(
+        self,
+        text: str,
+        title: str | None = None,
+        positive: Callable[[], None] | None = None,
+        negative: Callable[[], None] | None = None,
+    ) -> None:
         assert isinstance(self.app.main_window, toga.MainWindow)
         if await self.app.main_window.dialog(
-            toga.QuestionDialog(title if title else "Question", text)):
+            toga.QuestionDialog(title if title else "Question", text)
+        ):
             if positive:
                 positive()
         else:
@@ -310,9 +330,7 @@ class Prototype:
         logs = (self.data_path / "app_runtime.log").read_text()
         self.log_text.value = logs
 
-    def reload_menu(
-        self, widget: toga.DetailedList, **kwargs: Any
-    ) -> None:
+    def reload_menu(self, widget: toga.DetailedList, **kwargs: Any) -> None:
         # 1. Gather all of our TOML configuration profiles
         self.prototypes_data = pip.scan_all_prototypes(self.prototype_dir)
 
@@ -338,7 +356,7 @@ class Prototype:
                 }
             )
 
-        widget.data = list_items # type: ignore[assignment]
+        widget.data = list_items  # type: ignore[assignment]
 
     def new_project(self, widget: toga.Button, **kwargs: Any) -> None:
         def snake(s: str) -> str:
@@ -395,7 +413,13 @@ class Prototype:
             asyncio.create_task(self.info(f"Created new project {project_name}"))
 
         if target.exists():
-            asyncio.create_task(self.question(f"Replace existing {snake(project_name)}?", "Folder Exists", do_new_project))
+            asyncio.create_task(
+                self.question(
+                    f"Replace existing {snake(project_name)}?",
+                    "Folder Exists",
+                    do_new_project,
+                )
+            )
         else:
             do_new_project()
 
@@ -417,7 +441,10 @@ class Prototype:
                 if hasattr(module, "main"):
                     module.main()
             except Exception as e:
-                asyncio.create_task(self.error(f"Script failed with: {str(e)}", "Script Failure"))
+                asyncio.run_coroutine_threadsafe(
+                    self.error(f"Script failed with: {str(e)}", "Script Failure"),
+                    toga.App.app.loop,
+                )
             finally:
                 self.app.loop.call_soon_threadsafe(self.end_script)
 
@@ -450,7 +477,9 @@ class Prototype:
         print(f"import path: {sys.path}")
 
         # Clear out status title alterations and execute
-        print(f"Launching {getattr(selected_row, "title")} from path: {getattr(selected_row, "entry_point")}")
+        print(
+            f"Launching {getattr(selected_row, "title")} from path: {getattr(selected_row, "entry_point")}"
+        )
         selected_file_path = Path(getattr(selected_row, "entry_point"))
 
         try:
@@ -473,8 +502,12 @@ class Prototype:
                     self.splash.style.flex = 1
                     self.script_scroll.style.flex = 0
                 self.app.widgets["tabs"].current_tab = "Script"
-                self.script_activity.update(f"Running {getattr(selected_row, 'title', "script")}")
-                self.app.loop.call_soon(cast(Callable[[], None], lambda s=spec, m=module: self.start(s, m)))
+                self.script_activity.update(
+                    f"Running {getattr(selected_row, 'title', "script")}"
+                )
+                self.app.loop.call_soon(
+                    cast(Callable[[], None], lambda s=spec, m=module: self.start(s, m))
+                )
         except Exception as e:
             asyncio.create_task(
                 self.error(f"Failed to execute script:\n{str(e)}", "Load Failure")
@@ -483,7 +516,9 @@ class Prototype:
     def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         (self.data_path / "app_runtime.log").unlink()
         self.log_text.value = ""
-        asyncio.create_task(self.info("You will need to close and re-open the app.", "Logs Cleared"))
+        asyncio.create_task(
+            self.info("You will need to close and re-open the app.", "Logs Cleared")
+        )
 
     def tab_changed(self, widget: toga.Widget) -> None:
         if t := widget.current_tab:
@@ -617,7 +652,12 @@ class Prototype:
                                 visibility=(
                                     "visible"
                                     if hasattr(self.app.main_window, "content_stack")
-                                    and len(getattr(self.app.main_window, "content_stack", [])) > 0
+                                    and len(
+                                        getattr(
+                                            self.app.main_window, "content_stack", []
+                                        )
+                                    )
+                                    > 0
                                     else "hidden"
                                 ),
                                 on_press=self.do_on_done_callback,
