@@ -58,7 +58,7 @@ def get_pip() -> Callable[[list[str], Path], None]:
             candidates: Mapping[KT, Iterator[CT]],
             information: Mapping[KT, Iterator[RequirementInformation[RT, CT]]],
             backtrack_causes: Sequence[RequirementInformation[RT, CT]],
-        ) -> Preference:
+        ):
             # Extract the sequence for this identifier from the candidates map
             if current_candidates := candidates.get(identifier):
                 # TODO Still needed?
