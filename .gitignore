@@ -66,3 +66,6 @@ logs/
 
 # Briefcase local configuratoin
 .briefcase/
+
+/assets/custom_icon.png
+/assets/icon-*.png
