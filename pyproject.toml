@@ -48,7 +48,9 @@ requires = [
 test_requires = [
     "pytest",
 ]
-icon="assets/icon"
+
+
+icon="assets/icons/png/icon-512"
 splash_background_color="#7f7f7f"
 
 [tool.briefcase.app.mypystub.macOS]
@@ -57,6 +59,8 @@ requires = [
     "toga-cocoa~=0.5.0",
     "std-nslog~=1.0.3",
 ]
+
+icon = "assets/icons/icon"
 
 [tool.briefcase.app.mypystub.linux]
 requires = [
@@ -177,12 +181,18 @@ requires = [
     "toga-winforms~=0.5.0",
 ]
 
+icon = "assets/icons/icon"
+
+installer_icon = "assets/icons/icon"
+
 # Mobile deployments
 [tool.briefcase.app.mypystub.iOS]
 requires = [
     "toga-iOS~=0.5.0",
     "std-nslog~=1.0.3",
 ]
+
+icon = "assets/icons/ios/icon"
 
 #[tool.briefcase.app.mypystub.iOS.app]
 # Enable the Files app directory for your app
@@ -201,17 +211,19 @@ base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
 build_gradle_dependencies = [
     "com.google.android.material:material:1.13.0",
     # Needed for DetailedList
-    # "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0",
+    "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0",
     # Needed for MapView
     # "org.osmdroid:osmdroid-android:6.1.20",
     # Needed for WebView
-    # "androidx.webkit:webkit:1.15.0",
+    "androidx.webkit:webkit:1.15.0",
 ]
 
 # Needed for WebView
-# build_gradle_extra_content="""
-# chaquopy.defaultConfig.staticProxy("toga_android.widgets.internal.webview")
-# """
+build_gradle_extra_content="""
+chaquopy.defaultConfig.staticProxy("toga_android.widgets.internal.webview")
+"""
+
+icon = "assets/icons/android/icon"
 
 # Web deployments
 [tool.briefcase.app.mypystub.web]
