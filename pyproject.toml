@@ -208,6 +208,23 @@ requires = [
 
 base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
 
+# Tell Briefcase to include custom Java source files in the Gradle build tree
+build_vars = { "extra_java_sources" = ["assets/android/java"] }
+
+# Inject the provider into AndroidManifest.xml
+android_manifest_application_extra_content = """
+<provider
+    android:name="au.id.jking.mypystub.AppDocumentsProvider"
+    android:authorities="au.id.jking.mypystub.documents"
+    android:grantUriPermissions="true"
+    android:exported="true"
+    android:permission="android.permission.MANAGE_DOCUMENTS">
+    <intent-filter>
+        <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+    </intent-filter>
+</provider>
+"""
+
 build_gradle_dependencies = [
     "com.google.android.material:material:1.13.0",
     # Needed for DetailedList

@@ -6,6 +6,7 @@ and checks the iOS user sandbox (`~/Documents/patch_app.py`) for live runtime ov
 """
 
 import asyncio
+import importlib.metadata
 from pathlib import Path
 import sys
 import threading
@@ -28,13 +29,18 @@ class LogRedirector:
         """
         Creates the log redirector that will duplicate output to the given log_path.
         """
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.log_file = log_path.open(mode="a", buffering=1, encoding="utf-8")
+        self.log_path = log_path or Path("./app_runtime.log")
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.log_file = self.log_path.open(mode="a", buffering=1, encoding="utf-8")
         self.terminal = sys.__stdout__  # both out and err end up in out
 
     def isatty(self) -> bool:
         # Hopefully this only prevents fancy not all input!
         return False
+
+    @property
+    def path(self) -> Path:
+        return self.log_path
 
     def write(self, message: str) -> None:
         """
@@ -58,8 +64,18 @@ class LogRedirector:
 
 class MyApp(toga.App):
     """
-    Main Toga Application instance for Liveability.
+    Main Toga Application instance
     """
+    def __init__(self, user_documents_dir: Path | None = None, **kwargs: Any):
+        """
+        Initializes the Toga application instance.
+
+        :param user_documents_dir: Optional path to user Documents folder for log redirection.
+        :type user_documents_dir: Path | None
+        :param kwargs: Additional keyword arguments for Toga App initialization.
+        """
+        self.user_documents_dir = user_documents_dir or Path("~/Documents").expanduser()
+        super().__init__(**kwargs)
 
     @staticmethod
     def startup_into(app: toga.App, fresh: bool = False) -> None:
@@ -199,8 +215,21 @@ def bootstrap_application() -> Any:
     :rtype: toga.App
     """
 
-    # This is equivalent to the toga.App.app.paths.data
-    user_documents_dir = Path("~/Documents").expanduser()
+    # This is equivalent to the toga.App.app.paths.data on many platforms
+    if sys.platform == "android":
+
+        user_documents_dir = Path(".")  # Default to current directory on Android as a fallback
+
+        from com.chaquo.python import Python
+        context = Python.getPlatform().getApplication()
+        
+        if context is not None:
+            #external_files_dir = context.getExternalFilesDir("Documents")
+            #if external_files_dir is not None:
+            files_dir = context.getFilesDir()
+            user_documents_dir = Path(files_dir.getAbsolutePath())
+    else:
+        user_documents_dir = Path("~/Documents").expanduser()
     user_documents_dir.mkdir(parents=True, exist_ok=True)
 
     log_path = user_documents_dir / "app_runtime.log"
@@ -234,7 +263,8 @@ def bootstrap_application() -> Any:
                 "Gracefully routing application boot back to compiled factory core..."
             )
 
-    return MyApp()
+    print(f"creating MyApp with user_documents_dir: {user_documents_dir}")
+    return MyApp(user_documents_dir)
 
 
 def main() -> toga.App | None:

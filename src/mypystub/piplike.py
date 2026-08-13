@@ -326,15 +326,20 @@ def strict_manifest_preflight(prefix: Path | None = None) -> bool:
 
 def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
     compiled_items: list[Mapping[str, Any]] = []
+    print(f"Scanning for launcher prototypes in: {base_dir}")
 
     if not base_dir.exists():
         return compiled_items
+
+    print(f"Found {len(list(base_dir.iterdir()))} items in base directory.")
 
     # Loop through everything inside the directory
     for item in sorted(base_dir.iterdir(), key=lambda x: x.name.lower()):
         # Skip hidden files/folders (like .DS_Store or system bits)
         if item.name.startswith("."):
             continue
+
+        print(f"  Inspecting: {item.name} ({'Folder' if item.is_dir() else 'File'})")
 
         # --- CASE A: The "Toy Script" (Loose .py file) ---
         if item.is_file() and item.suffix == ".py":
