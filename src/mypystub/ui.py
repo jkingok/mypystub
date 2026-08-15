@@ -663,19 +663,57 @@ class Prototype:
                         children=[
                             toga.WebView(
                                 content=f"""
-        <html>
-        <head>
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; padding: 20px; color: #333; }}
-                code {{ background-color: #f6f8fa; padding: 2px 4px; border-radius: 3px; font-family: monospace; }}
-                pre {{ background-color: #f6f8fa; padding: 16px; overflow: auto; border-radius: 6px; }}
-                img {{ max-width: 100%; height: auto; }}
-            </style>
-        </head>
-        <body>
-                     {md(f.read_text() if (f := (self.template_path / "help.md")).exists() else "")}
-        </body>
-        </html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- Configures iOS viewport: sets width, prevents horizontal scroll, and fits notch/home indicator areas -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  
+  <!-- Informs the browser that the site supports both light and dark system themes -->
+  <meta name="color-scheme" content="light dark">
+  
+  <title>Embedded Content</title>
+
+  <style>
+    /* CSS Variables using light-dark() to switch automatically based on system preference */
+    :root {{
+      color-scheme: light dark;
+      --bg-color: light-dark(#ffffff, #121212);
+      --text-color: light-dark(#1c1c1e, #f2f2f7);
+      --card-bg: light-dark(#f2f2f7, #1c1c1e);
+      --border-color: light-dark(#e5e5ea, #3a3a3c);
+    }}
+
+    /* Prevent accidental horizontal overflow */
+    *, *::before, *::after {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      
+      /* Ensures text wraps properly when zoomed */
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }}
+
+    /* Images scale down to fit container width, preventing layout break on zoom */
+    img, video, svg {{
+      max-width: 100%;
+      height: auto;
+    }}
+  </style>
+</head>
+<body>
+    {md(f.read_text() if (f := (self.template_path / "help.md")).exists() else "")}
+</body>
+</html>
 """,
                                 flex=1,
                             )
