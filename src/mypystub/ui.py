@@ -230,6 +230,44 @@ class NotAnOptionContainer(toga.Box):
     def current_tab(self, value: str) -> None:
         self.swap_in_name(value)
 
+class LabelledSelection(toga.Box):
+    """
+    Toga Box combining a text Label and Selection dropdown widget.
+
+    :param label_text: Label text prefix.
+    :type label_text: str
+    :param value_text: Initially selected item value.
+    :type value_text: str
+    :param value_list: List of available selection items.
+    :type value_list: list
+    :param callback: Change event callback handler.
+    :type callback: callable
+    :param id: Widget identifier.
+    :type id: str
+    """
+
+    def __init__(
+        self, label_text: str, on_press=None, **kwargs
+    ):
+        self.selection = toga.Selection(flex=1, **kwargs)
+        self.on_press = on_press
+        super().__init__(
+            direction="row",
+            align_items="center",
+            children=[
+                toga.Label(label_text + ": "),
+                self.selection,
+                toga.Button(
+                    "⤵️",
+                    on_press=lambda w: (self.selection._impl.native.resignFirstResponder(), self.on_press(w) if self.on_press else None)
+                )
+            ],
+        )
+
+    @property
+    def value(self):
+        return self.selection.value
+
 
 class Prototype:
     def __init__(self, host_app: toga.App, on_done: Callable[[Any], None]) -> None:
@@ -267,6 +305,7 @@ class Prototype:
         )
         self.script_activity = LabelledActivity()
         self.splash = toga.ImageView(style=Pack(flex=0))
+        self.dir_selection = LabelledSelection("Category", items=["Examples", "User"], on_change=lambda w: setattr(self.script_list, "data", None), on_press=self.reload_menu)
         self.script_list = toga.DetailedList(
             on_refresh=self.reload_menu,
             on_select=self.handle_row_selection,
@@ -330,9 +369,16 @@ class Prototype:
         logs = (self.data_path / "app_runtime.log").read_text()
         self.log_text.value = logs
 
-    def reload_menu(self, widget: toga.DetailedList, **kwargs: Any) -> None:
+    def get_current_dir(self) -> Path:
+        print(f"get dir for {self.dir_selection.value}")
+        return {
+            "Examples": self.this_path / "resources" / "examples",
+            "User": self.prototype_dir
+        }[self.dir_selection.value] 
+
+    def reload_menu(self, widget: toga.DetailedList | toga.Selection, **kwargs: Any) -> None:
         # 1. Gather all of our TOML configuration profiles
-        self.prototypes_data = pip.scan_all_prototypes(self.prototype_dir)
+        self.prototypes_data = pip.scan_all_prototypes(self.get_current_dir())
 
         # 2. Format the records specifically for Toga's DetailedList expectations
         list_items = []
@@ -588,7 +634,7 @@ class Prototype:
             content=[
                 (
                     "List",
-                    toga.Column(children=[self.script_list]),
+                    toga.Column(children=[self.dir_selection, self.script_list]),
                     self.icon_path / "list.png",
                 ),
                 (
