@@ -1,18 +1,19 @@
 import asyncio
-from datetime import datetime
-from importlib.machinery import ModuleSpec
 import importlib.util
 import io
-import sys
-from markdown import markdown as md
-from pathlib import Path
-
 import shutil
-import toga
-from toga.style import Pack
+import sys
+from collections.abc import Callable
+from datetime import datetime
+from importlib.machinery import ModuleSpec
+from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, cast
-from zipfile import ZipFile, ZIP_DEFLATED
+from typing import Any, cast
+from zipfile import ZIP_DEFLATED, ZipFile
+
+import toga
+from markdown import markdown as md
+from toga.style import Pack
 
 from . import hooks as h
 from . import piplike as pip
@@ -74,7 +75,7 @@ def create_nested_app_backup(app: toga.App) -> Path:
     data_zip_bytes = zip_directory_to_bytes(data_dir)
 
     # 3. Create the master zip filename using the app's identifier and timestamp
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     master_filename = f"{app.formal_name.lower().replace(' ', '_')}-{timestamp}.zip"
 
     # We write the final file to the app's cache directory (safe for transient shares)
@@ -236,7 +237,7 @@ class Prototype:
         self.app = host_app
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Launcher"  # host_app.formal_name
-        setattr(self.app, "settings", s.Settings(host_app.paths))
+        self.app.settings = s.Settings(host_app.paths) # pyright: ignore [reportAttributeAccessIssue]
         self.cache_path = self.app.paths.cache
         self.data_path = self.app.paths.data
         self.this_path = Path(__file__).resolve().parent
@@ -314,17 +315,9 @@ class Prototype:
     def close_keyboard(self, widget: toga.TextInput, **kwargs: Any) -> None:
         """Triggered when the user presses 'Return' or 'Done' on the iPad keyboard."""
         # Dismiss the keyboard by resigning First Responder status
-        try:
-            # Check if we are running on iOS/iPadOS via the native implementation handle
-            if hasattr(widget, "_impl") and hasattr(widget._impl, "native"):
-                native_textfield = widget._impl.native
-
-                # Fire the native UIKit selector to lower the keyboard
-                native_textfield.resignFirstResponder()
-                print("[UIKit] Keyboard dismissed via resignFirstResponder.")
-        except Exception as e:
-            # Graceful fallback for macOS/Windows desktop development runners
-            print(f"[Platform Fallback] Could not reach native interface: {e}")
+        # Check if we are running on iOS/iPadOS via the native implementation handle
+        if sys.platform == "ios":
+            widget._impl.native.resignFirstResponder()
 
     def reload_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         logs = (self.data_path / "app_runtime.log").read_text()
@@ -440,9 +433,9 @@ class Prototype:
                 # Some modules need a nudge...
                 if hasattr(module, "main"):
                     module.main()
-            except Exception as e:
+            except Exception as e: # noqa: BLE001
                 asyncio.run_coroutine_threadsafe(
-                    self.error(f"Script failed with: {str(e)}", "Script Failure"),
+                    self.error(f"Script failed with: {e!s}", "Script Failure"),
                     self.app.loop,
                 )
             finally:
@@ -456,7 +449,7 @@ class Prototype:
         """Triggered automatically when an iOS row is tapped."""
         # Grab the currently selected row data dictionary
         selected_row = widget.selection
-        if not selected_row:
+        if selected_row is None or not hasattr(selected_row, "entry_point"):
             return
 
         # 1. Read the parsed dependency requirements array
@@ -477,10 +470,8 @@ class Prototype:
         print(f"import path: {sys.path}")
 
         # Clear out status title alterations and execute
-        print(
-            f"Launching {getattr(selected_row, "title")} from path: {getattr(selected_row, "entry_point")}"
-        )
-        selected_file_path = Path(getattr(selected_row, "entry_point"))
+        print(f"Launching {getattr(selected_row, "title", "?")} from path: {getattr(selected_row, "entry_point", "?")}")
+        selected_file_path = Path(selected_row.entry_point) # pyright: ignore [reportAttributeAccessIssue]
 
         try:
             # Dynamically load the python module from an arbitrary path
@@ -508,9 +499,9 @@ class Prototype:
                 self.app.loop.call_soon(
                     cast(Callable[[], None], lambda s=spec, m=module: self.start(s, m))
                 )
-        except Exception as e:
+        except Exception as e: # noqa: BLE001
             asyncio.create_task(
-                self.error(f"Failed to execute script:\n{str(e)}", "Load Failure")
+                self.error(f"Failed to execute script:\n{e!s}", "Load Failure")
             )
 
     def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
@@ -559,7 +550,7 @@ class Prototype:
             # 2. Open native iOS Share Sheet via Rubicon-ObjC
             open_share_sheet(widget, backup_file)
 
-        except Exception as e:
+        except Exception as e: # noqa: BLE001
             asyncio.create_task(
                 self.error(
                     f"An error occurred while creating the archive: {e}",

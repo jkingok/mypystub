@@ -7,8 +7,10 @@ import builtins
 import io
 import re
 import threading
+from collections.abc import Callable
+from typing import Any
+
 import toga
-from typing import Any, Callable
 
 # Regex pattern to match standard ANSI escape sequences (like \x1b[31m)
 ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")

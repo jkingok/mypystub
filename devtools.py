@@ -1,9 +1,8 @@
 import compileall
 import importlib.util
-from pathlib import Path
 import re
 import sys
-import traceback
+from pathlib import Path
 
 
 def resolve_target_dir() -> Path:
@@ -41,8 +40,7 @@ def run_strict_step(module_name: str, step_name: str, fn) -> None:
     except Exception as e:
         print(f"\n[FAILED] {step_name}: {e}")
         print("Pipeline halted due to error.")
-        traceback.print_exc()
-        sys.exit(1)
+        raise
 
 
 def main():
@@ -95,7 +93,7 @@ def main():
                 if new_module.code != source_code:
                     py_file.write_text(new_module.code, encoding="utf-8")
                     modified_count += 1
-            except Exception:
+            except Exception: # noqa: BLE001, S112
                 # If a file fails parsing here, compileall or mypy will catch it
                 continue
 
@@ -154,6 +152,8 @@ def main():
         if stdout and stdout.strip():
             print(stdout.strip())
         if exit_status != 0:
+            if stderr and stderr.strip():
+                print(stderr.strip())
             raise RuntimeError("Missing or incomplete type annotations found.")
 
     if sys.platform != "ios":

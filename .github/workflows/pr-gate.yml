@@ -1,0 +1,80 @@
+name: Pull Request Approval Gate
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------
+  # Job 1: Fast Code Quality & Unit Tests (GitHub Cloud Runner)
+  # -------------------------------------------------------------
+  quality-gate:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            git build-essential pkg-config python3-dev python3-venv libgirepository-2.0-dev libcairo2-dev gir1.2-gtk-3.0 libcanberra-gtk3-module
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install App Dependencies & Type Checker
+        run: |
+          python -m pip install --upgrade pip
+          # Install your app dependencies so pyright can resolve imports
+          pip install -e .
+          pip install ruff pyright toga toga-core
+
+      - name: Run Ruff Linter
+        run: ruff check .
+
+      - name: Run pyright Type Checker
+        run: pyright src/
+
+  # -------------------------------------------------------------
+  # Job 2: Icon Generation & Briefcase Xcode Build (Mac Mini)
+  # -------------------------------------------------------------
+  briefcase-build:
+    name: Briefcase iOS Compilation
+    needs: quality-gate      # Only trigger if Job 1 passes
+    runs-on: self-hosted      # Targets your physical Mac Mini runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Ensure Python Environment & Dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install pillow briefcase
+
+      - name: Generate App Icon & Splash Assets
+        run: |
+          if [ -f "generate_icons.py" ]; then
+            # Executes your Pillow script to produce opaque icon.png and transparent splash.png
+            python3 generate_icons.py
+          fi
+
+      - name: Create Briefcase iOS Project
+        run: |
+          # Scaffolds/updates the Xcode project wrapper in build/
+          briefcase create iOS
+
+      - name: Compile iOS Binary
+        run: |
+          # Compiles Python support files and verifies Xcode app bundling
+          briefcase build iOS

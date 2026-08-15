@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+
 from PIL import Image
 
 # The complete list of standard iOS and Briefcase icon square sizes (in pixels)
@@ -58,6 +59,7 @@ def generate_contained_icons(source_path: str, output_dir: str, sizes: list[int]
         
     except Exception as e:
         print(f"An error occurred during processing: {e}")
+        raise
 
 if __name__ == "__main__":
     # Path to your high-resolution source icon (e.g., 1024x1024 or higher)

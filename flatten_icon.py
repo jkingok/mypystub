@@ -2,6 +2,7 @@
 
 from PIL import Image, ImageOps
 
+
 def process_app_assets(
     source_path="assets/src_icon.png",
     icon_out="assets/custom_icon.png",

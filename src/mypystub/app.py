@@ -6,13 +6,16 @@ and checks the iOS user sandbox (`~/Documents/patch_app.py`) for live runtime ov
 """
 
 import asyncio
-from pathlib import Path
 import sys
 import threading
-import toga
 import traceback
+from collections.abc import Callable
+from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, cast
+from typing import Any, cast
+
+import toga
+
 from . import ui
 
 
@@ -138,22 +141,16 @@ class MyApp(toga.App):
         loop.set_exception_handler(global_async_exception_handler)
 
         try:
-            setattr(
-                app,
-                "proto",
-                p := ui.Prototype(
-                    host_app=app, on_done=lambda _: MyApp.unstack_from(app)
-                ),
-            )
+            app.proto = (p := ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))) # pyright: ignore [reportAttributeAccessIssue]
 
             t = p.title or app.formal_name
             if mw.content:
                 if not hasattr(mw, "content_stack"):
-                    setattr(mw, "content_stack", [])
+                    mw.content_stack = [] # pyright: ignore [reportAttributeAccessIssue]
                 getattr(mw, "content_stack", []).append((mw.title, mw.content))
             mw.title = t
             mw.content = p.get_content()
-        except Exception as e:
+        except Exception as e: # noqa: BLE001
             traceback.print_exc()
             app.loop.create_task(mw.dialog(toga.ErrorDialog("Error Occurred", str(e))))
         finally:
@@ -215,7 +212,7 @@ def bootstrap_application() -> Any:
             readme.write_text(
                 "This folder is used for logging and customising this app."
             )
-        except Exception as e:
+        except OSError as e:
             print(f"Failed to write placeholder: {e}")
 
     hot_patch_file = user_documents_dir / "patch_app.py"
@@ -228,7 +225,7 @@ def bootstrap_application() -> Any:
 
             print("Hot-patch workspace parsed and executed flawlessly.")
             return patch_app.main()
-        except Exception as e:
+        except Exception as e: # noqa: BLE001
             print(f"Hot-patch execution runtime failure: {e}")
             print(
                 "Gracefully routing application boot back to compiled factory core..."

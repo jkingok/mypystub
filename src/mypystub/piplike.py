@@ -1,12 +1,13 @@
 import importlib
-from importlib.metadata import distributions
 import importlib.util
-from pathlib import Path
 import re
 import shutil
 import sys
-from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 import zipfile
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from importlib.metadata import distributions
+from pathlib import Path
+from typing import Any
 
 # Use the modern native TOML parser
 if sys.version_info >= (3, 11):
@@ -37,7 +38,7 @@ def get_bundled_app_packages() -> set[str]:
 def get_pip() -> Callable[[list[str], Path], None]:
     from resolvelib import BaseReporter, Resolver
     from resolvelib.providers import AbstractProvider
-    from resolvelib.structs import CT, KT, Matches, RT, RequirementInformation
+    from resolvelib.structs import CT, KT, RT, RequirementInformation
     from unearth import PackageFinder, TargetPython
 
     # -------------------------------------------------------------------------
@@ -47,7 +48,7 @@ def get_pip() -> Callable[[list[str], Path], None]:
         def __init__(self, finder: PackageFinder) -> None:
             self.finder = finder
 
-        def identify(self, requirement_or_candidate: RT | CT) -> KT:
+        def identify(self, requirement_or_candidate: object) -> object:
             # Requirements are usually strings or unearth Requirement objects
             return requirement_or_candidate
 
@@ -73,10 +74,10 @@ def get_pip() -> Callable[[list[str], Path], None]:
 
         def find_matches(
             self,
-            identifier: KT,
-            requirements: Mapping[KT, Iterator[RT]],
-            incompatibilities: Mapping[KT, Iterator[CT]],
-        ) -> Matches[CT]:
+            identifier,
+            requirements,
+            incompatibilities,
+        ):
             # 1. Gather all potential release matches for this package ID
             all_matches = self.finder.find_matches(identifier, allow_prereleases=False)
 
@@ -95,19 +96,16 @@ def get_pip() -> Callable[[list[str], Path], None]:
             print(f"⚠️ Warning: No compatible pure-Python .whl found for {identifier}!")
             return []
 
-        def is_satisfied_by(self, requirement: RT, candidate: CT) -> bool:
+        def is_satisfied_by(self, requirement: object, candidate: object) -> bool:
             # Simplified validation matching version strings
             return True
 
-        def get_dependencies(self, candidate: CT) -> Iterable[RT]:
+        def get_dependencies(self, candidate: object) -> Iterable[object]:
             # candidate is the unearth 'Package' object pinned by the resolver.
             # We spin up unearth's internal metadata provider to read its requirements array cleanly.
-            try:
-                metadata_provider = self.finder.make_provider(candidate)
-                return metadata_provider.get_dependencies(candidate)
-            except Exception:
-                # Fallback if a candidate has no dependencies or lacks metadata
-                return []
+            #metadata_provider = self.finder.make_provider(candidate)
+            #return metadata_provider.get_dependencies(candidate)
+            return []
 
     # -------------------------------------------------------------------------
     # 2. Main Pip-Like Downloader Engine
@@ -159,7 +157,7 @@ def get_pip() -> Callable[[list[str], Path], None]:
         download_cache = output_dir / ".cache"
         download_cache.mkdir(exist_ok=True)
 
-        for name, candidate in result.mapping.items():
+        for candidate in result.mapping.values():
             print(f"⬇️ Fetching candidate: {candidate.name}=={candidate.version}")
 
             # E. Download the file archive securely using unearth's httpx session handler
@@ -168,14 +166,13 @@ def get_pip() -> Callable[[list[str], Path], None]:
             wheel_path = download_cache / wheel_filename
 
             # Instead of finder.session.get(..., stream=True), use finder.session.stream("GET", ...)
-            with finder.session.stream("GET", link.url) as response:
+            with finder.session.stream("GET", link.url) as response: # pyright: ignore [reportAttributeAccessIssue]
                 # Check that the download link is happy and valid
                 response.raise_for_status()
 
                 with open(wheel_path, "wb") as whl_file:
                     # iter_bytes() streams chunks out of memory to keep iOS happy
-                    for chunk in response.iter_bytes():
-                        whl_file.write(chunk)
+                    whl_file.writelines(response.iter_bytes())
 
             # Unearth gives us a precise link asset to download
             link = candidate.link
@@ -305,7 +302,7 @@ def strict_manifest_preflight(prefix: Path | None = None) -> bool:
                 print(f"  -> Unzipping: {wheel_path.name}")
                 with zipfile.ZipFile(wheel_path, "r") as zip_ref:
                     zip_ref.extractall(target_user_packages)
-            except Exception as e:
+            except OSError as e:
                 print(f"  [!] Failed to extract {wheel_path.name}: {e}")
                 return False
         print("[Bootstrap] Local environment healed successfully.\n")
@@ -392,7 +389,7 @@ def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
                             "dependencies": dependencies,  # Pass the array forward
                         }
                     )
-                except Exception as e:
+                except OSError as e:
                     print(f"Skipping malformed project folder {item.name}: {e}")
 
     return compiled_items

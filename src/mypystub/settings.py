@@ -1,9 +1,10 @@
-from pathlib import Path
 import shutil
-from toga.paths import Paths
-import tomlkit  # Pure-Python style-preserving library
-from tomlkit.toml_document import TOMLDocument as TOMLDocument
+from pathlib import Path
 from typing import Any, Self
+
+import tomlkit  # Pure-Python style-preserving library
+from toga.paths import Paths
+from tomlkit.toml_document import TOMLDocument
 
 DEFAULTS_NAME = "config.toml"
 CONFIG_NAME = "launcher.toml"
