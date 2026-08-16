@@ -1,0 +1,110 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:ios)
+
+platform :ios do
+
+  desc "Build Briefcase iOS app (.xcodeproj) and deploy to local devices"
+  lane :alpha do
+    # 3. Path variables for Briefcase Xcode outputs
+    # Update 'your_app' to match your app name in pyproject.toml
+    xcode_project = "build/mypystub/ios/xcode/MyPyStub.xcodeproj"
+    xcode_scheme = "MyPyStub"
+
+    # 4. Build and archive using project: instead of workspace:
+    build_app(
+      project: xcode_project,
+      scheme: xcode_scheme,
+      export_method: "app-store",
+      output_directory: "./build/output",
+      output_name: "MyPyStub.ipa",
+      clean: true,
+      export_options: {
+        compileBitcode: false,
+        uploadSymbols: true
+      },
+      xcargs: "-allowProvisioningUpdates",
+      #xcodebuild_formatter: "xcbeautify"
+    )
+
+    install_on_device(
+      #device_id:
+      ipa: "./build/output/MyPyStub.ipa"
+    )
+  end
+
+  desc "Build Briefcase iOS app (.xcodeproj) and upload to TestFlight (pilot)"
+  lane :beta do
+    # 1. Unlock Keychain on CI / Self-Hosted Runner
+    setup_ci if is_ci
+
+    # 2. Authenticate via App Store Connect API Key
+    api_key = app_store_connect_api_key(
+      key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+      key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
+      is_key_content_base64: true
+    )
+
+    # 3. Path variables for Briefcase Xcode outputs
+    # Update 'your_app' to match your app name in pyproject.toml
+    xcode_project = "build/mypystub/ios/xcode/MyPyStub.xcodeproj"
+    xcode_scheme = "MyPyStub"
+
+    #get_certificates
+    #get_provisioning_profile
+
+    next_build = latest_testflight_build_number(
+      app_identifier: "au.id.jking.mypystub"
+    ) + 1
+
+    increment_build_number(
+      build_number: next_build,
+      xcodeproj: xcode_project
+    )
+
+    # 4. Build and archive using project: instead of workspace:
+    build_app(
+      project: xcode_project,
+      scheme: xcode_scheme,
+      export_method: "app-store",
+      output_directory: "./build/output",
+      output_name: "MyPyStub.ipa",
+      clean: true,
+      export_options: {
+        compileBitcode: false,
+        uploadSymbols: true
+      },
+      xcargs: "-allowProvisioningUpdates",
+      #xcodebuild_formatter: "xcbeautify"
+    )
+
+    changelog_from_git_commits
+
+    # 5. Upload to TestFlight
+    upload_to_testflight(
+      api_key: api_key,
+      #username: ENV["APP_STORE_APPLE_ID"],
+      #app_identifier: "au.id.jking.mypystub"
+    )
+    #pilot(
+    #  api_key: api_key,
+    #  ipa: "./build/output/MyPyStub.ipa",
+    #  skip_waiting_for_build_processing: true,
+    #  changelog: ENV["RELEASE_NOTES"] || "Automated build submitted via Fastlane & Briefcase."
+    #)
+  end
+end

@@ -69,3 +69,6 @@ logs/
 
 /assets/custom_icon.png
 /assets/icon-*.png
+
+/fastlane/README.md
+/fastlane/report.xml

@@ -1,0 +1,74 @@
+name: Continuous Delivery to TestFlight
+
+on:
+  push:
+    branches:
+      - main
+  # Or scheduled run (e.g., nightly at 2 AM UTC)
+  #schedule:
+  #  - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  testflight:
+    runs-on: [self-hosted, macOS]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # Crucial: fetches full history and tags
+
+      - name: Check for New Commits Since Last TestFlight
+        id: check_changes
+        run: |
+          # Fetch remote tags explicitly in case the runner cache is stale
+          git fetch origin --tags
+
+          # Get SHA hash for HEAD and last_testflight tag (if it exists)
+          HEAD_SHA=$(git rev-parse HEAD)
+          TAG_SHA=$(git rev-parse refs/tags/last_testflight 2>/dev/null || echo "none")
+
+          echo "Current HEAD SHA: $HEAD_SHA"
+          echo "Last TestFlight Tag SHA: $TAG_SHA"
+
+          if [ "$HEAD_SHA" = "$TAG_SHA" ]; then
+            echo "::notice::No new commits since last_testflight. Exiting build early."
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "New commits detected. Proceeding with build."
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Briefcase Update & Fastlane Beta Build
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          # Source local App Store Connect credentials from runner
+          source $HOME/.appstore_connect/env
+
+          #source .venv/bin/activate
+
+          python3 -m pip install --upgrade pip
+          pip install pillow briefcase
+
+          if [ -f "generate_icons.py" ]; then
+            # Executes your Pillow script to produce opaque icon.png and transparent splash.png
+            python3 generate_icons.py
+          fi
+
+          # Scaffolds/updates the Xcode project wrapper in build/
+          briefcase create ios
+          briefcase update ios
+          #briefcase build ios
+
+          bundle exec fastlane ios beta
+
+      - name: Move last_testflight Tag Forward
+        if: success() && steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "GitHub Actions Runner"
+          git config user.email "runner@localhost"
+
+          # Advance local tag to current HEAD and force push to origin
+          git tag -f last_testflight HEAD
+          git push origin refs/tags/last_testflight --force
