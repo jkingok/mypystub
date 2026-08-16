@@ -157,17 +157,16 @@ platform :ios do
       xcodeproj: xcode_project
     )
 
-<<<<<<< Updated upstream
     update_project_team(
       path: xcode_project,
       teamid: ENV["APP_STORE_TEAM_ID"]
-=======
+    )
+
     update_xcodeproj(
       xcodeproj: xcode_project,
       options: {
         'IPHONEOS_DEPLOYMENT_TARGET' => '15.0'
       }
->>>>>>> Stashed changes
     )
 
     # 4. Build and archive using project: instead of workspace:
