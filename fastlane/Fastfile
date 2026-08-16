@@ -24,6 +24,11 @@ platform :ios do
     xcode_project = "build/mypystub/ios/xcode/MyPyStub.xcodeproj"
     xcode_scheme = "MyPyStub"
 
+    update_project_team(
+      path: xcode_project,
+      team: ENV["APP_STORE_TEAM_ID"]
+    )
+
     # 4. Build and archive using project: instead of workspace:
     build_app(
       project: xcode_project,
