@@ -62,7 +62,7 @@ def create_nested_app_backup(app: toga.App) -> Path:
     # 1. Resolve Toga's native paths
     cache_dir = app.paths.cache
     config_dir = app.paths.config
-    data_dir = app.paths.data
+    data_dir = getattr(app, "user_documents_dir", app.paths.data)
 
     # 2. Build sub-archives in memory as bytes
     print(f"Archiving cache directory: {cache_dir}")
@@ -277,7 +277,8 @@ class Prototype:
         self.title = "Launcher"  # host_app.formal_name
         self.app.settings = s.Settings(host_app.paths) # pyright: ignore [reportAttributeAccessIssue]
         self.cache_path = self.app.paths.cache
-        self.data_path = self.app.paths.data
+        self.data_path = getattr(self.app, "user_documents_dir", self.app.paths.data)
+        print(f"Prototype initialized with data_path: {self.data_path}")
         self.this_path = Path(__file__).resolve().parent
         self.icon_path = self.this_path / "resources" / "icons"
         self.template_path = self.this_path / "resources" / "templates"
@@ -359,8 +360,9 @@ class Prototype:
             widget._impl.native.resignFirstResponder()
 
     def reload_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
-        logs = (self.data_path / "app_runtime.log").read_text()
-        self.log_text.value = logs
+        if sys.stdout and hasattr(sys.stdout, "path"):
+            logs = sys.stdout.path.read_text() # pyright: ignore [reportAttributeAccessIssue]
+            self.log_text.value = logs
 
     def get_current_dir(self) -> Path:
         print(f"get dir for {self.dir_selection.value}")
@@ -552,11 +554,12 @@ class Prototype:
             )
 
     def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
-        (self.data_path / "app_runtime.log").unlink()
-        self.log_text.value = ""
-        asyncio.create_task(
-            self.info("You will need to close and re-open the app.", "Logs Cleared")
-        )
+        if sys.stdout and hasattr(sys.stdout, "path"):  
+            sys.stdout.path.unlink() # pyright: ignore [reportAttributeAccessIssue]
+            self.log_text.value = ""
+            asyncio.create_task(
+                self.info("You will need to close and re-open the app.", "Logs Cleared")
+            )
 
     def tab_changed(self, widget: toga.Widget) -> None:
         if t := widget.current_tab:
