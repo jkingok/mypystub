@@ -504,6 +504,8 @@ class Prototype:
         required_packages = getattr(selected_row, "dependencies", [])
 
         target_user_packages = self.cache_path / "site_packages"
+        if str(target_user_packages) not in sys.path:
+            sys.path.insert(0, str(target_user_packages))
 
         # 2. Check and satisfy dependencies
         if required_packages:
@@ -517,8 +519,6 @@ class Prototype:
                 return
 
         # 3. Proceed to mount the folder root and load the module
-        import sys
-
         folder_path = str(getattr(selected_row, "folder_root", Path(".")).resolve())
         if folder_path not in sys.path:
             sys.path.insert(0, folder_path)
