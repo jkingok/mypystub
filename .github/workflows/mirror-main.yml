@@ -1,0 +1,24 @@
+name: Mirror Main to Public Repo
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: [self-hosted, macOS]
+    steps:
+      - name: Checkout Internal Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # Fetch all history for smooth branch pushing
+
+      - name: Push Main Branch to Public Remote
+        run: |
+          # 1. Add public remote if not already set up
+          git remote add public git@github.com:jkingok/mypystub.git || true
+
+          # 2. Push local main directly to public main
+          git push public main:main --force
