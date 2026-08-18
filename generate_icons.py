@@ -11,7 +11,7 @@ OUTPUT_DIR = Path("assets/icons")
 
 # Hex background color for iOS & opaque canvases
 # Match this to `splash_background_color` in pyproject.toml
-SPLASH_BACKGROUND_COLOR = "#FFFFFF"
+SPLASH_BACKGROUND_COLOR = "#7F7F7F"
 
 # iOS Squircle Safe Area Padding (0.20 = 20% margin around inner symbol)
 IOS_PADDING_PERCENT = 0.20
