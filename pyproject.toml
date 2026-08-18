@@ -3,7 +3,9 @@ name = "MyPyStub"
 description = "My first application for prototyping with iDevices and Python"
 version = "0.0.2"
 dependencies = [
+    "anyio",
     "httpx",
+    "installer",
     "markdown",
     "resolvelib",
     "tomlkit",
@@ -39,7 +41,9 @@ test_sources = [
 ]
 
 requires = [
+    "anyio",
     "httpx",
+    "installer",
     "markdown",
     "resolvelib",
     "tomlkit",

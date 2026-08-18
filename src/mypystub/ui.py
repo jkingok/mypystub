@@ -3,6 +3,7 @@ import importlib.util
 import io
 import shutil
 import sys
+import traceback
 from collections.abc import Callable
 from datetime import datetime
 from importlib.machinery import ModuleSpec
@@ -283,7 +284,6 @@ class Prototype:
         self.icon_path = self.this_path / "resources" / "icons"
         self.template_path = self.this_path / "resources" / "templates"
         self.prototype_dir = self.data_path
-        self.bootstrapped = pip.strict_manifest_preflight(self.cache_path)
         self.input_prompt = toga.Label("Input")
         self.input_text = toga.TextInput(
             style=Pack(flex=1),
@@ -365,7 +365,6 @@ class Prototype:
             self.log_text.value = logs
 
     def get_current_dir(self) -> Path:
-        print(f"get dir for {self.dir_selection.value}")
         match str(self.dir_selection.value):
             case "Examples":
                 return self.this_path / "resources" / "examples"
@@ -494,7 +493,7 @@ class Prototype:
             cast(Callable[[], None], lambda s=s, m=m: script(s, m))
         )
 
-    def handle_row_selection(self, widget: toga.DetailedList, **kwargs: Any) -> None:
+    async def handle_row_selection(self, widget: toga.DetailedList, **kwargs: Any) -> None:
         """Triggered automatically when an iOS row is tapped."""
         # Grab the currently selected row data dictionary
         selected_row = widget.selection
@@ -508,7 +507,14 @@ class Prototype:
 
         # 2. Check and satisfy dependencies
         if required_packages:
-            (pip.get_pip())(required_packages, target_user_packages)
+            # TODO Insert cache dir
+            # TODO Track the progress as it happens
+            try:
+                await pip.resolve_and_install_async(required_packages, target_user_packages)
+            except pip.DependencyError as de:
+                traceback.print_exc()
+                await self.error(str(de), "Dependency Error")
+                return
 
         # 3. Proceed to mount the folder root and load the module
         import sys
