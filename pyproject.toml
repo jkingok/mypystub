@@ -1,6 +1,7 @@
 [project]
 name = "MyPyStub"
 description = "My first application for prototyping with iDevices and Python"
+# Version is managed by Fastlane
 version = "0.0.2"
 dependencies = [
     "anyio",
@@ -21,6 +22,7 @@ icon = "assets/src_icon.png"       # Relative path to this prototype's icon
 [tool.briefcase]
 project_name = "mypystub"
 bundle = "au.id.jking"
+# Version is managed by Fastlane
 version = "0.0.2"
 url = "https://github.com/jkingok/mypystub"
 license = "BSD-3-Clause"
@@ -192,8 +194,26 @@ installer_icon = "assets/icons/icon"
 # Mobile deployments
 [tool.briefcase.app.mypystub.iOS]
 requires = [
-    "toga-iOS~=0.5.0",
+# For the moment iOS needs bleeding edge packages
+    "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
+    "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
+    "toga-iOS @ git+https://github.com/beeware/toga.git#subdirectory=iOS",
     "std-nslog~=1.0.3",
+# Since iOS does not allow binaries to be added after the fact
+# we build in some for convenience
+# See: https://beeware.org/mobile-wheels/
+    "charset-normalizer>=3.5.0",
+    "cffi>=2.1.0",
+    "aiohttp>=3.14.0",
+    "pillow>=11.3.0",
+    "xxhash>=3.7.0",
+    "mmh3>=5.2.0",
+    "pybase64>=1.4.2",
+    "maxminddb>=2.8.2",
+# optree bundles an executable
+#    "optree>=0.17.0",
+    "cytoolz>=1.1.0",
+    "lru-dict>=1.4.1",
 ]
 
 icon = "assets/icons/ios/icon"

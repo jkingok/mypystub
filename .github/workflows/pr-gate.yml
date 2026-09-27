@@ -51,11 +51,17 @@ jobs:
   briefcase-build:
     name: Briefcase iOS Compilation
     needs: quality-gate      # Only trigger if Job 1 passes
-    runs-on: self-hosted      # Targets your physical Mac Mini runner
+    runs-on: macos-26
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: 'pip'
 
       - name: Ensure Python Environment & Dependencies
         run: |

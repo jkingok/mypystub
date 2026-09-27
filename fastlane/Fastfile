@@ -11,91 +11,101 @@
 #
 
 # Uncomment the line if you want fastlane to automatically update itself
-# update_fastlane
+update_fastlane
+
+require_relative 'app_config'
+
+# Fetch app_identifier from Appfile
+def bundle_id
+  CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
+end
+
+def ipa_name
+  "#{AppConfig::APP_NAME}.ipa"
+end
+
+# Constructs the complete path where gym/build_app outputs the .ipa file
+def ipa_path
+  File.join("build", AppConfig::BRIEFCASE_SLUG, "iOS", "Xcode", ipa_name)
+end
+
+# Constructs path: build/<briefcase_slug>/iOS/Xcode/<app_name>.xcodeproj
+def xcode_project_path
+  File.join("build", AppConfig::BRIEFCASE_SLUG, "iOS", "Xcode", "#{AppConfig::APP_NAME}.xcodeproj")
+end
 
 default_platform(:ios)
 
 platform :ios do
+
+  private_lane :update_xcode do
+    #unlock_keychain(
+    #  path: "login.keychain-db",
+    #  password: ENV["LOCAL_MACOS_PASSWORD"]
+    #)
+
+    # 2. Authenticate via App Store Connect API Key
+    api_key = app_store_connect_api_key(
+      key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+      key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
+      is_key_content_base64: true
+    )
+
+    # 1. Generate current date-based version string (e.g., "2026.09.24" or "26.09.24")
+    date_version = Time.now.strftime("%Y.%m.%d") # Use "%y.%m.%d" for 2-digit year
+    
+    # Set Marketing Version (CFBundleShortVersionString)
+    increment_version_number(
+      version_number: date_version,
+      xcodeproj: xcode_project_path
+    )
+
+    # 2. Fetch the latest build number from TestFlight for this specific version
+    latest_build = latest_testflight_build_number(
+      version: date_version,
+      app_identifier: bundle_id,
+      initial_build_number: 0
+    )
+
+    # 3. Increment build number (CFBundleVersion) relative to TestFlight's state
+    # If no builds exist today, this sets it to 1. If build 1 exists, it becomes 2.
+    new_build_number = latest_build + 1
+    increment_build_number(
+      build_number: new_build_number,
+      xcodeproj: xcode_project_path
+    )
+
+    update_project_team(
+      path: xcode_project_path,
+      teamid: ENV["APP_STORE_TEAM_ID"]
+    )
+
+    update_xcodeproj(
+      xcodeproj: xcode_project_path,
+      options: {
+        'IPHONEOS_DEPLOYMENT_TARGET' => '15.0'
+      }
+    )
+
+    lane_context[:API_KEY] = api_key
+    lane_context[:XCODE_PROJECT] = xcode_project_path
+    lane_context[:XCODE_SCHEME] = AppConfig::APP_NAME
+  end
 
   desc "Build Briefcase iOS app (.xcodeproj) and leave signing and deploying to Xcode"
   lane :manual do
     # 1. Unlock Keychain on CI / Self-Hosted Runner
     setup_ci if is_ci
 
-    unlock_keychain(
-      path: "login.keychain-db",
-      password: ENV["LOCAL_MACOS_PASSWORD"]
-    )
-
-    # 2. Authenticate via App Store Connect API Key
-    api_key = app_store_connect_api_key(
-      key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
-      key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
-      is_key_content_base64: true
-    )
-
-    # 3. Path variables for Briefcase Xcode outputs
-    # Update 'your_app' to match your app name in pyproject.toml
-    xcode_project = "build/mypystub/ios/xcode/MyPyStub.xcodeproj"
-    xcode_scheme = "MyPyStub"
-
-    next_build = latest_testflight_build_number(
-      app_identifier: "au.id.jking.mypystub"
-    ) + 1
-
-    increment_build_number(
-      build_number: next_build,
-      xcodeproj: xcode_project
-    )
-
-    update_project_team(
-      path: xcode_project,
-      teamid: ENV["APP_STORE_TEAM_ID"]
-    )
-
-    update_xcodeproj(
-      xcodeproj: xcode_project,
-      options: {
-        'IPHONEOS_DEPLOYMENT_TARGET' => '15.0'
-      }
-    )
+    update_xcode
   end
 
-  desc "Build Briefcase iOS app (.xcodeproj) and deploy to local devices"
-  lane :alpha do
-    # 1. Unlock Keychain on CI / Self-Hosted Runner
-    setup_ci if is_ci
+  private_lane :build_xcode do
+    update_xcode
 
-    unlock_keychain(
-      path: "login.keychain-db",
-      password: ENV["LOCAL_MACOS_PASSWORD"]
-    )
-
-    # 2. Authenticate via App Store Connect API Key
-    api_key = app_store_connect_api_key(
-      key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
-      key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
-      is_key_content_base64: true
-    )
-
-    # 3. Path variables for Briefcase Xcode outputs
-    # Update 'your_app' to match your app name in pyproject.toml
-    xcode_project = "build/mypystub/ios/xcode/MyPyStub.xcodeproj"
-    xcode_scheme = "MyPyStub"
-
-    update_project_team(
-      path: xcode_project,
-      teamid: ENV["APP_STORE_TEAM_ID"]
-    )
-
-    update_xcodeproj(
-      xcodeproj: xcode_project,
-      options: {
-        'IPHONEOS_DEPLOYMENT_TARGET' => '15.0'
-      }
-    )
+    xcode_project = lane_context[:XCODE_PROJECT]
+    xcode_scheme = lane_context[:XCODE_SCHEME]
 
     # 4. Build and archive using project: instead of workspace:
     build_app(
@@ -104,7 +114,7 @@ platform :ios do
       scheme: xcode_scheme,
       export_method: "app-store",
       output_directory: "./build/output",
-      output_name: "MyPyStub.ipa",
+      output_name: ipa_name,
       clean: true,
       export_options: {
         compileBitcode: false,
@@ -115,75 +125,32 @@ platform :ios do
       xcargs: "-allowProvisioningUpdates",
       #xcodebuild_formatter: "xcbeautify"
     )
+  end
+
+  desc "Build Briefcase iOS app (.xcodeproj) and deploy to local devices"
+  lane :local do
+    # 1. Unlock Keychain on CI / Self-Hosted Runner
+    setup_ci if is_ci
+
+    build_xcode
 
     install_on_device(
       #device_id:
-      ipa: "./build/output/MyPyStub.ipa"
+      ipa: ipa_path
     )
   end
 
   desc "Build Briefcase iOS app (.xcodeproj) and upload to TestFlight (pilot)"
-  lane :beta do
+  lane :share do
     # 1. Unlock Keychain on CI / Self-Hosted Runner
     setup_ci if is_ci
-
-    unlock_keychain(
-      path: "login.keychain-db",
-      password: ENV["LOCAL_MACOS_PASSWORD"]
-    )
-
-    # 2. Authenticate via App Store Connect API Key
-    api_key = app_store_connect_api_key(
-      key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
-      key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
-      is_key_content_base64: true
-    )
-
-    # 3. Path variables for Briefcase Xcode outputs
-    # Update 'your_app' to match your app name in pyproject.toml
-    xcode_project = "build/mypystub/ios/xcode/MyPyStub.xcodeproj"
-    xcode_scheme = "MyPyStub"
 
     #get_certificates
     #get_provisioning_profile
 
-    next_build = latest_testflight_build_number(
-      app_identifier: "au.id.jking.mypystub"
-    ) + 1
+    build_xcode
 
-    increment_build_number(
-      build_number: next_build,
-      xcodeproj: xcode_project
-    )
-
-    update_project_team(
-      path: xcode_project,
-      teamid: ENV["APP_STORE_TEAM_ID"]
-    )
-
-    update_xcodeproj(
-      xcodeproj: xcode_project,
-      options: {
-        'IPHONEOS_DEPLOYMENT_TARGET' => '15.0'
-      }
-    )
-
-    # 4. Build and archive using project: instead of workspace:
-    build_app(
-      project: xcode_project,
-      scheme: xcode_scheme,
-      export_method: "app-store",
-      output_directory: "./build/output",
-      output_name: "MyPyStub.ipa",
-      clean: true,
-      export_options: {
-        compileBitcode: false,
-        uploadSymbols: true
-      },
-      xcargs: "-allowProvisioningUpdates",
-      #xcodebuild_formatter: "xcbeautify"
-    )
+    api_key = lane_context[:API_KEY]
 
     changelog_from_git_commits
 
@@ -191,11 +158,11 @@ platform :ios do
     upload_to_testflight(
       api_key: api_key,
       #username: ENV["APP_STORE_APPLE_ID"],
-      #app_identifier: "au.id.jking.mypystub"
+      #app_identifier: bundle_id
     )
     #pilot(
     #  api_key: api_key,
-    #  ipa: "./build/output/MyPyStub.ipa",
+    #  ipa: ipa_path,
     #  skip_waiting_for_build_processing: true,
     #  changelog: ENV["RELEASE_NOTES"] || "Automated build submitted via Fastlane & Briefcase."
     #)
