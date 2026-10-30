@@ -46,7 +46,7 @@ test_sources = [
 requires = [
     "anyio",
     "certifi",
-    "httpx",
+    "httpx2",
     "installer",
     "markdown",
     "resolvelib",

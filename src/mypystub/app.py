@@ -205,8 +205,9 @@ def export_ssl_cert_bundle() -> None:
     """
     Points ``SSL_CERT_FILE`` at certifi's CA bundle before any network client is created.
 
-    On iOS, httpx does not pick up certifi's bundle and truststore cannot be installed,
-    so TLS verification fails for scripts that declare dependencies in their header.
+    On iOS, httpx2 (via truststore) finds no usable system CA store, so TLS
+    verification fails for scripts that declare dependencies in their header.
+    httpx2 checks ``SSL_CERT_FILE`` before falling back to truststore.
     An existing ``SSL_CERT_FILE`` is left untouched.
     """
     try:
