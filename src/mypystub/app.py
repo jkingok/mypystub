@@ -6,6 +6,7 @@ and checks the iOS user sandbox (`~/Documents/patch_app.py`) for live runtime ov
 """
 
 import asyncio
+import os
 import sys
 import threading
 import traceback
@@ -68,6 +69,7 @@ class MyApp(toga.App):
     """
     Main Toga Application instance
     """
+
     def __init__(self, user_documents_dir: Path | None = None, **kwargs: Any):
         """
         Initializes the Toga application instance.
@@ -156,16 +158,17 @@ class MyApp(toga.App):
         loop.set_exception_handler(global_async_exception_handler)
 
         try:
-            app.proto = (p := ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))) # pyright: ignore [reportAttributeAccessIssue]
+            p = ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))
+            cast(Any, app).proto = p
 
             t = p.title or app.formal_name
             if mw.content:
                 if not hasattr(mw, "content_stack"):
-                    mw.content_stack = [] # pyright: ignore [reportAttributeAccessIssue]
+                    cast(Any, mw).content_stack = []
                 getattr(mw, "content_stack", []).append((mw.title, mw.content))
             mw.title = t
             mw.content = p.get_content()
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             app.loop.create_task(mw.dialog(toga.ErrorDialog("Error Occurred", str(e))))
         finally:
@@ -198,11 +201,28 @@ class MyApp(toga.App):
         MyApp.startup_into(self, True)
 
 
+def export_ssl_cert_bundle() -> None:
+    """
+    Points ``SSL_CERT_FILE`` at certifi's CA bundle before any network client is created.
+
+    On iOS, httpx does not pick up certifi's bundle and truststore cannot be installed,
+    so TLS verification fails for scripts that declare dependencies in their header.
+    An existing ``SSL_CERT_FILE`` is left untouched.
+    """
+    try:
+        import certifi
+    except ImportError as e:
+        print(f"certifi unavailable, SSL_CERT_FILE not exported: {e}")
+        return
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+
+
 def bootstrap_application() -> Any:
     """
     Bootstraps the application environment on device launch.
 
-    Sets up stdout/stderr logging in `~/Documents/app_runtime.log`.
+    Sets up stdout/stderr logging in `~/Documents/app_runtime.log` and exports
+    `SSL_CERT_FILE` for certifi's CA bundle.
     If an updated `patch_app.py` script exists in the iOS user Documents folder,
     it executes `patch_app.main()` to allow live code updates without recompiling.
     Otherwise, returns a standard :class:`MyApp` instance.
@@ -214,14 +234,17 @@ def bootstrap_application() -> Any:
     # This is equivalent to the toga.App.app.paths.data on many platforms
     if sys.platform == "android":
 
-        user_documents_dir = Path(".")  # Default to current directory on Android as a fallback
+        user_documents_dir = Path(
+            "."
+        )  # Default to current directory on Android as a fallback
 
         from com.chaquo.python import Python
+
         context = Python.getPlatform().getApplication()
-        
+
         if context is not None:
-            #external_files_dir = context.getExternalFilesDir("Documents")
-            #if external_files_dir is not None:
+            # external_files_dir = context.getExternalFilesDir("Documents")
+            # if external_files_dir is not None:
             files_dir = context.getFilesDir()
             user_documents_dir = Path(files_dir.getAbsolutePath())
     else:
@@ -233,6 +256,8 @@ def bootstrap_application() -> Any:
     redirector = LogRedirector(log_path)
     sys.stdout = redirector
     sys.stderr = redirector
+
+    export_ssl_cert_bundle()
 
     readme = user_documents_dir / "README"
     if not readme.exists():
@@ -253,7 +278,7 @@ def bootstrap_application() -> Any:
 
             print("Hot-patch workspace parsed and executed flawlessly.")
             return patch_app.main()
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             print(f"Hot-patch execution runtime failure: {e}")
             print(
                 "Gracefully routing application boot back to compiled factory core..."

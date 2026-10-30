@@ -232,6 +232,7 @@ class NotAnOptionContainer(toga.Box):
     def current_tab(self, value: str) -> None:
         self.swap_in_name(value)
 
+
 class LabelledSelection(toga.Box):
     """
     Toga Box combining a text Label and Selection dropdown widget.
@@ -248,21 +249,14 @@ class LabelledSelection(toga.Box):
     :type id: str
     """
 
-    def __init__(
-        self, label_text: str, on_press=None, **kwargs
-    ):
+    def __init__(self, label_text: str, **kwargs):
         self.selection = toga.Selection(flex=1, **kwargs)
-        self.on_press = on_press
         super().__init__(
             direction="row",
             align_items="center",
             children=[
                 toga.Label(label_text + ": "),
                 self.selection,
-                toga.Button(
-                    "⤵️",
-                    on_press=lambda w: (self.selection._impl.native.resignFirstResponder(), self.on_press(w) if self.on_press else None)
-                )
             ],
         )
 
@@ -276,7 +270,7 @@ class Prototype:
         self.app = host_app
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Launcher"  # host_app.formal_name
-        self.app.settings = s.Settings(host_app.paths) # pyright: ignore [reportAttributeAccessIssue]
+        cast(Any, self.app).settings = s.Settings(host_app.paths)
         self.cache_path = self.app.paths.cache
         self.data_path = getattr(self.app, "user_documents_dir", self.app.paths.data)
         print(f"Prototype initialized with data_path: {self.data_path}")
@@ -307,7 +301,11 @@ class Prototype:
         )
         self.script_activity = LabelledActivity()
         self.splash = toga.ImageView(style=Pack(flex=0))
-        self.dir_selection = LabelledSelection("Category", items=["Examples", "User"], on_change=lambda w: setattr(self.script_list, "data", None), on_press=self.reload_menu)
+        self.dir_selection = LabelledSelection(
+            "Category",
+            items=["Examples", "User"],
+            on_change=self.reload_menu,
+        )
         self.script_list = toga.DetailedList(
             on_refresh=self.reload_menu,
             on_select=self.handle_row_selection,
@@ -360,8 +358,8 @@ class Prototype:
             widget._impl.native.resignFirstResponder()
 
     def reload_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
-        if sys.stdout and hasattr(sys.stdout, "path"):
-            logs = sys.stdout.path.read_text() # pyright: ignore [reportAttributeAccessIssue]
+        if log_path := getattr(sys.stdout, "path", None):
+            logs = log_path.read_text()
             self.log_text.value = logs
 
     def get_current_dir(self) -> Path:
@@ -369,9 +367,11 @@ class Prototype:
             case "Examples":
                 return self.this_path / "resources" / "examples"
             case _:
-                return self.prototype_dir 
+                return self.prototype_dir
 
-    def reload_menu(self, widget: toga.DetailedList | toga.Selection, **kwargs: Any) -> None:
+    def reload_menu(
+        self, widget: toga.DetailedList | toga.Selection, **kwargs: Any
+    ) -> None:
         # 1. Gather all of our TOML configuration profiles
         self.prototypes_data = pip.scan_all_prototypes(self.get_current_dir())
 
@@ -397,7 +397,7 @@ class Prototype:
                 }
             )
 
-        widget.data = list_items  # type: ignore[assignment]
+        self.script_list.data = list_items
 
     def new_project(self, widget: toga.Button, **kwargs: Any) -> None:
         def snake(s: str) -> str:
@@ -481,7 +481,7 @@ class Prototype:
                 # Some modules need a nudge...
                 if hasattr(module, "main"):
                     module.main()
-            except Exception as e: # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
                 asyncio.run_coroutine_threadsafe(
                     self.error(f"Script failed with: {e!s}", "Script Failure"),
                     self.app.loop,
@@ -493,7 +493,9 @@ class Prototype:
             cast(Callable[[], None], lambda s=s, m=m: script(s, m))
         )
 
-    async def handle_row_selection(self, widget: toga.DetailedList, **kwargs: Any) -> None:
+    async def handle_row_selection(
+        self, widget: toga.DetailedList, **kwargs: Any
+    ) -> None:
         """Triggered automatically when an iOS row is tapped."""
         # Grab the currently selected row data dictionary
         selected_row = widget.selection
@@ -512,7 +514,9 @@ class Prototype:
             # TODO Insert cache dir
             # TODO Track the progress as it happens
             try:
-                await pip.resolve_and_install_async(required_packages, target_user_packages)
+                await pip.resolve_and_install_async(
+                    required_packages, target_user_packages
+                )
             except pip.DependencyError as de:
                 traceback.print_exc()
                 await self.error(str(de), "Dependency Error")
@@ -526,7 +530,7 @@ class Prototype:
 
         # Clear out status title alterations and execute
         print(f"Launching {getattr(selected_row, "title", "?")} from path: {getattr(selected_row, "entry_point", "?")}")
-        selected_file_path = Path(selected_row.entry_point) # pyright: ignore [reportAttributeAccessIssue]
+        selected_file_path = Path(cast(Any, selected_row).entry_point)
 
         try:
             # Dynamically load the python module from an arbitrary path
@@ -554,14 +558,14 @@ class Prototype:
                 self.app.loop.call_soon(
                     cast(Callable[[], None], lambda s=spec, m=module: self.start(s, m))
                 )
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             asyncio.create_task(
                 self.error(f"Failed to execute script:\n{e!s}", "Load Failure")
             )
 
     def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
-        if sys.stdout and hasattr(sys.stdout, "path"):  
-            sys.stdout.path.unlink() # pyright: ignore [reportAttributeAccessIssue]
+        if log_path := getattr(sys.stdout, "path", None):
+            log_path.unlink()
             self.log_text.value = ""
             asyncio.create_task(
                 self.info("You will need to close and re-open the app.", "Logs Cleared")
@@ -606,7 +610,7 @@ class Prototype:
             # 2. Open native iOS Share Sheet via Rubicon-ObjC
             open_share_sheet(widget, backup_file)
 
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             asyncio.create_task(
                 self.error(
                     f"An error occurred while creating the archive: {e}",

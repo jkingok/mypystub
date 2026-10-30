@@ -1,21 +1,24 @@
 import asyncio
 import importlib.metadata
+import platform
+import re
 import shutil
 import sys
 import tempfile
 import zipfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import anyio
-import httpx
+import httpx2
 import resolvelib
 from installer import install
 from installer.destinations import SchemeDictionaryDestination
 from installer.sources import WheelFile
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 from unearth import PackageFinder, TargetPython
@@ -40,7 +43,11 @@ class Candidate:
 
     def __str__(self) -> str:
         source = "system" if self.is_system else "pypi"
-        extras_str = f"[{','.join(sorted(self.requested_extras))}]" if self.requested_extras else ""
+        extras_str = (
+            f"[{','.join(sorted(self.requested_extras))}]"
+            if self.requested_extras
+            else ""
+        )
         return f"{self.name}{extras_str} {self.version} ({source})"
 
 
@@ -50,7 +57,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         finder: PackageFinder,
         cache_dir: Path,
         system_packages: dict[str, Version],
-        http_client: httpx.Client,
+        http_client: httpx2.Client,
         package_substitutions: dict[str, str] | None = None,
         use_system: bool = True,
         max_candidates: int = 5,
@@ -73,21 +80,24 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         raw_name = canonicalize_name(requirement_or_candidate.name)
         return self.package_substitutions.get(raw_name, raw_name)
 
-    def get_preference(self, identifier, resolutions, candidates, information, backtrack_causes):
+    def get_preference(
+        self, identifier, resolutions, candidates, information, backtrack_causes
+    ):
         return sum(1 for _ in information[identifier])
 
-    def find_matches(self, identifier, requirements, incompatibilities) -> list[Candidate]:
+    def find_matches(
+        self, identifier, requirements, incompatibilities
+    ) -> list[Candidate]:
         canon_id = canonicalize_name(identifier)
-        req_specs = [r for r in requirements.get(identifier, []) if isinstance(r, Requirement)]
-        
+        req_specs = [
+            r for r in requirements.get(identifier, []) if isinstance(r, Requirement)
+        ]
+
         # Collect explicitly requested extras as a frozenset
         active_extras: frozenset[str] = frozenset(
-            extra
-            for req in req_specs
-            if req.extras
-            for extra in req.extras
+            extra for req in req_specs if req.extras for extra in req.extras
         )
-        
+
         candidates: list[Candidate] = []
 
         # 1. System Candidate Lookup
@@ -98,7 +108,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 is_system=True,
                 requested_extras=active_extras,
             )
-            if sys_cand not in incompatibilities and all(self.is_satisfied_by(req, sys_cand) for req in req_specs):
+            if sys_cand not in incompatibilities and all(
+                self.is_satisfied_by(req, sys_cand) for req in req_specs
+            ):
                 candidates.append(sys_cand)
 
         # 2. PyPI Candidate Lookup
@@ -124,7 +136,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 is_system=False,
                 requested_extras=active_extras,
             )
-            if cand not in incompatibilities and all(self.is_satisfied_by(req, cand) for req in req_specs):
+            if cand not in incompatibilities and all(
+                self.is_satisfied_by(req, cand) for req in req_specs
+            ):
                 candidates.append(cand)
 
         sorted_candidates = sorted(
@@ -135,7 +149,10 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         return sorted_candidates[: self.max_candidates]
 
     def is_satisfied_by(self, requirement: Requirement, candidate: Candidate) -> bool:
-        return (canonicalize_name(requirement.name) == candidate.name) and not (requirement.specifier and not requirement.specifier.contains(candidate.version, prereleases=True))
+        return (canonicalize_name(requirement.name) == candidate.name) and not (
+            requirement.specifier
+            and not requirement.specifier.contains(candidate.version, prereleases=True)
+        )
 
     def get_dependencies(self, candidate: Candidate) -> list[Requirement]:
         if candidate in self._dep_cache:
@@ -145,7 +162,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             deps = self._get_system_dependencies(candidate)
         else:
             metadata_text = self._fetch_candidate_metadata(candidate)
-            deps = self._parse_metadata_requirements(metadata_text, candidate.requested_extras)
+            deps = self._parse_metadata_requirements(
+                metadata_text, candidate.requested_extras
+            )
 
         self._dep_cache[candidate] = deps
         return deps
@@ -154,7 +173,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         self, metadata_content: str, active_extras: frozenset[str]
     ) -> list[Requirement]:
         reqs: list[Requirement] = []
-        
+
         for line in metadata_content.splitlines():
             if not line.startswith("Requires-Dist:"):
                 continue
@@ -166,7 +185,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             if req.marker:
                 # 1. Evaluate default environment without any active extras
                 is_base_dep = req.marker.evaluate({"extra": ""})
-                
+
                 # 2. If it's not a base dependency, check if it matches an explicitly requested extra
                 is_requested_extra = any(
                     req.marker.evaluate({"extra": extra}) for extra in active_extras
@@ -195,7 +214,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             if dist.requires:
                 # Re-use metadata parser logic for consistency
                 raw_metadata = "\n".join(f"Requires-Dist: {r}" for r in dist.requires)
-                return self._parse_metadata_requirements(raw_metadata, candidate.requested_extras)
+                return self._parse_metadata_requirements(
+                    raw_metadata, candidate.requested_extras
+                )
         except importlib.metadata.PackageNotFoundError:
             pass
         return reqs
@@ -208,9 +229,10 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             resp = self.http_client.get(metadata_url, follow_redirects=True)
             if resp.status_code == 200:
                 return resp.text
-        except httpx.HTTPError:
+        except httpx2.HTTPError:
             pass
         return ""
+
 
 class ResolutionProgressReporter(resolvelib.BaseReporter):
     """Provides visibility into resolution progress instead of remaining silent."""
@@ -230,15 +252,18 @@ class ResolutionProgressReporter(resolvelib.BaseReporter):
 
 # Helper Functions
 
-async def download_wheel_async(client: httpx.AsyncClient, url: str, target_path: Path) -> None:
-    """Asynchronously streams a wheel file to disk using HTTPX."""
+
+async def download_wheel_async(
+    client: httpx2.AsyncClient, url: str, target_path: Path
+) -> None:
+    """Asynchronously streams a wheel file to disk using HTTPX2."""
     try:
         async with client.stream("GET", url, follow_redirects=True) as response:
             response.raise_for_status()
             async with await anyio.open_file(target_path, "wb") as f:
                 async for chunk in response.aiter_bytes(chunk_size=8192):
                     await f.write(chunk)
-    except (httpx.HTTPError, OSError) as exc:
+    except (httpx2.HTTPError, OSError) as exc:
         raise DependencyError(f"Async download failed for {url}: {exc}") from exc
 
 
@@ -260,6 +285,7 @@ def unpack_wheel(wheel_path: Path, target_site_packages: Path) -> None:
 
 # Main Async Entry Point
 
+
 async def resolve_and_install_async(
     requirements: list[str],
     target_dir: Path,
@@ -280,14 +306,16 @@ async def resolve_and_install_async(
             is_temp_cache = True
             print(f"Temporary wheel cache is {cache_dir}")
         except OSError as exc:
-            raise DependencyError(f"Failed to create temporary cache directory: {exc}") from exc
+            raise DependencyError(
+                f"Failed to create temporary cache directory: {exc}"
+            ) from exc
     else:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Default index list includes PyPI and BeeWare PyPI
     indexes = index_urls or [
         "https://pypi.org/simple/",
-        #"https://pypi.anaconda.org/beeware/simple/", # no point using while binaries are unsigned
+        # "https://pypi.anaconda.org/beeware/simple/", # no point using while binaries are unsigned
     ]
 
     try:
@@ -300,7 +328,9 @@ async def resolve_and_install_async(
         # Offload resolution phase to thread so unearth/resolvelib don't freeze Toga UI
         def _sync_resolve_pass():
             raw_system_pkgs = get_package_inventory(None) if use_system else {}
-            system_packages = {name: Version(ver) for name, ver in raw_system_pkgs.items()}
+            system_packages = {
+                name: Version(ver) for name, ver in raw_system_pkgs.items()
+            }
 
             # 1. Initialize finder with target index and constraints
             finder = PackageFinder(
@@ -308,12 +338,12 @@ async def resolve_and_install_async(
                 target_python=TargetPython(),
                 only_binary={":all:"},
             )
-    
-            # 2. Enforce strict timeout on unearth's internal session to prevent infinite hanging
-            #finder.session.timeout = 10.0
 
-            # 3. Perform lightweight resolution using HTTPX and PEP 658 metadata
-            with httpx.Client(timeout=10.0) as sync_http:
+            # 2. Enforce strict timeout on unearth's internal session to prevent infinite hanging
+            # finder.session.timeout = 10.0
+
+            # 3. Perform lightweight resolution using HTTPX2 and PEP 658 metadata
+            with httpx2.Client(timeout=10.0) as sync_http:
                 provider = PyPIWheelProvider(
                     finder=finder,
                     cache_dir=cache_dir,
@@ -322,11 +352,11 @@ async def resolve_and_install_async(
                     use_system=use_system,
                     max_candidates=5,  # Limit to top 5 candidates per package
                 )
-        
+
                 # Use custom progress reporter to track execution in console/UI
                 reporter = ResolutionProgressReporter()
                 resolver = resolvelib.Resolver(provider, reporter)
-        
+
                 parsed_reqs = [Requirement(r) for r in requirements]
                 return resolver.resolve(parsed_reqs)
 
@@ -336,7 +366,7 @@ async def resolve_and_install_async(
             raise DependencyError(f"Dependency resolution failed: {exc}") from exc
 
         # Async Download & Install Phase
-        async with httpx.AsyncClient(timeout=30.0) as async_http:
+        async with httpx2.AsyncClient(timeout=30.0) as async_http:
             for candidate in resolution.mapping.values():
                 if candidate.is_system:
                     continue
@@ -349,30 +379,37 @@ async def resolve_and_install_async(
                     if installed_version == candidate.version and not force_reinstall:
                         continue
                     else:
-                        print(f"upgrading {candidate.name} from {installed_version} to {candidate.version}")
-                        await asyncio.to_thread(remove_installed_package, target_dir, candidate.name)
+                        print(
+                            f"upgrading {candidate.name} from {installed_version} to {candidate.version}"
+                        )
+                        await asyncio.to_thread(
+                            remove_installed_package, target_dir, candidate.name
+                        )
 
                 # Download wheel asynchronously if not cached
                 if not wheel_path.exists():
                     print(f"downloading {candidate.link}")
-                    await download_wheel_async(async_http, candidate.link.url, wheel_path)
+                    await download_wheel_async(
+                        async_http, candidate.link.url, wheel_path
+                    )
 
                 # Unpack wheel on a worker thread
                 try:
                     await asyncio.to_thread(unpack_wheel, wheel_path, target_dir)
                 except (zipfile.BadZipFile, OSError) as exc:
-                    raise DependencyError(f"Failed to unpack {wheel_path.name}: {exc}") from exc 
+                    raise DependencyError(
+                        f"Failed to unpack {wheel_path.name}: {exc}"
+                    ) from exc
         print("successfully met all requirements")
     finally:
         if is_temp_cache and cache_dir.exists():
             print("removing temporary wheel cache")
             await asyncio.to_thread(shutil.rmtree, cache_dir, True)
 
+
 # Use the modern native TOML parser
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib  # Fallback for older environments
+import tomllib  # Fallback for older environments
+
 
 def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
     compiled_items: list[Mapping[str, Any]] = []
@@ -392,6 +429,33 @@ def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
             # Don't accidentally auto-load your main launcher scripts
             if item.name in ["patch_app.py", "__init__.py"]:
                 continue
+            
+            # Look for dependencies stemming from PEP 723
+            def stream(script: str) -> Iterator[tuple[str, str]]:
+                REGEX = r'(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$'
+                for match in re.finditer(REGEX, script):
+                    yield match.group('type'), ''.join(
+                        line[2:] if line.startswith('# ') else line[1:]
+                        for line in match.group('content').splitlines(keepends=True)
+                    )
+                    
+            dependencies = []
+            for k, v in stream(item.read_text()):
+                if k == "script":
+                    config = tomllib.loads(v)
+                    if 'dependencies' in config:
+                        dependencies += config['dependencies']
+                    # nothing we can do about requires-python
+                    if 'requires-python' in config:
+                        current_version_str = platform.python_version()
+                        current_version = Version(current_version_str)
+                        requires_python = SpecifierSet(config['requires-python'])
+
+                        if current_version not in requires_python:
+                            print(f"Skipping {item.name} needs Python {config['requires-python']} not {current_version_str}")
+                            continue
+                    # TODO we can implement our custom tool in this
+                    # same metadata to capture description, etc
 
             # Create a clean, zero-config metadata profile
             compiled_items.append(
@@ -401,7 +465,7 @@ def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
                     "icon_path": None,  # Uses default fallback icon
                     "entry_point": item,
                     "folder_root": item.parent,
-                    "dependencies": [],  # Toy scripts have no extra dependencies declared
+                    "dependencies": dependencies,
                 }
             )
 
@@ -451,10 +515,11 @@ def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
 
 # Package Inventory Utility
 
+
 def get_package_inventory(target_path: Path | None = None) -> dict[str, str]:
     """
     Returns a dictionary of installed package names and versions.
-    
+
     :param target_path: Directory path to inspect (e.g. custom_site_packages).
                         If None, inspects the current system Python environment.
     """
@@ -477,6 +542,7 @@ def get_package_inventory(target_path: Path | None = None) -> dict[str, str]:
 
 # Maintenance Helpers
 
+
 def get_installed_distribution(
     target_site_packages: Path, package_name: str
 ) -> importlib.metadata.Distribution | None:
@@ -498,12 +564,19 @@ def remove_installed_package(target_site_packages: Path, package_name: str) -> N
     if dist.files:
         for relative_path in dist.files:
             file_path = (target_site_packages / relative_path).resolve()
-            if file_path.is_relative_to(target_site_packages.resolve()) and file_path.exists():
+            if (
+                file_path.is_relative_to(target_site_packages.resolve())
+                and file_path.exists()
+            ):
                 if file_path.is_file() or file_path.is_symlink():
                     file_path.unlink()
 
                 parent = file_path.parent
-                while parent != target_site_packages and parent.exists() and not any(parent.iterdir()):
+                while (
+                    parent != target_site_packages
+                    and parent.exists()
+                    and not any(parent.iterdir())
+                ):
                     parent.rmdir()
                     parent = parent.parent
 
@@ -538,16 +611,14 @@ def resolve_and_install(
 
         # Index system packages if requested
         raw_system_pkgs = get_package_inventory(None) if use_system else {}
-        system_packages = {
-            name: Version(ver) for name, ver in raw_system_pkgs.items()
-        }
+        system_packages = {name: Version(ver) for name, ver in raw_system_pkgs.items()}
 
         finder = PackageFinder(
             target_python=TargetPython(),
             only_binary={":all:"},
         )
 
-        with httpx.Client(timeout=15.0) as sync_http:
+        with httpx2.Client(timeout=15.0) as sync_http:
             provider = PyPIWheelProvider(
                 finder=finder,
                 cache_dir=cache_dir,
@@ -574,10 +645,14 @@ def resolve_and_install(
             if installed:
                 installed_version = Version(installed.version)
                 if installed_version == candidate.version and not force_reinstall:
-                    print(f" - [Satisfied] {candidate.name}=={installed_version} in target directory.")
+                    print(
+                        f" - [Satisfied] {candidate.name}=={installed_version} in target directory."
+                    )
                     continue
                 else:
-                    print(f" - [Updating] Replacing {candidate.name} {installed_version} -> {candidate.version}")
+                    print(
+                        f" - [Updating] Replacing {candidate.name} {installed_version} -> {candidate.version}"
+                    )
                     remove_installed_package(target_dir, candidate.name)
             else:
                 print(f" - [Installing] {candidate.name}=={candidate.version}")
@@ -592,6 +667,7 @@ def resolve_and_install(
             print(f"Cleaning up temporary cache directory: {cache_dir}")
             shutil.rmtree(cache_dir, ignore_errors=True)
 
+
 async def sync_launcher_dependencies_via_toml(
     pyproject_path: str, output_dir: Path, cache_dir: Path | None = None
 ) -> None:
@@ -604,9 +680,9 @@ async def sync_launcher_dependencies_via_toml(
     # Target dependencies under [project] dependencies array (PEP 621)
     dependencies = config.get("project", {}).get("dependencies", [])
     if not dependencies:
-        print(
-            "No dependencies found in pyproject.toml under [project.dependencies]."
-        )
+        print("No dependencies found in pyproject.toml under [project.dependencies].")
     else:
         print(f"📦 Found root requirements: {dependencies}")
-        await resolve_and_install_async(dependencies, output_dir, cache_dir=cache_dir, use_system=True)
+        await resolve_and_install_async(
+            dependencies, output_dir, cache_dir=cache_dir, use_system=True
+        )

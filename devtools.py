@@ -1,3 +1,12 @@
+#!/usr/bin/env uv run
+# /// script
+# requires-python = ">=3.8"
+# dependencies = [
+#   "black",
+#   "mypy",
+# ]
+# ///
+
 import compileall
 import importlib.util
 import re

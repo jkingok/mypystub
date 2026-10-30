@@ -1,4 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
+# /// script
+# requires-python = ">=3.6"
+# dependencies = [
+#   "pillow",
+# ]
+# ///
 
 import sys
 from pathlib import Path

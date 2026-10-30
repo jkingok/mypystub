@@ -38,7 +38,50 @@ default_platform(:ios)
 
 platform :ios do
 
+  desc "Preps the environment (bootstraps uv if missing, runs uv script & briefcase) then builds"
+  private_lane :bootstrap do
+    default_platform(:ios)
+    
+    UI.message("--- Step 1: Checking and bootstrapping uv if necessary ---")
+    
+    # Define local/fallback path for uv if not globally installed
+    local_bin_path = File.expand_path("~/.local/bin")
+    uv_executable = system("which uv > /dev/null 2>&1") ? "uv" : "#{local_bin_path}/uv"
+
+    unless File.exist?(uv_executable) || system("which uv > /dev/null 2>&1")
+      UI.important("uv not found on PATH. Bootstrapping uv locally...")
+      
+      # Ensure local bin directory exists
+      FileUtils.mkdir_p(local_bin_path)
+      
+      # Download and run Astral's official standalone installer script
+      install_success = system("curl -LsSf https://astral.sh/uv/install.sh | sh")
+      
+      if install_success
+        UI.success("Successfully bootstrapped uv!")
+      else
+        UI.user_error!("Failed to download and install uv automatically.")
+      end
+    end
+
+    # Ensure local bin path is temporarily appended to ENV['PATH'] for this execution context
+    unless ENV['PATH'].include?(local_bin_path)
+      ENV['PATH'] = "#{local_bin_path}:#{ENV['PATH']}"
+    end
+
+    UI.message("--- Step 2: Running Python script using uv ---")
+    # uv will handle dependency resolution (e.g. via PEP 723 inline metadata) automatically
+    sh("uv --directory .. run generate_icons.py")
+
+    UI.message("--- Step 3: Running BeeWare Briefcase ---")
+    # Triggers your BeeWare packaging/build step (e.g. generating the Xcode project files)
+    sh("uvx --python 3.15 --directory .. briefcase create ios --no-input")
+    sh("uvx --python 3.15 --directory .. briefcase update ios --update-requirements --update-support --update-stub  --update-resources --no-input")
+  end
+
   private_lane :update_xcode do
+    bootstrap
+
     #unlock_keychain(
     #  path: "login.keychain-db",
     #  password: ENV["LOCAL_MACOS_PASSWORD"]
