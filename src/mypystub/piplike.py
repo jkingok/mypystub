@@ -93,6 +93,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             r for r in requirements.get(identifier, []) if isinstance(r, Requirement)
         ]
 
+        # resolvelib maps identifier -> candidates already ruled out (backtracking)
+        excluded = set(incompatibilities.get(identifier, ()))
+
         # Collect explicitly requested extras as a frozenset
         active_extras: frozenset[str] = frozenset(
             extra for req in req_specs if req.extras for extra in req.extras
@@ -108,7 +111,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 is_system=True,
                 requested_extras=active_extras,
             )
-            if sys_cand not in incompatibilities and all(
+            if sys_cand not in excluded and all(
                 self.is_satisfied_by(req, sys_cand) for req in req_specs
             ):
                 candidates.append(sys_cand)
@@ -136,7 +139,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 is_system=False,
                 requested_extras=active_extras,
             )
-            if cand not in incompatibilities and all(
+            if cand not in excluded and all(
                 self.is_satisfied_by(req, cand) for req in req_specs
             ):
                 candidates.append(cand)
@@ -583,106 +586,3 @@ def remove_installed_package(target_site_packages: Path, package_name: str) -> N
     dist_info_path = getattr(dist, "_path", None)
     if dist_info_path and Path(dist_info_path).exists():
         shutil.rmtree(dist_info_path, ignore_errors=True)
-
-
-def resolve_and_install(
-    requirements: list[str],
-    target_dir: Path,
-    cache_dir: Path | None = None,
-    clean: bool = False,
-    force_reinstall: bool = False,
-    use_system: bool = True,
-) -> None:
-    is_temp_cache = False
-
-    if cache_dir is None:
-        # Create an ephemeral directory in system temporary storage
-        cache_dir = Path(tempfile.mkdtemp(prefix="wheel_cache_"))
-        is_temp_cache = True
-    else:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        if clean and target_dir.exists():
-            print(f"Cleaning target directory: {target_dir}")
-            shutil.rmtree(target_dir)
-
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        # Index system packages if requested
-        raw_system_pkgs = get_package_inventory(None) if use_system else {}
-        system_packages = {name: Version(ver) for name, ver in raw_system_pkgs.items()}
-
-        finder = PackageFinder(
-            target_python=TargetPython(),
-            only_binary={":all:"},
-        )
-
-        with httpx2.Client(timeout=15.0) as sync_http:
-            provider = PyPIWheelProvider(
-                finder=finder,
-                cache_dir=cache_dir,
-                system_packages=system_packages,
-                http_client=sync_http,
-                use_system=use_system,
-            )
-            reporter = resolvelib.BaseReporter()
-            resolver = resolvelib.Resolver(provider, reporter)
-
-            parsed_reqs = [Requirement(r) for r in requirements]
-
-            print("Resolving dependencies...")
-            result = resolver.resolve(parsed_reqs)
-
-        for candidate in result.mapping.values():
-            if candidate.is_system:
-                print(f" - [System Satisfied] {candidate.name}=={candidate.version}")
-                continue
-
-            installed = get_installed_distribution(target_dir, candidate.name)
-            wheel_path = cache_dir / candidate.link.filename
-
-            if installed:
-                installed_version = Version(installed.version)
-                if installed_version == candidate.version and not force_reinstall:
-                    print(
-                        f" - [Satisfied] {candidate.name}=={installed_version} in target directory."
-                    )
-                    continue
-                else:
-                    print(
-                        f" - [Updating] Replacing {candidate.name} {installed_version} -> {candidate.version}"
-                    )
-                    remove_installed_package(target_dir, candidate.name)
-            else:
-                print(f" - [Installing] {candidate.name}=={candidate.version}")
-
-            unpack_wheel(wheel_path, target_dir)
-
-        print("\nExecution complete.")
-
-    finally:
-        # Clean up temporary storage if one was dynamically created
-        if is_temp_cache and cache_dir.exists():
-            print(f"Cleaning up temporary cache directory: {cache_dir}")
-            shutil.rmtree(cache_dir, ignore_errors=True)
-
-
-async def sync_launcher_dependencies_via_toml(
-    pyproject_path: str, output_dir: Path, cache_dir: Path | None = None
-) -> None:
-    pyproject = Path(pyproject_path)
-
-    # A. Read dependencies from pyproject.toml
-    async with await anyio.open_file(pyproject, "r") as f:
-        config = tomllib.loads(await f.read())
-
-    # Target dependencies under [project] dependencies array (PEP 621)
-    dependencies = config.get("project", {}).get("dependencies", [])
-    if not dependencies:
-        print("No dependencies found in pyproject.toml under [project.dependencies].")
-    else:
-        print(f"📦 Found root requirements: {dependencies}")
-        await resolve_and_install_async(
-            dependencies, output_dir, cache_dir=cache_dir, use_system=True
-        )
