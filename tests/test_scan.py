@@ -150,3 +150,49 @@ def test_relative_folder_rejects_symlink_escape(tmp_path: Path) -> None:
     (tmp_path / "outside").mkdir()
     (base / "link").symlink_to(tmp_path / "outside")
     assert piplike.relative_folder(base, base / "link") == Path()
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ('"""Draw a spinning cube."""\n', "Draw a spinning cube."),
+        (
+            '#!/usr/bin/env python\n"""\n  Fetch the weather.\n\n  Longer text.\n"""\n',
+            "Fetch the weather.",
+        ),
+        ("# just a comment\nprint('hi')\n", piplike.DEFAULT_SCRIPT_SUBTITLE),
+        ('x = 1\n"""Not a module docstring."""\n', piplike.DEFAULT_SCRIPT_SUBTITLE),
+        ('""""""\n', piplike.DEFAULT_SCRIPT_SUBTITLE),
+        ('"""Broken script."""\ndef oops(:\n', piplike.DEFAULT_SCRIPT_SUBTITLE),
+    ],
+    ids=["one-line", "multi-line", "none", "not-first", "empty", "syntax-error"],
+)
+def test_script_subtitle_from_docstring(
+    tmp_path: Path, source: str, expected: str
+) -> None:
+    """The first line of the module docstring becomes the subtitle."""
+    write(tmp_path / "s.py", source)
+    (entry,) = piplike.scan_all_prototypes(tmp_path)
+    assert entry["subtitle"] == expected
+
+
+def test_docstring_after_pep723_block(tmp_path: Path) -> None:
+    """PEP 723 metadata comments before the docstring do not hide it."""
+    write(
+        tmp_path / "s.py",
+        script_with_metadata('dependencies = ["x"]').replace(
+            "print('hi')", '"""Uses x."""'
+        ),
+    )
+    (entry,) = piplike.scan_all_prototypes(tmp_path)
+    assert entry["subtitle"] == "Uses x."
+    assert entry["dependencies"] == ["x"]
+
+
+def test_entries_report_their_kind(tmp_path: Path) -> None:
+    """Each entry says whether it is a folder, project or loose script."""
+    write(tmp_path / "folder" / "x.py")
+    write(tmp_path / "proj" / "pyproject.toml", "[project]\nname = 'proj'\n")
+    write(tmp_path / "script.py")
+    kinds = {e["title"]: e["kind"] for e in piplike.scan_all_prototypes(tmp_path)}
+    assert kinds == {"folder": "folder", "proj": "project", "script": "script"}

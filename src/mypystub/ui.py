@@ -22,6 +22,13 @@ from . import settings as s
 
 UIUserInterfaceIdiomPad = 1
 
+# Default list icons by scanned entry kind (see CREDITS.md). Missing files are
+# skipped, so rows show no icon until the icon is downloaded.
+KIND_ICONS = {
+    "folder": "folder.png",
+    "script": "file-code.png",
+}
+
 
 def is_ipad_from_window(toga_window: toga.Window) -> bool:
     """Detects iPad idiom via the native UIWindow / UIViewController trait collection."""
@@ -419,8 +426,8 @@ class Prototype:
                 row_icon = toga.Image(
                     proto["icon_path"]
                 )  # This should be Icon, but it works
-            elif "folder" in proto:
-                row_icon = self.bundled_icon("folder.png")
+            elif icon_file := KIND_ICONS.get(proto.get("kind", "")):
+                row_icon = self.bundled_icon(icon_file)
 
             # Toga ignores the custom keys (entry_point, folder, ...) for rendering,
             # but holds onto them for callbacks!

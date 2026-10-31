@@ -1,3 +1,4 @@
+import ast
 import asyncio
 import importlib.metadata
 import platform
@@ -450,6 +451,9 @@ PEP723_BLOCK = re.compile(
 # Loose scripts that are part of the launcher itself, not prototypes
 RESERVED_SCRIPTS = frozenset({"patch_app.py", "__init__.py"})
 
+# Subtitle for a loose script without a module docstring
+DEFAULT_SCRIPT_SUBTITLE = "Standalone Python script."
+
 # Folders that never hold prototypes
 SKIPPED_FOLDERS = frozenset({"__pycache__", "site-packages", "site_packages"})
 
@@ -466,14 +470,31 @@ def iter_script_metadata(script: str) -> Iterator[tuple[str, str]]:
         )
 
 
+def docstring_summary(source: str) -> str | None:
+    """Return the first line of a module's docstring, or None if there isn't one.
+
+    Scripts that fail to parse still get listed, so a syntax error returns None
+    rather than raising; the error is reported when the script is run.
+    """
+    try:
+        docstring = ast.get_docstring(ast.parse(source))
+    except SyntaxError:
+        return None
+    if not docstring:
+        return None
+    return docstring.strip().splitlines()[0].strip() or None
+
+
 def scan_script(item: Path) -> dict[str, Any] | None:
     """Describe a loose ``.py`` prototype, or return None if it cannot run here.
 
-    Dependencies come from the PEP 723 ``script`` block. A script whose
-    ``requires-python`` excludes the running interpreter is skipped.
+    The subtitle is the first line of the module docstring. Dependencies come
+    from the PEP 723 ``script`` block. A script whose ``requires-python``
+    excludes the running interpreter is skipped.
     """
+    source = item.read_text(encoding="utf-8")
     dependencies: list[str] = []
-    for kind, text in iter_script_metadata(item.read_text(encoding="utf-8")):
+    for kind, text in iter_script_metadata(source):
         if kind != "script":
             continue
         config = tomllib.loads(text)
@@ -491,11 +512,12 @@ def scan_script(item: Path) -> dict[str, Any] | None:
 
     return {
         "title": item.stem,  # Just the filename as the title
-        "subtitle": "Standalone Python script.",
+        "subtitle": docstring_summary(source) or DEFAULT_SCRIPT_SUBTITLE,
         "icon_path": None,  # Uses default fallback icon
         "entry_point": item,
         "folder_root": item.parent,
         "dependencies": dependencies,
+        "kind": "script",
     }
 
 
@@ -522,6 +544,7 @@ def scan_project(item: Path) -> dict[str, Any]:
         "folder_root": item / tool_meta.get("import_path", "src"),
         # PEP 621 dependencies list (default to empty list if missing)
         "dependencies": project_meta.get("dependencies", []),
+        "kind": "project",
     }
 
 
@@ -533,6 +556,7 @@ def scan_folder(item: Path) -> dict[str, Any]:
         "icon_path": None,
         "folder": item,
         "dependencies": [],
+        "kind": "folder",
     }
 
 
