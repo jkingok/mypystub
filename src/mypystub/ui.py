@@ -301,10 +301,12 @@ class Prototype:
         )
         self.script_activity = LabelledActivity()
         self.splash = toga.ImageView(style=Pack(flex=0))
+        # Folder being browsed, relative to the selected category's root
+        self.subfolder = Path()
         self.dir_selection = LabelledSelection(
             "Category",
             items=["Examples", "User"],
-            on_change=self.reload_menu,
+            on_change=self.change_category,
         )
         self.script_list = toga.DetailedList(
             on_refresh=self.reload_menu,
@@ -357,17 +359,41 @@ class Prototype:
         if sys.platform == "ios":
             widget._impl.native.resignFirstResponder()
 
+    def clear_selection(self, widget: toga.DetailedList) -> None:
+        """Deselect the tapped row once it has been read.
+
+        toga_iOS never deselects a row, so after the list reloads (folder
+        navigation, returning from a script) the old row stays selected and a
+        later tap can read it instead of the row that was actually tapped.
+        """
+        if sys.platform == "ios":
+            table = widget._impl.native
+            if path := table.indexPathForSelectedRow:
+                table.deselectRowAtIndexPath(path, animated=True)
+
     def reload_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         if log_path := getattr(sys.stdout, "path", None):
             logs = log_path.read_text()
             self.log_text.value = logs
 
-    def get_current_dir(self) -> Path:
+    def get_category_dir(self) -> Path:
         match str(self.dir_selection.value):
             case "Examples":
                 return self.this_path / "resources" / "examples"
             case _:
                 return self.prototype_dir
+
+    def get_current_dir(self) -> Path:
+        return self.get_category_dir() / self.subfolder
+
+    def change_category(self, widget: toga.Selection, **kwargs: Any) -> None:
+        self.subfolder = Path()
+        self.reload_menu(widget)
+
+    def bundled_icon(self, filename: str) -> toga.Image | None:
+        """Load an icon from resources/icons, or None until the file is added."""
+        path = self.icon_path / filename
+        return toga.Image(path) if path.exists() else None
 
     def reload_menu(
         self, widget: toga.DetailedList | toga.Selection, **kwargs: Any
@@ -377,6 +403,15 @@ class Prototype:
 
         # 2. Format the records specifically for Toga's DetailedList expectations
         list_items = []
+        if self.subfolder != Path():
+            list_items.append(
+                {
+                    "title": "..",
+                    "subtitle": f"Up from {self.subfolder.as_posix()}",
+                    "icon": self.bundled_icon("arrow-small-left.png"),
+                    "folder": self.get_current_dir().parent,
+                }
+            )
         for proto in self.prototypes_data:
             # Safely build a toga.Image if an icon path was specified and exists
             row_icon = None
@@ -384,18 +419,14 @@ class Prototype:
                 row_icon = toga.Image(
                     proto["icon_path"]
                 )  # This should be Icon, but it works
+            elif "folder" in proto:
+                row_icon = self.bundled_icon("folder.png")
 
-            list_items.append(
-                {
-                    "title": proto["title"],
-                    "subtitle": proto["subtitle"],
-                    "icon": row_icon,
-                    # Toga ignores these custom keys for rendering, but holds onto them for callbacks!
-                    "entry_point": proto["entry_point"],
-                    "folder_root": proto["folder_root"],
-                    "dependencies": proto["dependencies"],
-                }
-            )
+            # Toga ignores the custom keys (entry_point, folder, ...) for rendering,
+            # but holds onto them for callbacks!
+            row = {k: v for k, v in proto.items() if k != "icon_path"}
+            row["icon"] = row_icon
+            list_items.append(row)
 
         self.script_list.data = list_items
 
@@ -499,7 +530,17 @@ class Prototype:
         """Triggered automatically when an iOS row is tapped."""
         # Grab the currently selected row data dictionary
         selected_row = widget.selection
-        if selected_row is None or not hasattr(selected_row, "entry_point"):
+        self.clear_selection(widget)
+        if selected_row is None:
+            return
+
+        # Folder rows (including "..") navigate instead of running anything
+        if folder := getattr(selected_row, "folder", None):
+            self.subfolder = pip.relative_folder(self.get_category_dir(), folder)
+            self.reload_menu(widget)
+            return
+
+        if not hasattr(selected_row, "entry_point"):
             return
 
         # 1. Read the parsed dependency requirements array

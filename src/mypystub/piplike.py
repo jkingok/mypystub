@@ -413,107 +413,150 @@ async def resolve_and_install_async(
 # Use the modern native TOML parser
 import tomllib  # Fallback for older environments
 
+PEP723_BLOCK = re.compile(
+    r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
+)
+
+# Loose scripts that are part of the launcher itself, not prototypes
+RESERVED_SCRIPTS = frozenset({"patch_app.py", "__init__.py"})
+
+# Folders that never hold prototypes
+SKIPPED_FOLDERS = frozenset({"__pycache__", "site-packages", "site_packages"})
+
+
+def iter_script_metadata(script: str) -> Iterator[tuple[str, str]]:
+    """Yield ``(type, toml_text)`` for each PEP 723 metadata block in a script."""
+    for match in PEP723_BLOCK.finditer(script):
+        yield (
+            match.group("type"),
+            "".join(
+                line[2:] if line.startswith("# ") else line[1:]
+                for line in match.group("content").splitlines(keepends=True)
+            ),
+        )
+
+
+def scan_script(item: Path) -> dict[str, Any] | None:
+    """Describe a loose ``.py`` prototype, or return None if it cannot run here.
+
+    Dependencies come from the PEP 723 ``script`` block. A script whose
+    ``requires-python`` excludes the running interpreter is skipped.
+    """
+    dependencies: list[str] = []
+    for kind, text in iter_script_metadata(item.read_text(encoding="utf-8")):
+        if kind != "script":
+            continue
+        config = tomllib.loads(text)
+        dependencies += config.get("dependencies", [])
+        if requires_python := config.get("requires-python"):
+            current = platform.python_version()
+            if Version(current) not in SpecifierSet(requires_python):
+                print(
+                    f"Skipping {item.name} needs Python {requires_python} "
+                    f"not {current}"
+                )
+                return None
+        # TODO we can implement our custom tool in this
+        # same metadata to capture description, etc
+
+    return {
+        "title": item.stem,  # Just the filename as the title
+        "subtitle": "Standalone Python script.",
+        "icon_path": None,  # Uses default fallback icon
+        "entry_point": item,
+        "folder_root": item.parent,
+        "dependencies": dependencies,
+    }
+
+
+def scan_project(item: Path) -> dict[str, Any]:
+    """Describe a project folder from its ``pyproject.toml``."""
+    with open(item / "pyproject.toml", "rb") as f:
+        toml_data = tomllib.load(f)
+
+    # Read standard PEP 621 table
+    project_meta = toml_data.get("project", {})
+    name = project_meta.get("name", item.name)
+    desc = project_meta.get("description", "Project directory module.")
+
+    # Read tool overrides
+    tool_meta = toml_data.get("tool", {}).get("stub_launcher", {})
+    icon_relative = tool_meta.get("icon")
+
+    return {
+        "title": tool_meta.get("display_name", name),
+        "subtitle": desc,
+        "icon_path": item / icon_relative if icon_relative else None,
+        # Target launch file path relative to its home folder
+        "entry_point": item / tool_meta.get("entry_point", "main.py"),
+        "folder_root": item / tool_meta.get("import_path", "src"),
+        # PEP 621 dependencies list (default to empty list if missing)
+        "dependencies": project_meta.get("dependencies", []),
+    }
+
+
+def scan_folder(item: Path) -> dict[str, Any]:
+    """Describe a plain folder that the launcher can navigate into."""
+    return {
+        "title": item.name,
+        "subtitle": "Folder",
+        "icon_path": None,
+        "folder": item,
+        "dependencies": [],
+    }
+
 
 def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
-    compiled_items: list[Mapping[str, Any]] = []
+    """List the prototypes and sub-folders directly inside ``base_dir``.
+
+    Folders come first, then scripts and project folders, each sorted by name.
+    Folders with a ``pyproject.toml`` are runnable projects; other folders are
+    returned with a ``folder`` key so the launcher can drill into them.
+    """
+    folders: list[Mapping[str, Any]] = []
+    prototypes: list[Mapping[str, Any]] = []
     print(f"Scanning for launcher prototypes in: {base_dir}")
 
-    if not base_dir.exists():
-        return compiled_items
+    if not base_dir.is_dir():
+        return prototypes
 
-    # Loop through everything inside the directory
     for item in sorted(base_dir.iterdir(), key=lambda x: x.name.lower()):
         # Skip hidden files/folders (like .DS_Store or system bits)
         if item.name.startswith("."):
             continue
 
-        # --- CASE A: The "Toy Script" (Loose .py file) ---
-        if item.is_file() and item.suffix == ".py":
-            # Don't accidentally auto-load your main launcher scripts
-            if item.name in ["patch_app.py", "__init__.py"]:
-                continue
-            
-            # Look for dependencies stemming from PEP 723
-            def stream(script: str) -> Iterator[tuple[str, str]]:
-                REGEX = r'(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$'
-                for match in re.finditer(REGEX, script):
-                    yield match.group('type'), ''.join(
-                        line[2:] if line.startswith('# ') else line[1:]
-                        for line in match.group('content').splitlines(keepends=True)
-                    )
-                    
-            dependencies = []
-            for k, v in stream(item.read_text()):
-                if k == "script":
-                    config = tomllib.loads(v)
-                    if 'dependencies' in config:
-                        dependencies += config['dependencies']
-                    # nothing we can do about requires-python
-                    if 'requires-python' in config:
-                        current_version_str = platform.python_version()
-                        current_version = Version(current_version_str)
-                        requires_python = SpecifierSet(config['requires-python'])
+        try:
+            # --- CASE A: The "Toy Script" (Loose .py file) ---
+            if item.is_file() and item.suffix == ".py":
+                # Don't accidentally auto-load your main launcher scripts
+                if item.name not in RESERVED_SCRIPTS and (entry := scan_script(item)):
+                    prototypes.append(entry)
 
-                        if current_version not in requires_python:
-                            print(f"Skipping {item.name} needs Python {config['requires-python']} not {current_version_str}")
-                            continue
-                    # TODO we can implement our custom tool in this
-                    # same metadata to capture description, etc
+            # --- CASE B: The "Full Project" (Folder with pyproject.toml) ---
+            elif item.is_dir() and (item / "pyproject.toml").exists():
+                prototypes.append(scan_project(item))
 
-            # Create a clean, zero-config metadata profile
-            compiled_items.append(
-                {
-                    "title": item.stem,  # Just the filename as the title
-                    "subtitle": "Standalone Python script.",
-                    "icon_path": None,  # Uses default fallback icon
-                    "entry_point": item,
-                    "folder_root": item.parent,
-                    "dependencies": dependencies,
-                }
-            )
+            # --- CASE C: A plain folder to navigate into ---
+            elif item.is_dir() and item.name not in SKIPPED_FOLDERS:
+                folders.append(scan_folder(item))
+        except (OSError, ValueError) as e:
+            # ValueError covers TOMLDecodeError, bad specifiers and bad versions
+            print(f"Skipping malformed prototype {item.name}: {e}")
 
-        # --- CASE B: The "Full Project" (Folder with pyproject.toml) ---
-        elif item.is_dir():
-            toml_path = item / "pyproject.toml"
-            if toml_path.exists():
-                try:
-                    with open(toml_path, "rb") as f:
-                        toml_data = tomllib.load(f)
+    return folders + prototypes
 
-                    # Read standard PEP 621 table
-                    project_meta = toml_data.get("project", {})
-                    name = project_meta.get("name", item.name)
-                    desc = project_meta.get("description", "Project directory module.")
 
-                    # Extract PEP 621 dependencies list (default to empty list if missing)
-                    dependencies = project_meta.get("dependencies", [])
+def relative_folder(base_dir: Path, folder: Path) -> Path:
+    """Return ``folder`` relative to ``base_dir``, refusing to leave ``base_dir``.
 
-                    # Read tool overrides
-                    tool_meta = toml_data.get("tool", {}).get("stub_launcher", {})
-                    display_name = tool_meta.get("display_name", name)
-
-                    # Target launch file path relative to its home folder
-                    entry_filename = tool_meta.get("entry_point", "main.py")
-                    entry_point = item / entry_filename
-                    folder_root = item / tool_meta.get("import_path", "src")
-
-                    icon_relative = tool_meta.get("icon")
-                    icon_path = item / icon_relative if icon_relative else None
-
-                    compiled_items.append(
-                        {
-                            "title": display_name,
-                            "subtitle": desc,
-                            "icon_path": icon_path,
-                            "entry_point": entry_point,
-                            "folder_root": folder_root,
-                            "dependencies": dependencies,  # Pass the array forward
-                        }
-                    )
-                except OSError as e:
-                    print(f"Skipping malformed project folder {item.name}: {e}")
-
-    return compiled_items
+    Used for launcher navigation so ``..`` and symlinks cannot escape the
+    prototype root.
+    """
+    base = base_dir.resolve()
+    target = folder.resolve()
+    if not target.is_relative_to(base):
+        return Path()
+    return target.relative_to(base)
 
 
 # Package Inventory Utility
