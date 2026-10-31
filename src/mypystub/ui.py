@@ -550,17 +550,32 @@ class Prototype:
         if str(target_user_packages) not in sys.path:
             sys.path.insert(0, str(target_user_packages))
 
+        # Switch to the Script view first, so installing dependencies shows
+        # progress there instead of leaving the list looking frozen.
+        title = getattr(selected_row, "title", "script")
+        self.print_text.value = ""
+        if icon := getattr(selected_row, "icon", None):
+            self.splash.image = icon
+            self.splash.style.flex = 1
+            self.script_scroll.style.flex = 0
+        self.app.widgets["tabs"].current_tab = "Script"
+        self.script_activity.update(f"Preparing {title}")
+
         # 2. Check and satisfy dependencies
         if required_packages:
             # TODO Insert cache dir
-            # TODO Track the progress as it happens
             try:
                 await pip.resolve_and_install_async(
-                    required_packages, target_user_packages
+                    required_packages,
+                    target_user_packages,
+                    on_progress=self.script_activity.update,
                 )
-            except pip.DependencyError as de:
+            except Exception as e:  # noqa: BLE001
+                # DependencyError, or e.g. an invalid requirement string
                 traceback.print_exc()
-                await self.error(str(de), "Dependency Error")
+                self.script_activity.update("Dependency install failed", on=False)
+                await self.error(str(e), "Dependency Error")
+                self.end_script()
                 return
 
         # 3. Proceed to mount the folder root and load the module
@@ -584,25 +599,18 @@ class Prototype:
                     str(selected_file_path.parent),
                 ],
             )
-            if spec:
-                module = importlib.util.module_from_spec(spec)
+            if not spec:
+                raise ImportError(f"Cannot load {selected_file_path}")
+            module = importlib.util.module_from_spec(spec)
 
-                self.print_text.value = ""
-                if icon := getattr(selected_row, "icon", None):
-                    self.splash.image = icon
-                    self.splash.style.flex = 1
-                    self.script_scroll.style.flex = 0
-                self.app.widgets["tabs"].current_tab = "Script"
-                self.script_activity.update(
-                    f"Running {getattr(selected_row, 'title', "script")}"
-                )
-                self.app.loop.call_soon(
-                    cast(Callable[[], None], lambda s=spec, m=module: self.start(s, m))
-                )
-        except Exception as e:  # noqa: BLE001
-            asyncio.create_task(
-                self.error(f"Failed to execute script:\n{e!s}", "Load Failure")
+            self.script_activity.update(f"Running {title}")
+            self.app.loop.call_soon(
+                cast(Callable[[], None], lambda s=spec, m=module: self.start(s, m))
             )
+        except Exception as e:  # noqa: BLE001
+            self.script_activity.update(on=False)
+            await self.error(f"Failed to execute script:\n{e!s}", "Load Failure")
+            self.end_script()
 
     def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         if log_path := getattr(sys.stdout, "path", None):

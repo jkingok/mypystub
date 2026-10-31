@@ -6,7 +6,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -240,6 +240,10 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
 class ResolutionProgressReporter(resolvelib.BaseReporter):
     """Provides visibility into resolution progress instead of remaining silent."""
 
+    def __init__(self, on_progress: Callable[[str], None] | None = None) -> None:
+        """Optionally forward short progress messages to `on_progress`."""
+        self.on_progress = on_progress
+
     def starting(self) -> None:
         print("[Resolver] Starting dependency graph resolution...")
 
@@ -248,6 +252,8 @@ class ResolutionProgressReporter(resolvelib.BaseReporter):
 
     def pinning(self, candidate) -> None:
         print(f"[Resolver] -> Pinned candidate: {candidate}")
+        if self.on_progress:
+            self.on_progress(f"Resolved {candidate.name} {candidate.version}")
 
     def rejecting_candidate(self, criterion, candidate) -> None:
         print(f"[Resolver] -> Backtracking: Rejected {candidate}")
@@ -297,15 +303,33 @@ async def resolve_and_install_async(
     clean: bool = False,
     force_reinstall: bool = False,
     use_system: bool = True,
+    on_progress: Callable[[str], None] | None = None,
 ) -> None:
     """
     Async dependency resolver and installer compatible with Toga / asyncio event loops.
+
+    Blocking work (resolution, metadata scans, unpacking) runs in worker threads.
+    `on_progress` receives short status messages, always on the event loop thread,
+    so it may update widgets directly.
     """
+    loop = asyncio.get_running_loop()
+
+    def progress(message: str) -> None:
+        print(f"[Progress] {message}")
+        if on_progress:
+            on_progress(message)
+
+    def progress_threadsafe(message: str) -> None:
+        loop.call_soon_threadsafe(progress, message)
+
     is_temp_cache = False
 
+    progress("Resolving dependencies")
     if cache_dir is None:
         try:
-            cache_dir = Path(tempfile.mkdtemp(prefix="wheel_cache_"))
+            cache_dir = Path(
+                await asyncio.to_thread(tempfile.mkdtemp, prefix="wheel_cache_")
+            )
             is_temp_cache = True
             print(f"Temporary wheel cache is {cache_dir}")
         except OSError as exc:
@@ -357,7 +381,7 @@ async def resolve_and_install_async(
                 )
 
                 # Use custom progress reporter to track execution in console/UI
-                reporter = ResolutionProgressReporter()
+                reporter = ResolutionProgressReporter(progress_threadsafe)
                 resolver = resolvelib.Resolver(provider, reporter)
 
                 parsed_reqs = [Requirement(r) for r in requirements]
@@ -374,7 +398,9 @@ async def resolve_and_install_async(
                 if candidate.is_system:
                     continue
 
-                installed = get_installed_distribution(target_dir, candidate.name)
+                installed = await asyncio.to_thread(
+                    get_installed_distribution, target_dir, candidate.name
+                )
                 wheel_path = cache_dir / candidate.link.filename
 
                 if installed:
@@ -385,6 +411,7 @@ async def resolve_and_install_async(
                         print(
                             f"upgrading {candidate.name} from {installed_version} to {candidate.version}"
                         )
+                        progress(f"Removing {candidate.name} {installed_version}")
                         await asyncio.to_thread(
                             remove_installed_package, target_dir, candidate.name
                         )
@@ -392,11 +419,13 @@ async def resolve_and_install_async(
                 # Download wheel asynchronously if not cached
                 if not wheel_path.exists():
                     print(f"downloading {candidate.link}")
+                    progress(f"Downloading {candidate.name} {candidate.version}")
                     await download_wheel_async(
                         async_http, candidate.link.url, wheel_path
                     )
 
                 # Unpack wheel on a worker thread
+                progress(f"Installing {candidate.name} {candidate.version}")
                 try:
                     await asyncio.to_thread(unpack_wheel, wheel_path, target_dir)
                 except (zipfile.BadZipFile, OSError) as exc:
@@ -404,6 +433,7 @@ async def resolve_and_install_async(
                         f"Failed to unpack {wheel_path.name}: {exc}"
                     ) from exc
         print("successfully met all requirements")
+        progress("Dependencies ready")
     finally:
         if is_temp_cache and cache_dir.exists():
             print("removing temporary wheel cache")

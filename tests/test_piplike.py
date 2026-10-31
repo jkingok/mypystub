@@ -5,6 +5,8 @@ is served by an httpx2 MockTransport from wheels built in tmp_path.
 """
 
 import asyncio
+import threading
+import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -477,3 +479,88 @@ def test_resolve_and_install_async_wraps_download_errors(
                 ["lib"], tmp_path / "site", use_system=False
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Progress reporting and event-loop responsiveness (#33)
+# ---------------------------------------------------------------------------
+
+
+def test_progress_messages_arrive_in_order_on_loop_thread(
+    patched_network: FakeIndex, tmp_path: Path
+) -> None:
+    """Every stage is reported, on the event loop thread, ending with ready."""
+    patched_network.add("app", "1.0", requires=["lib"])
+    patched_network.add("lib", "2.0")
+    messages: list[tuple[str, int]] = []
+
+    async def run() -> int:
+        await piplike.resolve_and_install_async(
+            ["app"],
+            tmp_path / "site",
+            use_system=False,
+            on_progress=lambda m: messages.append((m, threading.get_ident())),
+        )
+        return threading.get_ident()
+
+    loop_thread = asyncio.run(run())
+    texts = [m for m, _ in messages]
+    assert texts[0] == "Resolving dependencies"
+    assert {"Resolved app 1.0", "Resolved lib 2.0"} <= set(texts)
+    assert "Downloading lib 2.0" in texts
+    assert "Installing app 1.0" in texts
+    assert texts[-1] == "Dependencies ready"
+    assert {thread for _, thread in messages} == {loop_thread}
+
+
+def test_upgrade_reports_removal(patched_network: FakeIndex, tmp_path: Path) -> None:
+    """Replacing an installed version is reported before installing."""
+    target = tmp_path / "site"
+    patched_network.add("lib", "1.0")
+    asyncio.run(piplike.resolve_and_install_async(["lib"], target, use_system=False))
+    patched_network.add("lib", "2.0")
+    messages: list[str] = []
+    asyncio.run(
+        piplike.resolve_and_install_async(
+            ["lib"], target, use_system=False, on_progress=messages.append
+        )
+    )
+    assert messages.index("Removing lib 1.0") < messages.index("Installing lib 2.0")
+
+
+def test_event_loop_stays_responsive_during_slow_resolution(
+    patched_network: FakeIndex, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slow index blocks a worker thread, not the loop that drives the UI."""
+    patched_network.add("app", "1.0", requires=["lib"])
+    patched_network.add("lib", "2.0")
+    original = patched_network.find_matches
+
+    def slow_find_matches(name: str) -> list[SimpleNamespace]:
+        time.sleep(0.2)
+        return original(name)
+
+    monkeypatch.setattr(patched_network, "find_matches", slow_find_matches)
+
+    async def run() -> int:
+        ticks = 0
+        done = asyncio.Event()
+
+        async def heartbeat() -> None:
+            nonlocal ticks
+            while not done.is_set():
+                ticks += 1
+                await asyncio.sleep(0.01)
+
+        beat = asyncio.create_task(heartbeat())
+        try:
+            await piplike.resolve_and_install_async(
+                ["app"], tmp_path / "site", use_system=False
+            )
+        finally:
+            done.set()
+            await beat
+        return ticks
+
+    # Resolution takes >= 0.4s; a blocked loop would manage only a tick or two.
+    assert asyncio.run(run()) >= 10
