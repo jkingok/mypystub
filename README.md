@@ -23,3 +23,21 @@ Note that Python code gets cached/compiled. You will need to hard kill (throw aw
 This is also necessary if your script doesn't implement a Back button that fires the Prototype's done callback to get back to the launcher.
 
 This is purely experimental at this stage but you're welcome to experiment with it!
+
+## Development
+
+Desktop development uses [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync
+```
+
+```bash
+uv run pre-commit install
+```
+
+The pre-commit hooks run the same checks as the pull request gate (`.github/workflows/pr-gate.yml`): `ruff check`, `pyright`, and `pytest`. To run them by hand:
+
+```bash
+uv run pre-commit run --all-files
+```

@@ -6,7 +6,7 @@ Guidance for Claude working in this repository. Keep this file short and current
 
 MyPyStub is a Python Briefcase/Toga prototype app for iOS, with macOS, Linux, and Windows targets. It is a launcher that runs user-supplied Python prototypes on-device.
 
-- Track the latest Python and Toga releases. The maintainer already tests on Python 3.15. Do not pin old versions in instructions or config. Pins in the repo (for example `toga-*~=0.5.0` and Python 3.14 in CI) are out of date and should be updated.
+- Track the latest Python and Toga releases. The maintainer already tests on Python 3.15, and CI runs on 3.15. Do not pin old versions in instructions or config; bump them when new releases land.
 - The iOS runtime has no `subprocess` and limited stdlib. Code under `src/` must work there unless it is guarded by platform checks.
 
 ## Rules
@@ -32,7 +32,7 @@ All Toga code and widgets must come from the subset supported on iOS. Do not use
 
 Two tiers. Desktop and CI use industry-standard tools. The on-device pipeline is the exception and uses a limited set.
 
-- **Desktop and CI (industry standard):** ruff for lint and format, pyright for types, pytest for tests. These run in `pr-gate.yml` and, once added, in pre-commit. The same versions and configuration must run on desktop and in CI.
+- **Desktop and CI (industry standard):** ruff for lint and format, pyright for types, pytest for tests. These run in `pr-gate.yml` and in pre-commit (`.pre-commit-config.yaml`). The same versions and configuration must run on desktop and in CI.
 - **On device (embeddable only):** `devtools.py` uses Black, pyflakes, pycodestyle, and mypy, which are importable Python modules. Nothing on device may be a separate executable, because the App Store and TestFlight will reject the build.
 - Type hints on all functions. Docstrings on public modules, classes, and functions.
 - Line length 88.
@@ -42,14 +42,16 @@ Two tiers. Desktop and CI use industry-standard tools. The on-device pipeline is
 
 Use `uv` for everything except on-device code.
 
-- `uv sync` installs the environment. `uv run pytest` runs tests.
-- `uv run ruff check .` and `uv run pyright src/` run the desktop checks.
+- `uv sync` installs the environment, including the `dev` group. `uv run pytest` runs tests.
+- `uv run ruff check .` and `uv run pyright` run the desktop checks (pyright is configured in `pyproject.toml`).
+- `uv run pre-commit install` once per clone runs ruff, pyright, and pytest before each commit.
+- `uv.lock` is committed. Run `uv lock` after changing dependencies.
 - `python devtools.py` runs the on-device pipeline. It skips mypy on iOS.
 - `briefcase run` launches the app. Simulator runs happen on the Mac, not in the cloud.
 
 ## Dependencies
 
-Manage dependencies with `uv`. Prefer, in order: pure Python, binary wheels, then source-only distributions. Anything the on-device pipeline or the app imports must be embeddable: no separate executables, and no Rust or Node tooling in `devtools.py`. Desktop and CI tooling may be standard tools such as ruff and pyright, but do not add to that set without asking.
+Manage dependencies with `uv`. Prefer, in order: pure Python, binary wheels, then source-only distributions. Anything the on-device pipeline or the app imports must be embeddable: no separate executables, and no Rust or Node tooling in `devtools.py`. Desktop and CI tooling may be standard tools such as ruff, pyright, pytest, and pre-commit, but do not add to that set without asking.
 
 ## Commits and PRs
 

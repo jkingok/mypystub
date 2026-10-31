@@ -1,0 +1,24 @@
+# Runs the same checks as .github/workflows/pr-gate.yml before each commit.
+# Setup: uv sync && uv run pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff-check
+        exclude: ^src/launcher/
+
+  - repo: local
+    hooks:
+      # pyright needs the project's environment so toga and friends resolve.
+      - id: pyright
+        name: pyright
+        entry: uv run --locked pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: pytest
+        name: pytest
+        entry: uv run --locked pytest -q
+        language: system
+        types: [python]
+        pass_filenames: false
