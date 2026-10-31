@@ -16,6 +16,7 @@ import toga
 from markdown import markdown as md
 from toga.style import Pack
 
+from . import about
 from . import hooks as h
 from . import piplike as pip
 from . import settings as s
@@ -28,6 +29,80 @@ KIND_ICONS = {
     "folder": "folder.png",
     "script": "file-code.png",
 }
+
+
+def html_page(body: str) -> str:
+    """Wrap an HTML fragment in a page styled for the in-app web views."""
+    return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- Configures iOS viewport: sets width, prevents horizontal scroll, and fits notch/home indicator areas -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  
+  <!-- Informs the browser that the site supports both light and dark system themes -->
+  <meta name="color-scheme" content="light dark">
+  
+  <title>Embedded Content</title>
+
+  <style>
+    /* CSS Variables using light-dark() to switch automatically based on system preference */
+    :root {{
+      color-scheme: light dark;
+      --bg-color: light-dark(#ffffff, #121212);
+      --text-color: light-dark(#1c1c1e, #f2f2f7);
+      --card-bg: light-dark(#f2f2f7, #1c1c1e);
+      --border-color: light-dark(#e5e5ea, #3a3a3c);
+    }}
+
+    /* Prevent accidental horizontal overflow */
+    *, *::before, *::after {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      
+      /* Ensures text wraps properly when zoomed */
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }}
+
+    /* Images scale down to fit container width, preventing layout break on zoom */
+    img, video, svg {{
+      max-width: 100%;
+      height: auto;
+    }}
+
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+    }}
+
+    th, td {{
+      text-align: left;
+      vertical-align: top;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border-color);
+    }}
+
+    /* Keep labels on one line; long values (paths, build strings) wrap instead */
+    th {{
+      white-space: nowrap;
+    }}
+  </style>
+</head>
+<body>
+    {body}
+</body>
+</html>
+"""
 
 
 def is_ipad_from_window(toga_window: toga.Window) -> bool:
@@ -308,6 +383,15 @@ class Prototype:
         )
         self.script_activity = LabelledActivity()
         self.splash = toga.ImageView(style=Pack(flex=0))
+        self.help_selection = LabelledSelection(
+            "Show",
+            items=["Help", "About"],
+            on_change=self.show_help_page,
+        )
+        self.help_view = toga.WebView(flex=1)
+        self.about_share = toga.Button(
+            "Share", on_press=self.handle_about_share, visibility="hidden"
+        )
         # Folder being browsed, relative to the selected category's root
         self.subfolder = Path()
         self.dir_selection = LabelledSelection(
@@ -634,6 +718,8 @@ class Prototype:
                     self.reload_menu(self.script_list)
                 case "Logs":
                     self.reload_logs(widget)
+                case "Help":
+                    self.show_help_page()
 
     def pad_keyboard(self, on: bool) -> None:
         # keyboard_box.style.visibility = "visible" if on else "hidden"
@@ -672,6 +758,43 @@ class Prototype:
                     f"An error occurred while creating the archive: {e}",
                     "Backup Failed",
                 )
+            )
+
+    def about_sections(self) -> list[about.Section]:
+        paths = {
+            "Documents": Path(self.data_path),
+            "Data": Path(self.app.paths.data),
+            "Cache": Path(self.cache_path),
+            "Config": Path(self.app.paths.config),
+        }
+        return about.collect_environment(
+            self.app.formal_name,
+            self.app.version,
+            paths,
+            Path(self.cache_path) / "site_packages",
+        )
+
+    def show_help_page(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+        if str(self.help_selection.value) == "About":
+            body = about.to_html(self.about_sections())
+            # open_share_sheet() is only implemented on iOS
+            self.about_share.style.visibility = (
+                "visible" if sys.platform == "ios" else "hidden"
+            )
+        else:
+            help_md = self.template_path / "help.md"
+            body = md(help_md.read_text()) if help_md.exists() else ""
+            self.about_share.style.visibility = "hidden"
+        self.help_view.content = html_page(body)
+
+    def handle_about_share(self, widget: toga.Button, **kwargs: Any) -> None:
+        try:
+            report = Path(self.cache_path) / "about.txt"
+            report.write_text(about.to_text(self.about_sections()), encoding="utf-8")
+            open_share_sheet(widget, report)
+        except Exception as e:  # noqa: BLE001
+            asyncio.create_task(
+                self.error(f"Could not share environment details: {e}", "Share")
             )
 
     def handle_wipe_cache(self, widget: toga.Button, **kwargs: Any) -> None:
@@ -775,64 +898,11 @@ class Prototype:
                 ),
                 (
                     "Help",
-                    toga.Row(
+                    toga.Column(
                         children=[
-                            toga.WebView(
-                                content=f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <!-- Configures iOS viewport: sets width, prevents horizontal scroll, and fits notch/home indicator areas -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  
-  <!-- Informs the browser that the site supports both light and dark system themes -->
-  <meta name="color-scheme" content="light dark">
-  
-  <title>Embedded Content</title>
-
-  <style>
-    /* CSS Variables using light-dark() to switch automatically based on system preference */
-    :root {{
-      color-scheme: light dark;
-      --bg-color: light-dark(#ffffff, #121212);
-      --text-color: light-dark(#1c1c1e, #f2f2f7);
-      --card-bg: light-dark(#f2f2f7, #1c1c1e);
-      --border-color: light-dark(#e5e5ea, #3a3a3c);
-    }}
-
-    /* Prevent accidental horizontal overflow */
-    *, *::before, *::after {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      margin: 0;
-      padding: 0;
-      background-color: var(--bg-color);
-      color: var(--text-color);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.5;
-      
-      /* Ensures text wraps properly when zoomed */
-      overflow-wrap: break-word;
-      word-break: break-word;
-    }}
-
-    /* Images scale down to fit container width, preventing layout break on zoom */
-    img, video, svg {{
-      max-width: 100%;
-      height: auto;
-    }}
-  </style>
-</head>
-<body>
-    {md(f.read_text() if (f := (self.template_path / "help.md")).exists() else "")}
-</body>
-</html>
-""",
-                                flex=1,
-                            )
+                            self.help_selection,
+                            self.help_view,
+                            self.about_share,
                         ]
                     ),
                     self.icon_path / "interrogation.png",
@@ -840,5 +910,6 @@ class Prototype:
             ],
             on_select=self.tab_changed,
         )
+        self.show_help_page()
         self.app.loop.call_soon(lambda: self.reload_menu(self.script_list))
         return self.tabs
