@@ -1,12 +1,9 @@
 name: Continuous Delivery to TestFlight
 
+# Manual only: the push trigger failed on every merge to main because
+# GitHub-hosted runners have no App Store Connect credentials (see #28).
+# Ship builds from a Mac clone instead; see "Releasing to TestFlight" in README.md.
 on:
-  push:
-    branches:
-      - main
-  # Or scheduled run (e.g., nightly at 2 AM UTC)
-  #schedule:
-  #  - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -61,7 +58,7 @@ jobs:
           briefcase update ios
           #briefcase build ios
 
-          bundle exec fastlane ios beta
+          bundle exec fastlane ios share
 
       - name: Move last_testflight Tag Forward
         if: success() && steps.check_changes.outputs.has_changes == 'true'

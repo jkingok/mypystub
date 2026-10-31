@@ -41,3 +41,30 @@ The pre-commit hooks run the same checks as the pull request gate (`.github/work
 ```bash
 uv run pre-commit run --all-files
 ```
+
+## Releasing to TestFlight
+
+Builds are shipped by hand from a clone on a Mac with Xcode, Ruby, and Bundler. The `Continuous Delivery to TestFlight` workflow no longer runs on push; it can still be started manually, but only works on a runner that has the credentials below.
+
+```bash
+bundle install
+```
+
+Export the App Store Connect API key and team details (keep these out of the repository):
+
+- `APP_STORE_CONNECT_KEY_ID`
+- `APP_STORE_CONNECT_ISSUER_ID`
+- `APP_STORE_CONNECT_PRIVATE_KEY`
+- `APP_STORE_TEAM_ID`
+
+Then run one of the lanes in `fastlane/Fastfile`:
+
+```bash
+bundle exec fastlane ios share
+```
+
+- `share` builds and uploads to TestFlight.
+- `local` builds and installs on local devices.
+- `manual` builds the Xcode project and leaves signing and deploying to Xcode.
+
+Fastlane sets the version, so do not edit it by hand.
