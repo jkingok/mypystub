@@ -1,3 +1,5 @@
+"""Run work on the Toga main thread from a background script."""
+
 import threading
 
 import toga

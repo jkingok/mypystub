@@ -1,3 +1,5 @@
+"""Delete user-installed packages from the app cache."""
+
 import shutil
 from pathlib import Path
 

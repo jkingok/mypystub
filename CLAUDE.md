@@ -21,7 +21,7 @@ MyPyStub is a Python Briefcase/Toga prototype app for iOS, with macOS, Linux, an
 
 - `src/mypystub/` is the app package.
 - `tests/` holds real tests only. It is included by Briefcase via `test_sources`.
-- `examples/` holds sample prototypes and scratch scripts that are not tests. Planned: move the non-test files out of `tests/` into here.
+- `examples/` is a symlink to `src/mypystub/resources/examples/`, which is bundled and shown in the app's Examples category. It holds sample prototypes and scratch scripts that are not tests. Add or edit examples there, not in `tests/`.
 - `devtools.py` is the on-device build pipeline (see below).
 
 ## Toga on iOS

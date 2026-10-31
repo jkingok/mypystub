@@ -1,3 +1,5 @@
+"""Raise an error on the Toga main thread, to test error display."""
+
 import threading
 
 import toga
