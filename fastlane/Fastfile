@@ -79,43 +79,63 @@ platform :ios do
     sh("uvx --python 3.15 --directory .. briefcase update ios --update-requirements --update-support --update-stub  --update-resources --no-input")
   end
 
-  private_lane :update_xcode do
-    bootstrap
+  desc "Decides the calver and build number, then stamps pyproject.toml (#61)"
+  private_lane :decide_version do |options|
+    kind = options[:kind] || "dev"
 
-    #unlock_keychain(
-    #  path: "login.keychain-db",
-    #  password: ENV["LOCAL_MACOS_PASSWORD"]
-    #)
-
-    # 2. Authenticate via App Store Connect API Key
+    # Authenticate via App Store Connect API Key
     api_key = app_store_connect_api_key(
       key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
       key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
       is_key_content_base64: true
     )
+    lane_context[:API_KEY] = api_key
 
-    # 1. Generate current date-based version string (e.g., "2026.09.24" or "26.09.24")
-    date_version = Time.now.strftime("%Y.%m.%d") # Use "%y.%m.%d" for 2-digit year
-    
-    # Set Marketing Version (CFBundleShortVersionString)
-    increment_version_number(
-      version_number: date_version,
-      xcodeproj: xcode_project_path
-    )
+    # YYYY.M.D without leading zeros, so Xcode's CFBundleShortVersionString is
+    # also exactly the PEP 440 base version in the app's Python metadata
+    date_version = Time.now.strftime("%Y.%-m.%-d")
 
-    # 2. Fetch the latest build number from TestFlight for this specific version
+    # Builds on the same day are numbered after the latest one on TestFlight
     latest_build = latest_testflight_build_number(
       version: date_version,
       app_identifier: bundle_id,
       initial_build_number: 0
     )
+    build_number = latest_build + 1
 
-    # 3. Increment build number (CFBundleVersion) relative to TestFlight's state
-    # If no builds exist today, this sets it to 1. If build 1 exists, it becomes 2.
-    new_build_number = latest_build + 1
+    # Python sees <calver>.post<build> (TestFlight) or <calver>.dev<build>
+    output = sh("uv --directory .. run scripts/set_version.py #{date_version} #{build_number} #{kind}")
+    UI.success("Python version #{output.lines.last.strip}; Xcode #{date_version} (#{build_number})")
+
+    lane_context[:DATE_VERSION] = date_version
+    lane_context[:BUILD_NUMBER] = build_number
+  end
+
+  private_lane :update_xcode do |options|
+    decide_version(kind: options[:kind])
+
+    begin
+      # Briefcase copies the stamped version into the app's metadata here
+      bootstrap
+    ensure
+      # Keep the working tree clean: the stamp only needs to reach the build
+      sh("git -C .. checkout -- pyproject.toml")
+    end
+
+    #unlock_keychain(
+    #  path: "login.keychain-db",
+    #  password: ENV["LOCAL_MACOS_PASSWORD"]
+    #)
+
+    # Set Marketing Version (CFBundleShortVersionString) and build number
+    # (CFBundleVersion) from the same values the Python metadata got
+    increment_version_number(
+      version_number: lane_context[:DATE_VERSION],
+      xcodeproj: xcode_project_path
+    )
     increment_build_number(
-      build_number: new_build_number,
+      build_number: lane_context[:BUILD_NUMBER],
       xcodeproj: xcode_project_path
     )
 
@@ -131,7 +151,6 @@ platform :ios do
       }
     )
 
-    lane_context[:API_KEY] = api_key
     lane_context[:XCODE_PROJECT] = xcode_project_path
     lane_context[:XCODE_SCHEME] = AppConfig::APP_NAME
   end
@@ -141,11 +160,11 @@ platform :ios do
     # 1. Unlock Keychain on CI / Self-Hosted Runner
     setup_ci if is_ci
 
-    update_xcode
+    update_xcode(kind: "dev")
   end
 
-  private_lane :build_xcode do
-    update_xcode
+  private_lane :build_xcode do |options|
+    update_xcode(kind: options[:kind])
 
     xcode_project = lane_context[:XCODE_PROJECT]
     xcode_scheme = lane_context[:XCODE_SCHEME]
@@ -175,7 +194,7 @@ platform :ios do
     # 1. Unlock Keychain on CI / Self-Hosted Runner
     setup_ci if is_ci
 
-    build_xcode
+    build_xcode(kind: "dev")
 
     install_on_device(
       #device_id:
@@ -191,7 +210,7 @@ platform :ios do
     #get_certificates
     #get_provisioning_profile
 
-    build_xcode
+    build_xcode(kind: "release")
 
     api_key = lane_context[:API_KEY]
 
