@@ -12,7 +12,7 @@ You may place Python scripts in there. Either place bare scripts, or place modul
 
 Only a minimum of packages are preinstalled (if you build this yourself you can pre-install packages by adjusting the *Briefcase* configuration).
 
-There is an interactive launcher included that presents a menu to select your scripts and modules from. Notice that your scripts do need (currently) to be tailored in order to run in this environment. Particularly I assume you have a *Toga* UI but because of the iOS one-window limitation I need your script to present a shim I call "Prototype" to switch out the Launcher for your own app's content. *This allows you to use only one of your three free app slots for multiple Python Prototypes.*
+There is an interactive launcher included that presents a menu to select your scripts and modules from. Plain scripts run as they would with `python script.py` (see "How your script is run" on the in-app Help page); put their start-up code under `if __name__ == "__main__":`. Particularly I assume you have a *Toga* UI but because of the iOS one-window limitation I need your script to present a shim I call "Prototype" to switch out the Launcher for your own app's content. *This allows you to use only one of your three free app slots for multiple Python Prototypes.*
 
 Normal command-line Python scripts are not yet supported nor are any other graphical frameworks. (I have some designs on supporting basic command lines.)
 

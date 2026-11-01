@@ -1,14 +1,11 @@
 import asyncio
-import importlib.util
 import io
 import shutil
 import sys
 import traceback
 from collections.abc import Callable
 from datetime import datetime
-from importlib.machinery import ModuleSpec
 from pathlib import Path
-from types import ModuleType
 from typing import Any, cast
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -16,7 +13,7 @@ import toga
 from markdown import markdown as md
 from toga.style import Pack
 
-from . import about
+from . import about, runner
 from . import hooks as h
 from . import piplike as pip
 from . import settings as s
@@ -606,28 +603,65 @@ class Prototype:
         if not self.print_text.value:
             self.tabs.current_tab = "List"
 
-    def start(self, s: ModuleSpec, m: ModuleType) -> None:
+    def content_stack(self) -> runner.ObservableStack:
+        """The window's takeover stack, upgraded so runs can watch it."""
+        mw = self.app.main_window
+        assert isinstance(mw, toga.MainWindow)
+        stack = getattr(mw, "content_stack", None)
+        if not isinstance(stack, runner.ObservableStack):
+            stack = runner.ObservableStack(stack or [])
+            mw.content_stack = stack  # pyright: ignore[reportAttributeAccessIssue]
+        return stack
+
+    def start(self, context: runner.RunContext) -> None:
+        """Run a prototype on the script thread, like ``python script.py``.
+
+        The run ends when the body returns, or, if it took over the window, when
+        its takeover is popped off the content stack (see runner.RunLifetime).
+        """
         print("Starting...")
-
-        def script(spec: ModuleSpec, module: ModuleType) -> None:
-            # Execute the module code so classes are defined
-            try:
-                if spec and spec.loader:
-                    spec.loader.exec_module(module)
-                # Some modules need a nudge...
-                if hasattr(module, "main"):
-                    module.main()
-            except Exception as e:  # noqa: BLE001
-                asyncio.run_coroutine_threadsafe(
-                    self.error(f"Script failed with: {e!s}", "Script Failure"),
-                    self.app.loop,
-                )
-            finally:
-                self.app.loop.call_soon_threadsafe(self.end_script)
-
-        self.script_runner.run_student_script(
-            cast(Callable[[], None], lambda s=s, m=m: script(s, m))
+        lifetime = runner.RunLifetime(
+            self.content_stack(),
+            self.app.loop.call_soon_threadsafe,
+            lambda error: self.finish_run(context, error),
         )
+        context.open()
+
+        def script() -> None:
+            error: BaseException | None = None
+            try:
+                context.run()
+            except SystemExit as e:
+                # sys.exit() / sys.exit(0) is a normal end, like at the terminal
+                if e.code not in (None, 0):
+                    error = e
+            except BaseException as e:  # noqa: BLE001
+                error = e
+            finally:
+                lifetime.body_finished(error)
+
+        self.script_runner.run_student_script(script)
+
+    def finish_run(
+        self, context: runner.RunContext, error: BaseException | None
+    ) -> None:
+        """Restore process state, report any error, and tidy up the Script tab."""
+        context.close()
+        if error is None:
+            self.end_script()
+            return
+        traceback.print_exception(error)
+
+        async def report() -> None:
+            message = (
+                f"Script exited with status {error.code}"
+                if isinstance(error, SystemExit)
+                else f"Script failed with: {error!s}"
+            )
+            await self.error(message, "Script Failure")
+            self.end_script()
+
+        asyncio.create_task(report())
 
     async def handle_row_selection(
         self, widget: toga.DetailedList, **kwargs: Any
@@ -683,39 +717,22 @@ class Prototype:
                 self.end_script()
                 return
 
-        # 3. Proceed to mount the folder root and load the module
-        folder_path = str(getattr(selected_row, "folder_root", Path(".")).resolve())
-        if folder_path not in sys.path:
-            sys.path.insert(0, folder_path)
-        print(f"import path: {sys.path}")
-
-        # Clear out status title alterations and execute
-        print(f"Launching {getattr(selected_row, "title", "?")} from path: {getattr(selected_row, "entry_point", "?")}")
-        selected_file_path = Path(cast(Any, selected_row).entry_point)
-
+        # 3. Run it the way Python would: __main__, argv, its folder importable
+        entry_point = Path(cast(Any, selected_row).entry_point)
+        folder_root = Path(getattr(selected_row, "folder_root", entry_point.parent))
+        print(f"Launching {title} from path: {entry_point}")
         try:
-            # Dynamically load the python module from an arbitrary path
-            module_name = selected_file_path.parent.name
-            spec = importlib.util.spec_from_file_location(
-                module_name,
-                selected_file_path,
-                submodule_search_locations=[
-                    folder_path,
-                    str(selected_file_path.parent),
-                ],
-            )
-            if not spec:
-                raise ImportError(f"Cannot load {selected_file_path}")
-            module = importlib.util.module_from_spec(spec)
-
-            self.script_activity.update(f"Running {title}")
-            self.app.loop.call_soon(
-                cast(Callable[[], None], lambda s=spec, m=module: self.start(s, m))
-            )
+            if not entry_point.is_file():
+                raise FileNotFoundError(f"Entry point not found: {entry_point}")
+            context = runner.RunContext(runner.target_for(entry_point, folder_root))
         except Exception as e:  # noqa: BLE001
             self.script_activity.update(on=False)
             await self.error(f"Failed to execute script:\n{e!s}", "Load Failure")
             self.end_script()
+            return
+
+        self.script_activity.update(f"Running {title}")
+        self.app.loop.call_soon(lambda: self.start(context))
 
     def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         if log_path := getattr(sys.stdout, "path", None):

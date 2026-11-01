@@ -45,6 +45,6 @@ def main() -> None:
         print(f"{router} did not answer. Is local network access allowed in Settings?")
 
 
-# The launcher calls main(); the guard runs it with plain `python router_check.py`
+# Runs as __main__ in the launcher, and with plain `python router_check.py`
 if __name__ == "__main__":
     main()

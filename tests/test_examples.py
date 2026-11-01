@@ -82,11 +82,11 @@ def is_main_guard(node: ast.stmt) -> bool:
     )
 
 
-def test_guarded_examples_define_main() -> None:
-    """The launcher imports a script under its own name, then calls main().
+def test_examples_that_define_main_call_it() -> None:
+    """Scripts run as __main__, like `python script.py` (#75).
 
-    Code that only runs under `if __name__ == "__main__":` never runs in the app,
-    so an example with that guard must also define main().
+    The launcher doesn't call main() for you, so an example that defines main()
+    must also call it under `if __name__ == "__main__":`, or it does nothing.
     """
     silent = []
     for path in sorted(BUNDLED.rglob("*.py")):
@@ -94,6 +94,6 @@ def test_guarded_examples_define_main() -> None:
         has_main = any(
             isinstance(node, ast.FunctionDef) and node.name == "main" for node in body
         )
-        if any(is_main_guard(node) for node in body) and not has_main:
+        if has_main and not any(is_main_guard(node) for node in body):
             silent.append(path.name)
-    assert not silent, f"move the guarded code into main(): {silent}"
+    assert not silent, f"call main() under a __name__ guard: {silent}"

@@ -55,6 +55,14 @@ A single-file script can do the same in its [inline script metadata](https://pac
 
 Another way to modify the behaviour of the app is to replace the launcher completely by placing a `patch_app.py` into the same "MyPyStub" folder.
 
+## How your script is run
+
+Scripts run the way `python script.py` runs them: as `__main__`, with `sys.argv[0]` set to the script and the script's folder importable. A project entry point inside a package runs the way `python -m` would, so relative imports work: `src/<package>/__main__.py` like `python -m <package>`, and `src/<package>/app.py` like `python -m <package>.app`. Put the code that starts your script under `if __name__ == "__main__":`. The launcher no longer calls a `main()` function for you.
+
+A run ends when your script returns. If your script takes over the screen, it must push the launcher onto `main_window.content_stack` and pop it again when the user goes back (the project template does this). The run then ends when it is popped. A takeover that replaces the window content without using the stack can't be detected.
+
+Each run gets its own `sys.argv`, environment and working directory (the script's folder, or the project folder), and they are restored afterwards. Your own modules are reloaded on the next run, so edits take effect without restarting the app.
+
 ## Hardware
 
 Prototypes can use your **location**, **camera**, **photo library** (to save images) and **local network**. iOS asks for permission the first time a prototype uses each one, and you can change your answer later in the Settings app. The Examples' `hardware/` folder has a script for each.

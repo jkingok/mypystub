@@ -20,6 +20,6 @@ They are grouped into folders the same way you can organise your own scripts in 
 - `maintenance/`
   - `wipe_site_packages_from_cache.py`: removes user-installed packages from the app cache.
 
-When adding a folder, avoid names of real modules (such as `threading` or `toga`): the launcher names a script's module after its folder.
+Each script's folder is importable while it runs, so avoid **file** names that match real modules (such as `toga.py` or `json.py`). Folder names are free, though the tests still keep them distinct from the standard library.
 
 Only use Toga widgets supported on iOS (see `CLAUDE.md`).
