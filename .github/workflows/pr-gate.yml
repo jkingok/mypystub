@@ -1,12 +1,16 @@
 name: Pull Request Approval Gate
 
 on:
+  # Every PR, including ones stacked on another feature branch (#73)
   pull_request:
-    branches: [ main ]
-    types: [ opened, synchronize, reopened ]
+    # `edited` covers retargeting, e.g. a stacked PR moved to main after its
+    # base merges; other edits (title, body) are skipped below
+    types: [ opened, synchronize, reopened, edited ]
 
 concurrency:
-  group: pr-${{ github.ref }}
+  # Edits that don't change the base get their own group, so a title change
+  # can't cancel a run that is already in progress
+  group: pr-${{ github.ref }}-${{ github.event.action == 'edited' && !github.event.changes.base && github.run_id || 'ci' }}
   cancel-in-progress: true
 
 jobs:
@@ -15,6 +19,7 @@ jobs:
   # -------------------------------------------------------------
   quality-gate:
     name: Lint & Unit Tests
+    if: github.event.action != 'edited' || github.event.changes.base
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -47,6 +52,8 @@ jobs:
   briefcase-build:
     name: Briefcase iOS Compilation
     needs: quality-gate      # Only trigger if Job 1 passes
+    # The macOS build is slow; stacked PRs get it once retargeted to main
+    if: github.base_ref == 'main'
     runs-on: macos-26
 
     steps:
