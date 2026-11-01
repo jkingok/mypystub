@@ -29,6 +29,11 @@ KIND_ICONS = {
 }
 
 
+def help_html(markdown_text: str) -> str:
+    """Render Help page Markdown, including ```fenced``` code blocks."""
+    return md(markdown_text, extensions=["fenced_code"])
+
+
 def html_page(body: str) -> str:
     """Wrap an HTML fragment in a page styled for the in-app web views."""
     return f"""
@@ -93,6 +98,26 @@ def html_page(body: str) -> str:
     /* Keep labels on one line; long values (paths, build strings) wrap instead */
     th {{
       white-space: nowrap;
+    }}
+
+    code {{
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 0.9em;
+    }}
+
+    /* Code blocks keep their lines and scroll sideways instead of wrapping */
+    pre {{
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 8px 12px;
+      overflow-x: auto;
+    }}
+
+    pre code {{
+      white-space: pre;
+      word-break: normal;
+      overflow-wrap: normal;
     }}
   </style>
 </head>
@@ -824,7 +849,7 @@ class Prototype:
             )
         else:
             help_md = self.template_path / "help.md"
-            body = md(help_md.read_text()) if help_md.exists() else ""
+            body = help_html(help_md.read_text()) if help_md.exists() else ""
             self.about_share.style.visibility = "hidden"
         self.help_view.content = html_page(body)
 

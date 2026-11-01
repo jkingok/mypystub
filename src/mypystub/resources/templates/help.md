@@ -48,7 +48,7 @@ A single-file script can do the same in its [inline script metadata](https://pac
 #
 # [tool.stub_launcher]
 # display_name = "Weather Now"
-# description = "Current conditions where you are."
+# description = "Current local weather."
 # icon = "icons/globe.png"
 # ///
 ```
