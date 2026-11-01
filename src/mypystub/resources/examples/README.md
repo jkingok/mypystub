@@ -7,10 +7,14 @@ They are grouped into folders the same way you can organise your own scripts in 
 - `basics/`
   - `hello_world.py`: print a greeting.
   - `hello_you.py`: read input with `input()`.
+  - `args_and_env.py`: greet each name in `sys.argv`, using `$GREETING` if it's set.
+  - `with_dependency.py`: declare a PyPI dependency in a PEP 723 block; it's installed on the first run.
   - `hello_project/`: a project folder with a `pyproject.toml`, a package under `src/`, and a dependency (`humanize`, installed on first run). It appears in the list as one entry, "Hello Project".
 - `takeover/`
   - `back_button.py`: replace the launcher's screen with your own, then hand it back with a Back button. It pushes the launcher onto `main_window.content_stack` and pops it on Back, which is how the launcher knows the run has ended.
+  - `nested_takeover.py`: two screens deep; each Back pops one, and the run ends back at the launcher.
 - `threads/`
+  - `countdown.py`: a long-running script; the run lasts until it returns. Optional arguments: the count and the pause.
   - `main_thread.py`: run work on the Toga main thread from a background script.
 - `errors/`
   - `main_thread_error.py`: an error raised on the Toga main thread.

@@ -12,15 +12,23 @@ You may place Python scripts in there. Either place bare scripts, or place modul
 
 Only a minimum of packages are preinstalled (if you build this yourself you can pre-install packages by adjusting the *Briefcase* configuration).
 
-There is an interactive launcher included that presents a menu to select your scripts and modules from. Plain scripts run as they would with `python script.py` (see "How your script is run" on the in-app Help page); put their start-up code under `if __name__ == "__main__":`. Particularly I assume you have a *Toga* UI but because of the iOS one-window limitation I need your script to present a shim I call "Prototype" to switch out the Launcher for your own app's content. *This allows you to use only one of your three free app slots for multiple Python Prototypes.*
+## Writing prototypes
 
-Normal command-line Python scripts are not yet supported nor are any other graphical frameworks. (I have some designs on supporting basic command lines.)
+The launcher lists your scripts and project folders; tap one to run it. *This lets one of your three free app slots hold many Python prototypes.* Scripts run as they would with `python script.py`, so the same file also works on a desktop, or as a standalone app built with *Briefcase*. Put their start-up code under `if __name__ == "__main__":`.
+
+| Mode | When the run ends | Example |
+|---|---|---|
+| Plain script (`print`, `input`) | when the script returns | `basics/hello_world.py`, `basics/hello_you.py` |
+| Long-running script | when its work finishes | `threads/countdown.py` |
+| Main-thread work | when the script returns | `threads/main_thread.py` |
+| Arguments and environment variables | when the script returns | `basics/args_and_env.py` |
+| Dependencies (PEP 723) | installed first, then as above | `basics/with_dependency.py` |
+| Project folder (`pyproject.toml`) | as for its entry point | `basics/hello_project/` |
+| Taking over the screen with Toga | when it hands the screen back | `takeover/back_button.py`, `takeover/nested_takeover.py` |
+
+The in-app Help page explains each one (see "How your script is run"), and the examples are in the app's **Examples** category. Your own modules are reloaded on each run, so edits take effect without restarting the app.
 
 If you use the special name of `patch_app.py` for your shim you will bypass the Launcher. This is intended if you want to have either a single app and save a tap, or if you need full control of the *Toga* startup.
-
-Note that Python code gets cached/compiled. You will need to hard kill (throw away in the pull-up-from-bottom app view) the stub app to refresh.
-
-This is also necessary if your script doesn't implement a Back button that fires the Prototype's done callback to get back to the launcher.
 
 This is purely experimental at this stage but you're welcome to experiment with it!
 

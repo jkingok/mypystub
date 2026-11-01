@@ -36,10 +36,16 @@ def test_examples_are_grouped_in_folders() -> None:
         "threads",
     ]
     assert tree["hardware"] == ["router_check", "take_photo", "where_am_i"]
-    assert tree["basics"] == ["Hello Project", "hello_world", "hello_you"]
+    assert tree["basics"] == [
+        "args_and_env",
+        "Hello Project",
+        "hello_world",
+        "hello_you",
+        "with_dependency",
+    ]
     assert tree["errors"] == ["main_thread_error", "test_error"]
-    assert tree["threads"] == ["main_thread"]
-    assert tree["takeover"] == ["back_button"]
+    assert tree["threads"] == ["countdown", "main_thread"]
+    assert tree["takeover"] == ["back_button", "nested_takeover"]
 
 
 def test_project_example_is_one_runnable_entry() -> None:

@@ -73,6 +73,16 @@ Scripts run the way `python script.py` runs them: as `__main__`, with `sys.argv[
 
 A run ends when your script returns. If your script takes over the screen, it must push the launcher onto `main_window.content_stack` and pop it again when the user goes back (the project template does this). The run then ends when it is popped. A takeover that replaces the window content without using the stack can't be detected.
 
+Ways a script can run, each with an example in the Examples category:
+
+- **Plain script**: `print` and `input` use the Script tab. The run ends when the script returns (`basics/hello_world.py`, `basics/hello_you.py`).
+- **Long-running script**: keeps working, for example in a loop or waiting on a `threading.Event`; the run lasts until it returns (`threads/countdown.py`).
+- **Main-thread work**: Toga widgets must be changed on the app's main thread, so schedule that work with `toga.App.app.loop.call_soon_threadsafe(...)` (`threads/main_thread.py`).
+- **Arguments and environment variables**: read `sys.argv` and `os.environ` as usual (`basics/args_and_env.py`).
+- **Dependencies**: list them in a PEP 723 block, and they're installed before the first run (`basics/with_dependency.py`).
+- **Project folder**: a folder with a `pyproject.toml` and its code under `src/` (`basics/hello_project/`).
+- **Taking over the screen**: push onto `main_window.content_stack` and pop on Back; nested screens work too, and the run ends back at the launcher (`takeover/back_button.py`, `takeover/nested_takeover.py`).
+
 Each run gets its own `sys.argv`, environment and working directory (the script's folder, or the project folder), and they are restored afterwards. Your own modules are reloaded on the next run, so edits take effect without restarting the app.
 
 ## Packages with compiled parts

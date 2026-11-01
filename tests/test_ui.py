@@ -711,3 +711,44 @@ def test_installs_use_configured_and_script_aliases(
             "fast": piplike.Alias("substitute", "fast-pure"),
         }
     ]
+
+
+def test_nested_takeover_example_ends_back_at_the_launcher(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two levels deep: the run ends only when both screens are handed back."""
+    example = (
+        Path(ui.__file__).parent
+        / "resources"
+        / "examples"
+        / "takeover"
+        / "nested_takeover.py"
+    )
+    (docs / "case.py").write_text(example.read_text(encoding="utf-8"))
+    proto.reload_menu(proto.script_list)
+    launcher = app.main_window.content
+    tap(proto, "case", monkeypatch, app)
+    stack = proto.content_stack()
+    wait_for(app, lambda: len(stack) == 1)
+
+    def press(label: str) -> None:
+        content = app.main_window.content
+        button = next(
+            w
+            for w in content.children
+            if isinstance(w, toga.Button) and w.text == label
+        )
+        button._impl.simulate_press()
+
+    press("Deeper")
+    wait_for(app, lambda: len(stack) == 2)
+    assert app.main_window.title == "Level 2"
+
+    press("Back")
+    wait_for(app, lambda: len(stack) == 1)
+    run(app, asyncio.sleep(0.05))
+    assert proto.ended_run != proto.run_id  # still one level in
+
+    press("Back")
+    wait_for(app, lambda: proto.ended_run == proto.run_id)
+    assert app.main_window.content is launcher
