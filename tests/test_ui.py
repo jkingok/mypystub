@@ -41,12 +41,10 @@ def docs(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prototype:
-    """A launcher on the User category, with dialogs recorded instead of shown."""
+    """A launcher opened on Documents, with dialogs recorded instead of shown."""
     monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
     p = ui.Prototype(host_app=app, on_done=lambda _: None)
     app.main_window.content = p.get_content()
-    p.dir_selection.selection.value = "User"
-    p.change_category(p.dir_selection.selection)
     p.dialogs = []  # type: ignore[attr-defined]
 
     async def record(text: str, title: str | None = None) -> None:
@@ -60,6 +58,8 @@ def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prot
     monkeypatch.setattr(
         p, "clear_selection", lambda widget: widget._impl._set_value("selection", None)
     )
+    p.reload_menu(p.script_list)
+    tap(p, "Documents", monkeypatch, app)
     return p
 
 
@@ -88,21 +88,61 @@ def run(app: toga.App, coro: Coroutine[Any, Any, Any]) -> Any:
 # ---------------------------------------------------------------------------
 
 
+def test_list_starts_with_the_categories(
+    app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """There's no category selector: the list opens on Examples and Documents."""
+    monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
+    p = ui.Prototype(host_app=app, on_done=lambda _: None)
+    app.main_window.content = p.get_content()
+    p.reload_menu(p.script_list)
+    assert titles(p) == ["Examples", "Documents"]
+    documents = p.script_list.data[1]
+    assert documents.subtitle == "1 subfolder, 1 script"  # a/ and top.py
+    assert not hasattr(p, "dir_selection")
+
+
 def test_folders_drill_down_and_back_up(
     proto: ui.Prototype, app: toga.App, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Folder rows open, ".." goes up, and changing category resets."""
-    assert titles(proto) == ["a", "top"]
+    """Folder rows open, and ".." goes up, finally back to the categories."""
+    assert titles(proto) == ["..", "a", "top"]
     tap(proto, "a", monkeypatch, app)
     assert titles(proto) == ["..", "b"] and proto.subfolder == Path("a")
     tap(proto, "b", monkeypatch, app)
     assert titles(proto) == ["..", "deep"]
     tap(proto, "..", monkeypatch, app)
     assert proto.subfolder == Path("a")
+    tap(proto, "..", monkeypatch, app)
+    assert titles(proto) == ["..", "a", "top"] and proto.subfolder == Path()
+    tap(proto, "..", monkeypatch, app)
+    assert titles(proto) == ["Examples", "Documents"]
 
-    proto.dir_selection.selection.value = "Examples"
-    proto.change_category(proto.dir_selection.selection)
-    assert proto.subfolder == Path()
+    tap(proto, "Examples", monkeypatch, app)
+    assert proto.category == "Examples" and proto.subfolder == Path()
+    assert "basics" in titles(proto)
+
+
+def test_folder_rows_preview_their_contents(proto: ui.Prototype) -> None:
+    """Folders show what's inside rather than just "Folder"."""
+    row = next(r for r in proto.script_list.data if r.title == "a")
+    assert row.subtitle == "1 subfolder"
+
+
+def test_category_icons_appear_once_downloaded(
+    proto: ui.Prototype, app: toga.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Examples and Documents use examples.png and documents.png when present."""
+    icons = tmp_path / "icons"
+    icons.mkdir()
+    proto.icon_path = icons
+    tap(proto, "..", monkeypatch, app)
+    assert all(row.icon is None for row in proto.script_list.data)
+
+    for name in ("examples.png", "documents.png"):
+        shutil.copy(ICONS / "list.png", icons / name)
+    proto.reload_menu(proto.script_list)
+    assert all(isinstance(row.icon, toga.Image) for row in proto.script_list.data)
 
 
 def test_script_rows_show_docstrings(proto: ui.Prototype) -> None:

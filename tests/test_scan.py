@@ -243,3 +243,47 @@ def test_script_metadata_icon_cannot_escape_the_folder(tmp_path: Path) -> None:
     )
     (entry,) = piplike.scan_all_prototypes(tmp_path / "sub")
     assert entry["icon_path"] is None
+
+
+# ---------------------------------------------------------------------------
+# Folder previews
+# ---------------------------------------------------------------------------
+
+
+def test_folder_summary_counts_each_kind(tmp_path: Path) -> None:
+    """Subfolders, packages, scripts and other files are counted separately."""
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+    write(tmp_path / "proj" / "pyproject.toml", "[project]\nname='p'\n")
+    write(tmp_path / "one.py")
+    write(tmp_path / "two.py")
+    write(tmp_path / "notes.txt")
+    assert (
+        piplike.folder_summary(tmp_path)
+        == "2 subfolders, 1 package, 2 scripts, 1 other file"
+    )
+
+
+def test_folder_summary_skips_hidden_cache_and_launcher_files(tmp_path: Path) -> None:
+    """Things the list never shows aren't counted either."""
+    write(tmp_path / ".DS_Store")
+    write(tmp_path / ".git" / "HEAD")
+    write(tmp_path / "__pycache__" / "x.pyc")
+    write(tmp_path / "patch_app.py")
+    write(tmp_path / "__init__.py")
+    write(tmp_path / "only.py")
+    assert piplike.folder_summary(tmp_path) == "1 script"
+
+
+def test_folder_summary_empty_and_missing(tmp_path: Path) -> None:
+    """An empty folder says so; an unreadable one falls back to "Folder"."""
+    assert piplike.folder_summary(tmp_path) == "Empty folder"
+    assert piplike.folder_summary(tmp_path / "missing") == "Folder"
+
+
+def test_folder_rows_preview_their_contents(tmp_path: Path) -> None:
+    """A folder row's subtitle is its contents summary, not just "Folder"."""
+    write(tmp_path / "games" / "pong.py")
+    write(tmp_path / "games" / "snake.py")
+    (entry,) = piplike.scan_all_prototypes(tmp_path)
+    assert entry["subtitle"] == "2 scripts"

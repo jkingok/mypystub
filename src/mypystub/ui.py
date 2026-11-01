@@ -22,6 +22,13 @@ UIUserInterfaceIdiomPad = 1
 
 # Default list icons by scanned entry kind (see CREDITS.md). Missing files are
 # skipped, so rows show no icon until the icon is downloaded.
+# Top-level list rows: category name -> icon (see CREDITS.md). Missing icon files
+# are skipped, so the rows show no icon until the icon is downloaded.
+CATEGORY_ICONS = {
+    "Examples": "examples.png",
+    "Documents": "documents.png",
+}
+
 KIND_ICONS = {
     "folder": "folder.png",
     "project": "box.png",
@@ -415,13 +422,10 @@ class Prototype:
         self.about_share = toga.Button(
             "Share", on_press=self.handle_about_share, visibility="hidden"
         )
-        # Folder being browsed, relative to the selected category's root
+        # Category being browsed (None: the list of categories), and the folder
+        # within it, relative to the category's root
+        self.category: str | None = None
         self.subfolder = Path()
-        self.dir_selection = LabelledSelection(
-            "Category",
-            items=["Examples", "User"],
-            on_change=self.change_category,
-        )
         self.script_list = toga.DetailedList(
             on_refresh=self.reload_menu,
             on_select=self.handle_row_selection,
@@ -490,19 +494,24 @@ class Prototype:
             logs = log_path.read_text()
             self.log_text.value = logs
 
+    def category_dirs(self) -> dict[str, Path]:
+        """The top-level categories: built-in examples and the user's Documents."""
+        return {
+            "Examples": self.this_path / "resources" / "examples",
+            "Documents": Path(self.prototype_dir),
+        }
+
     def get_category_dir(self) -> Path:
-        match str(self.dir_selection.value):
-            case "Examples":
-                return self.this_path / "resources" / "examples"
-            case _:
-                return self.prototype_dir
+        assert self.category is not None
+        return self.category_dirs()[self.category]
 
     def get_current_dir(self) -> Path:
         return self.get_category_dir() / self.subfolder
 
-    def change_category(self, widget: toga.Selection, **kwargs: Any) -> None:
+    def show_category(self, category: str | None) -> None:
+        """Open a category at its root, or None for the list of categories."""
+        self.category = category
         self.subfolder = Path()
-        self.reload_menu(widget)
 
     def bundled_icon(self, filename: str) -> toga.Image | None:
         """Load an icon from resources/icons, or None until the file is added."""
@@ -525,20 +534,43 @@ class Prototype:
     def reload_menu(
         self, widget: toga.DetailedList | toga.Selection, **kwargs: Any
     ) -> None:
+        # 0. At the top, the list is the categories themselves
+        if self.category is None:
+            self.script_list.data = [
+                {
+                    "title": name,
+                    "subtitle": pip.folder_summary(path),
+                    "icon": self.bundled_icon(CATEGORY_ICONS[name]),
+                    "category": name,
+                }
+                for name, path in self.category_dirs().items()
+            ]
+            return
+
         # 1. Gather all of our TOML configuration profiles
         self.prototypes_data = pip.scan_all_prototypes(self.get_current_dir())
 
         # 2. Format the records specifically for Toga's DetailedList expectations
-        list_items = []
+        up = self.bundled_icon("arrow-small-left.png")
         if self.subfolder != Path():
-            list_items.append(
+            where = f"{self.category}/{self.subfolder.as_posix()}"
+            list_items = [
                 {
                     "title": "..",
-                    "subtitle": f"Up from {self.subfolder.as_posix()}",
-                    "icon": self.bundled_icon("arrow-small-left.png"),
+                    "subtitle": f"Up from {where}",
+                    "icon": up,
                     "folder": self.get_current_dir().parent,
                 }
-            )
+            ]
+        else:
+            list_items = [
+                {
+                    "title": "..",
+                    "subtitle": "Back to categories",
+                    "icon": up,
+                    "categories": True,
+                }
+            ]
         for proto in self.prototypes_data:
             # The prototype's own icon, if it set one and the file exists. Only
             # this is used as the Script view's splash; the small default icons
@@ -701,6 +733,16 @@ class Prototype:
         selected_row = widget.selection
         self.clear_selection(widget)
         if selected_row is None:
+            return
+
+        # Category rows, and ".." back to them, navigate instead of running
+        if getattr(selected_row, "categories", False):
+            self.show_category(None)
+            self.reload_menu(widget)
+            return
+        if category := getattr(selected_row, "category", None):
+            self.show_category(category)
+            self.reload_menu(widget)
             return
 
         # Folder rows (including "..") navigate instead of running anything
@@ -884,7 +926,7 @@ class Prototype:
             content=[
                 (
                     "List",
-                    toga.Column(children=[self.dir_selection, self.script_list]),
+                    toga.Column(children=[self.script_list]),
                     self.icon_path / "list.png",
                 ),
                 (

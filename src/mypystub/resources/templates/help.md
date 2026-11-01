@@ -17,9 +17,12 @@ The app is made up of the following views:
 
 ## List
 
-A list of Python modules and scripts found in the *On My* (iPhone/iPad) section of *Files* under *MyPyStub*.
+The list opens on two categories:
 
-Select the item to run it.
+- **Examples**: sample prototypes built into the app.
+- **Documents**: your own scripts and projects, from the *On My* (iPhone/iPad) section of *Files* under *MyPyStub*.
+
+Each row previews what's inside. Tap a folder to open it, and `..` to go back up. Tap a script or project to run it.
 
 ## Script
 

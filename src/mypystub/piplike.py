@@ -674,11 +674,40 @@ def scan_project(item: Path) -> dict[str, Any]:
     }
 
 
+def folder_summary(folder: Path) -> str:
+    """Summarise what the list would show inside `folder`, without parsing files.
+
+    For example "2 subfolders, 1 package, 3 scripts, 1 other file", or
+    "Empty folder". Hidden entries, caches and launcher files are not counted.
+    This lists one directory per folder row, so it is cheap but not free.
+    """
+    counts = {"subfolder": 0, "package": 0, "script": 0, "other file": 0}
+    try:
+        children = list(folder.iterdir())
+    except OSError:
+        return "Folder"
+    for child in children:
+        if child.name.startswith("."):
+            continue
+        if child.is_dir():
+            if (child / "pyproject.toml").exists():
+                counts["package"] += 1
+            elif child.name not in SKIPPED_FOLDERS:
+                counts["subfolder"] += 1
+        elif child.suffix == ".py":
+            if child.name not in RESERVED_SCRIPTS:
+                counts["script"] += 1
+        else:
+            counts["other file"] += 1
+    parts = [f"{n} {kind}{'' if n == 1 else 's'}" for kind, n in counts.items() if n]
+    return ", ".join(parts) if parts else "Empty folder"
+
+
 def scan_folder(item: Path) -> dict[str, Any]:
     """Describe a plain folder that the launcher can navigate into."""
     return {
         "title": item.name,
-        "subtitle": "Folder",
+        "subtitle": folder_summary(item),
         "icon_path": None,
         "folder": item,
         "dependencies": [],

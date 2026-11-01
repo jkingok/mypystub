@@ -18,6 +18,8 @@ used under the Flaticon free licence, which requires this attribution.
 | `paste.png` | `fi-rr-paste` | Paste button (planned, #36) |
 | `file-code.png` | `fi-rr-file-code` | Single-script rows in the list |
 | `box.png` | `fi-rr-box` | Project-folder rows in the list (unless the project sets its own icon) |
+| `examples.png` | `fi-rr-person-chalkboard` | Examples folder |
+| `documents.png` | `fi-rr-portfolio` | Documents folder |
 
 When you add an icon, add a row here. `tests/test_credits.py` fails for any
 icon that is not listed.
