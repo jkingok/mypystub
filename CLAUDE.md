@@ -55,10 +55,7 @@ Manage dependencies with `uv`. Prefer, in order: pure Python, binary wheels, the
 
 ## Commits and PRs
 
-- Claude identifies itself in every commit message and PR, using the attribution lines below.
-- End commit messages with:
-  `Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>`
-  `Claude-Session: https://claude.ai/code/session_01JRRpxMs44gfoZnqq9Sq45n`
-- End PR descriptions with:
-  `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
-  `https://claude.ai/code/session_01JRRpxMs44gfoZnqq9Sq45n`
+- Claude identifies itself in every commit message and PR.
+- Use the attribution lines your session provides, with the model and session URL of the **current** session. Do not copy them from older commits or this file. The shape is:
+  - Commit messages end with `Co-Authored-By: Claude <model> <noreply@anthropic.com>` and `Claude-Session: <current session URL>`.
+  - PR descriptions end with `🤖 Generated with [Claude Code](https://claude.com/claude-code)` and the current session URL.
