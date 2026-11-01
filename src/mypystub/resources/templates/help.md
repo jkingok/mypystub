@@ -40,6 +40,19 @@ There is no "real" exit on iOS, except for manually throwing it away from the sw
 
 This launcher will introspect the `pyproject.toml` to look for a name, description, icon and its dependencies. It will attempt to download pure-Python wheels from [PyPI](https://pypi.org) for any dependencies. _It cannot download iOS-specific wheels yet for packages that have binary extensions._
 
+A single-file script can do the same in its [inline script metadata](https://packaging.python.org/en/latest/specifications/inline-script-metadata/) block. Its first docstring line is used as the description if it doesn't set one:
+
+```python
+# /// script
+# dependencies = ["humanize"]
+#
+# [tool.stub_launcher]
+# display_name = "Weather Now"
+# description = "Current conditions where you are."
+# icon = "icons/globe.png"
+# ///
+```
+
 Another way to modify the behaviour of the app is to replace the launcher completely by placing a `patch_app.py` into the same "MyPyStub" folder.
 
 ## Help

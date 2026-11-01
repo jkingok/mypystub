@@ -196,3 +196,50 @@ def test_entries_report_their_kind(tmp_path: Path) -> None:
     write(tmp_path / "script.py")
     kinds = {e["title"]: e["kind"] for e in piplike.scan_all_prototypes(tmp_path)}
     assert kinds == {"folder": "folder", "proj": "project", "script": "script"}
+
+
+def test_script_metadata_sets_title_description_and_icon(tmp_path: Path) -> None:
+    """[tool.stub_launcher] in the PEP 723 block works like a project's (#52)."""
+    write(tmp_path / "icons" / "globe.png", "png")
+    write(
+        tmp_path / "weather.py",
+        script_with_metadata(
+            'dependencies = ["httpx"]\n'
+            "[tool.stub_launcher]\n"
+            'display_name = "Weather Now"\n'
+            'description = "Current conditions where you are."\n'
+            'icon = "icons/globe.png"'
+        ).replace("print('hi')", '"""Docstring loses to metadata."""'),
+    )
+    (entry,) = [
+        e for e in piplike.scan_all_prototypes(tmp_path) if e["kind"] == "script"
+    ]
+    assert entry["title"] == "Weather Now"
+    assert entry["subtitle"] == "Current conditions where you are."
+    assert entry["icon_path"] == tmp_path / "icons" / "globe.png"
+    assert entry["dependencies"] == ["httpx"]
+
+
+def test_script_metadata_is_optional_per_key(tmp_path: Path) -> None:
+    """Missing keys fall back: file stem, then docstring, then no icon."""
+    write(
+        tmp_path / "partial.py",
+        script_with_metadata('[tool.stub_launcher]\ndisplay_name = "Partial"').replace(
+            "print('hi')", '"""From the docstring."""'
+        ),
+    )
+    (entry,) = piplike.scan_all_prototypes(tmp_path)
+    assert entry["title"] == "Partial"
+    assert entry["subtitle"] == "From the docstring."
+    assert entry["icon_path"] is None
+
+
+def test_script_metadata_icon_cannot_escape_the_folder(tmp_path: Path) -> None:
+    """An icon path outside the script's folder is ignored."""
+    write(tmp_path / "outside.png", "png")
+    write(
+        tmp_path / "sub" / "s.py",
+        script_with_metadata('[tool.stub_launcher]\nicon = "../outside.png"'),
+    )
+    (entry,) = piplike.scan_all_prototypes(tmp_path / "sub")
+    assert entry["icon_path"] is None

@@ -598,17 +598,23 @@ def docstring_summary(source: str) -> str | None:
 def scan_script(item: Path) -> dict[str, Any] | None:
     """Describe a loose ``.py`` prototype, or return None if it cannot run here.
 
-    The subtitle is the first line of the module docstring. Dependencies come
-    from the PEP 723 ``script`` block. A script whose ``requires-python``
-    excludes the running interpreter is skipped.
+    Dependencies come from the PEP 723 ``script`` block. A script whose
+    ``requires-python`` excludes the running interpreter is skipped.
+
+    The same block may hold a ``[tool.stub_launcher]`` table with the keys a
+    project folder uses: ``display_name`` (else the file name), ``description``
+    (else the first line of the module docstring) and ``icon`` (a path relative
+    to the script's folder).
     """
     source = item.read_text(encoding="utf-8")
     dependencies: list[str] = []
+    launcher: dict[str, Any] = {}
     for kind, text in iter_script_metadata(source):
         if kind != "script":
             continue
         config = tomllib.loads(text)
         dependencies += config.get("dependencies", [])
+        launcher |= config.get("tool", {}).get("stub_launcher", {})
         if requires_python := config.get("requires-python"):
             current = platform.python_version()
             if Version(current) not in SpecifierSet(requires_python):
@@ -616,18 +622,29 @@ def scan_script(item: Path) -> dict[str, Any] | None:
                     f"Skipping {item.name} needs Python {requires_python} not {current}"
                 )
                 return None
-        # TODO we can implement our custom tool in this
-        # same metadata to capture description, etc
 
     return {
-        "title": item.stem,  # Just the filename as the title
-        "subtitle": docstring_summary(source) or DEFAULT_SCRIPT_SUBTITLE,
-        "icon_path": None,  # Uses default fallback icon
+        "title": launcher.get("display_name") or item.stem,
+        "subtitle": launcher.get("description")
+        or docstring_summary(source)
+        or DEFAULT_SCRIPT_SUBTITLE,
+        "icon_path": _icon_within(item.parent, launcher.get("icon")),
         "entry_point": item,
         "folder_root": item.parent,
         "dependencies": dependencies,
         "kind": "script",
     }
+
+
+def _icon_within(folder: Path, relative: str | None) -> Path | None:
+    """Resolve an icon path relative to ``folder``, refusing paths outside it."""
+    if not relative:
+        return None
+    icon = folder / relative
+    if not icon.resolve().is_relative_to(folder.resolve()):
+        print(f"Ignoring icon outside {folder}: {relative}")
+        return None
+    return icon
 
 
 def scan_project(item: Path) -> dict[str, Any]:
