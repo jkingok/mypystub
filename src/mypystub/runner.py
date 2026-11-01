@@ -148,17 +148,35 @@ class RunContext:
         self.close()
 
 
+def end_action(printed: bool, error: bool) -> str:
+    """What the Script tab does when a run ends (#64).
+
+    ``"list"``: go back to the list, because there's nothing left to read.
+    ``"stay"``: stay on the Script tab to show the output. An error's dialog is
+    shown first either way.
+    """
+    del error  # the dialog has been dismissed by the time this applies
+    return "stay" if printed else "list"
+
+
 class ObservableStack(list):
     """A list that tells listeners its new length after every push or pop.
 
     The launcher installs this as ``main_window.content_stack``, so it can see a
     takeover start (push) and end (pop) without polling.
+
+    ``floor`` guards against extra pops (#64, case E): a pop that would go below
+    it is ignored, and returns the window's current title and content, so the
+    caller restores what's already showing. Without a ``window`` it raises
+    IndexError, like popping an empty list.
     """
 
     def __init__(self, *args: Any) -> None:
         """Create the stack, optionally from an existing list."""
         super().__init__(*args)
         self._listeners: list[Callable[[int], None]] = []
+        self.floor = 0
+        self.window: Any = None
 
     def add_listener(self, listener: Callable[[int], None]) -> None:
         """Call `listener(len(self))` after each change."""
@@ -179,7 +197,12 @@ class ObservableStack(list):
         self._changed()
 
     def pop(self, index: Any = -1) -> Any:
-        """Pop an item and notify listeners."""
+        """Pop an item and notify listeners; ignore pops below the floor."""
+        if len(self) <= self.floor:
+            if self.window is None:
+                raise IndexError("pop below the content stack's floor")
+            print("[Launcher] Ignored an extra pop of the content stack")
+            return (self.window.title, self.window.content)
         item = super().pop(index)
         self._changed()
         return item
@@ -231,8 +254,10 @@ class RunLifetime:
             self._finish()
 
     def _on_stack_change(self, depth: int) -> None:
+        # Any thread may pop (case D). Finish on the loop, after the pop and the
+        # content it restores have completed (case F).
         if depth <= self.start_depth:
-            self._finish()
+            self.call_soon_threadsafe(self._finish)
 
     def _finish(self) -> None:
         if self._finished:

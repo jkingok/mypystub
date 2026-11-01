@@ -3,6 +3,7 @@
 Skipped where toga_dummy isn't installed, such as on device.
 """
 
+import asyncio
 import os
 import re
 import shutil
@@ -325,6 +326,168 @@ def test_own_icon_is_used_as_a_splash(
     assert isinstance(splash, toga.Image)
 
 
+# ---------------------------------------------------------------------------
+# How a run ends (#64): real scripts on a live loop
+# ---------------------------------------------------------------------------
+
+
+def wait_for(
+    app: toga.App, condition: Callable[[], bool], timeout: float = 5.0
+) -> None:
+    """Run the app loop until `condition()` holds."""
+
+    async def poll() -> None:
+        for _ in range(int(timeout / 0.01)):
+            if condition():
+                return
+            await asyncio.sleep(0.01)
+        raise AssertionError("timed out waiting for the run to end")
+
+    run(app, poll())
+
+
+def run_to_end(
+    proto: ui.Prototype,
+    app: toga.App,
+    docs: Path,
+    source: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Write `source` as a script, tap it, and wait until its run has ended."""
+    (docs / "case.py").write_text(source)
+    proto.reload_menu(proto.script_list)
+    tap(proto, "case", monkeypatch, app)
+    wait_for(app, lambda: proto.ended_run == proto.run_id)
+
+
+def test_silent_script_returns_to_list(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No output and no error: back to the list."""
+    run_to_end(proto, app, docs, "x = 1 + 1\n", monkeypatch)
+    assert proto.tabs.current_tab.text == "List"
+
+
+def test_printing_script_stays_with_finished_status(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Output keeps the Script tab open, marked Finished."""
+    run_to_end(proto, app, docs, "print(1 + 1)\n", monkeypatch)
+    assert proto.tabs.current_tab.text == "Script"
+    assert proto.print_text.value == "2\n"
+    assert proto.script_activity.text.text == "Finished"
+
+
+def test_launcher_output_during_a_run_does_not_count(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Launcher prints (here, its folder scan) don't keep the Script tab open."""
+    source = (
+        "from pathlib import Path\n"
+        "from mypystub import piplike\n"
+        "piplike.scan_all_prototypes(Path('.'))  # prints 'Scanning...'\n"
+    )
+    run_to_end(proto, app, docs, source, monkeypatch)
+    assert proto.print_text.value == ""
+    assert proto.tabs.current_tab.text == "List"
+
+
+def test_main_thread_callback_output_counts(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cause 2: output from a callback scheduled on the loop is shown and counted."""
+    source = "import toga\ntoga.App.app.loop.call_soon_threadsafe(print, 'later')\n"
+    run_to_end(proto, app, docs, source, monkeypatch)
+    assert proto.print_text.value == "later\n"
+    assert proto.tabs.current_tab.text == "Script"
+
+
+def test_error_without_output_shows_dialog_over_script_then_list(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dialog appears over the Script tab, then the list returns."""
+    run_to_end(proto, app, docs, "raise ValueError('boom')\n", monkeypatch)
+    assert proto.dialogs == [  # type: ignore[attr-defined]
+        ("Script Failure", "Script failed with: boom", "Script", "Failed")
+    ]
+    assert proto.tabs.current_tab.text == "List"
+
+
+def test_takeover_ends_after_its_pop_and_extra_pops_are_ignored(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cases A and E: tabs wait for the hand-back; a double Back changes nothing."""
+    source = (
+        "import toga\n"
+        "app = toga.App.app\n"
+        "def push():\n"
+        "    mw = app.main_window\n"
+        "    mw.content_stack.append((mw.title, mw.content))\n"
+        "    mw.content = toga.Box()\n"
+        "app.loop.call_soon_threadsafe(push)\n"
+    )
+    (docs / "case.py").write_text(source)
+    proto.reload_menu(proto.script_list)
+    tap(proto, "case", monkeypatch, app)
+    stack = proto.content_stack()
+    wait_for(app, lambda: len(stack) == 1)
+    run(app, asyncio.sleep(0.05))
+    assert proto.ended_run != proto.run_id  # still taken over
+
+    _title, content = stack.pop()  # Back
+    app.main_window.content = content
+    wait_for(app, lambda: proto.ended_run == proto.run_id)
+    assert proto.tabs.current_tab.text == "List"
+
+    assert stack.pop() == (app.main_window.title, app.main_window.content)  # 2nd Back
+    assert app.main_window.content is content
+
+
+def test_takeover_example_hands_back_on_back(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bundled takeover example ends its run when its Back button is pressed."""
+    example = (
+        Path(ui.__file__).parent
+        / "resources"
+        / "examples"
+        / "takeover"
+        / "back_button.py"
+    )
+    (docs / "case.py").write_text(example.read_text(encoding="utf-8"))
+    proto.reload_menu(proto.script_list)
+    launcher = app.main_window.content
+    tap(proto, "case", monkeypatch, app)
+    stack = proto.content_stack()
+    wait_for(app, lambda: len(stack) == 1)
+    assert app.main_window.title == "Takeover"
+    assert proto.ended_run != proto.run_id
+
+    takeover = app.main_window.content
+    back = next(w for w in takeover.children if isinstance(w, toga.Button))
+    back._impl.simulate_press()
+    wait_for(app, lambda: proto.ended_run == proto.run_id)
+    assert app.main_window.content is launcher
+    assert proto.tabs.current_tab.text == "Script"  # it printed a line
+    assert "Took over the screen" in proto.print_text.value
+
+    back._impl.simulate_press()  # a double tap changes nothing
+    run(app, asyncio.sleep(0.05))
+    assert app.main_window.content is launcher
+
+
+def test_stale_run_end_is_ignored(proto: ui.Prototype) -> None:
+    """Case G: an old run finishing late doesn't touch the current run's UI."""
+    from mypystub import runner
+
+    proto.run_id = 2
+    proto.tabs.current_tab = "Script"
+    context = runner.RunContext(
+        runner.target_for(Path(__file__), Path(__file__).parent)
+    )
+    proto.finish_run(context, None, run_id=1)
+    assert proto.tabs.current_tab.text == "Script"
+    assert proto.ended_run != 1
 def test_installs_use_configured_and_script_aliases(
     proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -311,6 +311,9 @@ class Prototype:
             horizontal=False, content=self.print_text, style=Pack(flex=1)
         )
         self.script_activity = LabelledActivity()
+        # Each run gets an id; end-of-run work for an older run is ignored (#64)
+        self.run_id = 0
+        self.ended_run = 0
         self.splash = toga.ImageView(style=Pack(flex=0))
         self.help_selection = LabelledSelection(
             "Show",
@@ -557,11 +560,21 @@ class Prototype:
         else:
             do_new_project()
 
-    def end_script(self) -> None:
-        self.script_activity.update(on=False)
+    def end_script(self, run_id: int | None = None) -> None:
+        """Tidy up after a run: back to the list unless there's output to read.
+
+        Tabs only change while the launcher is on screen; if a takeover is still
+        showing, they're left alone (#64, case C).
+        """
         self.splash.image = None
-        if not self.print_text.value:
-            self.tabs.current_tab = "List"
+        action = runner.end_action(printed=self.script_runner.printed, error=False)
+        if action == "stay":
+            self.script_activity.update("Finished", on=False)
+        else:
+            self.script_activity.update(on=False)
+            if self.tabs.window is not None:
+                self.tabs.current_tab = "List"
+        self.ended_run = self.run_id if run_id is None else run_id
 
     def content_stack(self) -> runner.ObservableStack:
         """The window's takeover stack, upgraded so runs can watch it."""
@@ -571,6 +584,7 @@ class Prototype:
         if not isinstance(stack, runner.ObservableStack):
             stack = runner.ObservableStack(stack or [])
             mw.content_stack = stack  # pyright: ignore[reportAttributeAccessIssue]
+        stack.window = mw
         return stack
 
     def start(self, context: runner.RunContext) -> None:
@@ -580,11 +594,17 @@ class Prototype:
         its takeover is popped off the content stack (see runner.RunLifetime).
         """
         print("Starting...")
+        self.run_id += 1
+        run_id = self.run_id
+        stack = self.content_stack()
+        # A takeover's extra Back can't pop below the launcher (#64, case E)
+        stack.floor = len(stack)
         lifetime = runner.RunLifetime(
-            self.content_stack(),
+            stack,
             self.app.loop.call_soon_threadsafe,
-            lambda error: self.finish_run(context, error),
+            lambda error: self.finish_run(context, error, run_id),
         )
+        self.script_runner.begin_run()
         context.open()
 
         def script() -> None:
@@ -603,14 +623,27 @@ class Prototype:
         self.script_runner.run_student_script(script)
 
     def finish_run(
-        self, context: runner.RunContext, error: BaseException | None
+        self,
+        context: runner.RunContext,
+        error: BaseException | None,
+        run_id: int | None = None,
     ) -> None:
-        """Restore process state, report any error, and tidy up the Script tab."""
+        """Restore process state, report any error, and tidy up the Script tab.
+
+        Runs once per run, on the loop (runner.RunLifetime). If a newer run has
+        started meanwhile, only the process state is restored (#64, case G).
+        """
         context.close()
+        run_id = self.run_id if run_id is None else run_id
+        if run_id != self.run_id:
+            print(f"Run {run_id} ended after run {self.run_id} started; ignored")
+            return
+        self.script_runner.end_run()
         if error is None:
-            self.end_script()
+            self.end_script(run_id)
             return
         traceback.print_exception(error)
+        self.script_activity.update("Failed", on=False)
 
         async def report() -> None:
             message = (
@@ -619,7 +652,8 @@ class Prototype:
                 else f"Script failed with: {error!s}"
             )
             await self.error(message, "Script Failure")
-            self.end_script()
+            if run_id == self.run_id:
+                self.end_script(run_id)
 
         asyncio.create_task(report())
 
@@ -829,6 +863,8 @@ class Prototype:
             return toga.OptionContainer(*args, **kwargs)
 
     def do_on_done_callback(self, widget: toga.Widget, **kwargs: Any) -> None:
+        # Leaving the launcher on purpose: lift the guard against extra pops
+        self.content_stack().floor = 0
         self.on_done_callback(widget)
 
     def get_content(self) -> toga.Widget:

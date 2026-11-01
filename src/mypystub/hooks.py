@@ -6,6 +6,7 @@ This includes redirecting input and print into Toga windowed I/O.
 import builtins
 import io
 import re
+import sys
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -100,6 +101,23 @@ class ScriptRunner:
         self._original_input = builtins.input
 
         self.stream = TogaStream(self.append_to_log)
+        # Whether the current run has shown any output in the Script tab
+        self.printed = False
+
+    def begin_run(self) -> None:
+        """Start capturing a run's output. Call on the loop thread.
+
+        print and input stay hooked until end_run, not just while the script's
+        body runs, so output from its main-thread callbacks and takeovers is
+        shown and counted too (#64).
+        """
+        self.printed = False
+        self.hook_builtins()
+
+    def end_run(self) -> None:
+        """Stop capturing output, flushing anything pending."""
+        self.stream.flush()
+        self.unhook_builtins()
 
     def hook_builtins(self) -> None:
         """Intercept print and input."""
@@ -119,6 +137,8 @@ class ScriptRunner:
             if self.toggle_print(not w.value) and message:
                 self.toggle_print(True)
             w.value += message
+            if message:
+                self.printed = True
             # self.print_field.refresh()
             # await asyncio.sleep(0.01)
             # self.scroll.vertical_position = self.scroll.max_vertical_position
@@ -130,11 +150,26 @@ class ScriptRunner:
         the main thread, even when called from a background thread.
         """
         self._original_print(message)
-        self.app.loop.call_soon(lambda: self.mainthread_append_to_log(message))
+        if threading.current_thread() is threading.main_thread():
+            # A script callback on the loop: append now, so the output is
+            # counted before any end-of-run check queued after it (#64)
+            self.mainthread_append_to_log(message)
+        else:
+            # From the script thread: only call_soon_threadsafe wakes the loop
+            # and keeps output ordered with the run's end
+            self.app.loop.call_soon_threadsafe(self.mainthread_append_to_log, message)
         # asyncio.create_task(self.mainthread_append_to_log(message))
 
     def _custom_print(self, *args: Any, **kwargs: Any) -> None:
-        """Generic print wrapper that hijacks the 'file' target."""
+        """Generic print wrapper that hijacks the 'file' target.
+
+        The launcher's own prints (from mypystub modules) go to the log only, so
+        they never appear in, or count as, the script's output (#64).
+        """
+        caller = sys._getframe(1).f_globals.get("__name__", "")
+        if caller == "mypystub" or caller.startswith("mypystub."):
+            self._original_print(*args, **kwargs)
+            return
         # Check if the student explicitly passed a file argument
         # target_file = kwargs.get("file", None)
 
@@ -172,7 +207,7 @@ class ScriptRunner:
             self.input_field.focus()
 
         if app := toga.App.app:
-            app.loop.call_soon(setup_ui)
+            app.loop.call_soon_threadsafe(setup_ui)
 
             # 3. Block the student's background thread until the event is set
             self._input_event.wait()
@@ -200,11 +235,9 @@ class ScriptRunner:
             The synchronous operation of the secondary Python script occurs here.
             """
             print("In worker...")
-            self.hook_builtins()
             try:
                 script_func()
             finally:
-                self.unhook_builtins()
                 print("Back out of worker")
 
         thread = threading.Thread(target=worker, daemon=True)

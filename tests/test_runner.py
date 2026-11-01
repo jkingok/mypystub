@@ -8,7 +8,13 @@ from types import ModuleType
 
 import pytest
 
-from mypystub.runner import ObservableStack, RunContext, RunLifetime, target_for
+from mypystub.runner import (
+    ObservableStack,
+    RunContext,
+    RunLifetime,
+    end_action,
+    target_for,
+)
 
 
 def write(path: Path, text: str) -> Path:
@@ -232,6 +238,8 @@ def test_takeover_via_call_soon_stays_open_until_pop() -> None:
     loop.run_ready()
     assert lifetime.took_over and finished == []
     stack.pop()
+    assert finished == []  # case F: finishing waits until the pop has completed
+    loop.run_ready()
     assert finished == [None]
 
 
@@ -244,8 +252,10 @@ def test_nested_takeover_ends_only_back_at_start_depth() -> None:
     lifetime.body_finished()
     loop.run_ready()
     stack.pop()
+    loop.run_ready()
     assert finished == []
     stack.pop()
+    loop.run_ready()
     assert finished == [None]
 
 
@@ -259,6 +269,7 @@ def test_finishes_once_and_reports_error() -> None:
     loop.run_ready()
     stack.append("x")
     stack.pop()
+    loop.run_ready()
     assert finished == [error]
 
 
@@ -284,3 +295,67 @@ def test_package_module_entry_point_keeps_relative_imports(
     with RunContext(target_for(entry, src)) as run:
         run.run()
     assert registry.items == [("__main__", 2)]
+
+
+# ---------------------------------------------------------------------------
+# How a run ends (#64)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("printed", "error", "action"),
+    [
+        (False, False, "list"),
+        (True, False, "stay"),
+        (False, True, "list"),  # after the error dialog is dismissed
+        (True, True, "stay"),  # the output explains the error
+    ],
+)
+def test_end_action(printed: bool, error: bool, action: str) -> None:
+    """Return to the list only when there's nothing left to read."""
+    assert end_action(printed=printed, error=error) == action
+
+
+def test_pop_from_another_thread_finishes_on_the_loop() -> None:
+    """Case D: a done callback on the script thread doesn't finish off-loop."""
+    import threading
+
+    stack = ObservableStack()
+    lifetime, loop, finished = make_lifetime(stack)
+    stack.append("takeover")
+    lifetime.body_finished()
+    loop.run_ready()
+
+    worker = threading.Thread(target=stack.pop)
+    worker.start()
+    worker.join()
+    assert finished == []  # only queued
+    loop.run_ready()
+    assert finished == [None]
+
+
+class FakeWindow:
+    """Just enough of a window for the stack's floor."""
+
+    title = "Launcher"
+    content = "launcher content"
+
+
+def test_extra_pop_at_the_floor_is_ignored() -> None:
+    """Case E: a second Back can't pop below where the run started."""
+    stack = ObservableStack([("outer", "outer content")])
+    stack.window = FakeWindow()
+    stack.floor = 1
+    stack.append(("Launcher", "launcher content"))
+    assert stack.pop() == ("Launcher", "launcher content")  # the real Back
+    # The double tap: keeps the launcher showing, outer entry stays put
+    assert stack.pop() == ("Launcher", "launcher content")
+    assert list(stack) == [("outer", "outer content")]
+
+
+def test_floor_without_window_raises() -> None:
+    """Without a window to keep, an extra pop fails like an empty list."""
+    stack = ObservableStack(["a"])
+    stack.floor = 1
+    with pytest.raises(IndexError):
+        stack.pop()

@@ -28,11 +28,19 @@ def walk(folder: Path) -> dict[str, list[str]]:
 def test_examples_are_grouped_in_folders() -> None:
     """The top level shows only folders, and every sample is reachable."""
     tree = walk(BUNDLED)
-    assert tree["."] == ["basics", "errors", "hardware", "maintenance", "threads"]
+    assert tree["."] == [
+        "basics",
+        "errors",
+        "hardware",
+        "maintenance",
+        "takeover",
+        "threads",
+    ]
     assert tree["hardware"] == ["router_check", "take_photo", "where_am_i"]
     assert tree["basics"] == ["Hello Project", "hello_world", "hello_you"]
     assert tree["errors"] == ["main_thread_error", "test_error"]
     assert tree["threads"] == ["main_thread"]
+    assert tree["takeover"] == ["back_button"]
     assert tree["maintenance"] == ["wipe_site_packages_from_cache"]
 
 

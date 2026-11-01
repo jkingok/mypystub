@@ -158,7 +158,12 @@ class MyApp(toga.App):
         loop.set_exception_handler(global_async_exception_handler)
 
         try:
-            p = ui.Prototype(host_app=app, on_done=lambda _: MyApp.unstack_from(app))
+
+            def on_done(_: Any) -> None:
+                # Done may be called from any thread; change the window on the loop
+                app.loop.call_soon_threadsafe(MyApp.unstack_from, app)
+
+            p = ui.Prototype(host_app=app, on_done=on_done)
             cast(Any, app).proto = p
 
             t = p.title or app.formal_name

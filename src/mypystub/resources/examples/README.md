@@ -8,6 +8,8 @@ They are grouped into folders the same way you can organise your own scripts in 
   - `hello_world.py`: print a greeting.
   - `hello_you.py`: read input with `input()`.
   - `hello_project/`: a project folder with a `pyproject.toml`, a package under `src/`, and a dependency (`humanize`, installed on first run). It appears in the list as one entry, "Hello Project".
+- `takeover/`
+  - `back_button.py`: replace the launcher's screen with your own, then hand it back with a Back button. It pushes the launcher onto `main_window.content_stack` and pops it on Back, which is how the launcher knows the run has ended.
 - `threads/`
   - `main_thread.py`: run work on the Toga main thread from a background script.
 - `errors/`
