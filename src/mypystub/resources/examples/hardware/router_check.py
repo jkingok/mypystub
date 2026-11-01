@@ -2,6 +2,9 @@
 
 import ipaddress
 import socket
+import sys
+
+import toga
 
 
 def local_address() -> str:
@@ -33,6 +36,28 @@ def answers(host: str, port: int, timeout: float = 2.0) -> bool:
         return False
 
 
+def open_settings(app: toga.App) -> None:
+    """Open this app's page in iOS Settings, where its permissions are."""
+    if sys.platform != "ios":
+        print("Change it in your system's privacy settings.")
+        return
+    import webbrowser
+
+    from rubicon.objc import objc_const  # pyright: ignore[reportMissingImports]
+    from toga_iOS.libs import uikit  # pyright: ignore[reportMissingImports]
+
+    url = str(objc_const(uikit, "UIApplicationOpenSettingsURLString"))
+    # UIKit must be used on the main thread, which runs the app's loop
+    app.loop.call_soon_threadsafe(webbrowser.open, url)
+
+
+def offer_settings(app: toga.App, what: str) -> None:
+    """Ask whether to open Settings to allow `what`."""
+    answer = input(f"Open Settings to allow {what}? [y/N] ")
+    if answer.strip().lower().startswith("y"):
+        open_settings(app)
+
+
 def main() -> None:
     """Find the likely router and report which common ports answer."""
     here = local_address()
@@ -42,7 +67,10 @@ def main() -> None:
     if open_ports:
         print(f"{router} answered on port(s) {', '.join(map(str, open_ports))}.")
     else:
-        print(f"{router} did not answer. Is local network access allowed in Settings?")
+        print(f"{router} did not answer.")
+        # iOS can't report whether local network access was declined, so offer
+        if app := toga.App.app:
+            offer_settings(app, "local network access")
 
 
 # Runs as __main__ in the launcher, and with plain `python router_check.py`

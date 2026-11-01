@@ -12,9 +12,31 @@ gains should be imported from there instead.
 """
 
 import sys
+from typing import Any
 
 if sys.platform == "ios":
-    from rubicon.objc import ObjCClass  # pyright: ignore[reportMissingImports]
+    from rubicon.objc import (  # pyright: ignore[reportMissingImports]
+        ObjCClass,
+        objc_const,
+    )
+    from rubicon.objc.runtime import (  # pyright: ignore[reportMissingImports]
+        load_library,
+    )
+    from toga_iOS.libs import UIApplication, uikit
 
     # UIKit: not declared in toga_iOS.libs.uikit
     UIActivityViewController = ObjCClass("UIActivityViewController")
+
+    def app_settings_url() -> str:
+        """UIApplicationOpenSettingsURLString: opens this app's Settings page."""
+        return str(objc_const(uikit, "UIApplicationOpenSettingsURLString"))
+
+    def shared_application() -> Any:
+        """UIApplication.sharedApplication, whether or not it's declared a property."""
+        shared = UIApplication.sharedApplication
+        return shared() if callable(shared) else shared
+
+    # Photos: Toga doesn't load this framework, so it's loaded here
+    photos = load_library("Photos")
+    PHPhotoLibrary = ObjCClass("PHPhotoLibrary")
+    PHAccessLevelAddOnly = 1  # PHAccessLevel.addOnly

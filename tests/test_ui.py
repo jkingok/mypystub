@@ -12,15 +12,27 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from packaging.version import Version
 
 pytest.importorskip("toga_dummy")
 os.environ["TOGA_BACKEND"] = "toga_dummy"
 
 import toga
 
-from mypystub import piplike, ui
+from mypystub import piplike, setup_pages, ui
 
 ICONS = Path(ui.__file__).parent / "resources" / "icons"
+
+
+def fresh_stack(proto: ui.Prototype) -> None:
+    """Empty the shared window's content stack before a test.
+
+    The window is shared by the module, so pages or takeovers an earlier test
+    left open would otherwise change the depths later tests wait for.
+    """
+    stack = proto.content_stack()
+    list.clear(stack)
+    stack.floor = 0
 
 
 @pytest.fixture(scope="module")
@@ -45,6 +57,7 @@ def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prot
     """A launcher opened on Documents, with dialogs recorded instead of shown."""
     monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
     p = ui.Prototype(host_app=app, on_done=lambda _: None)
+    fresh_stack(p)
     app.main_window.content = p.get_content()
     p.dialogs = []  # type: ignore[attr-defined]
 
@@ -95,6 +108,7 @@ def test_list_starts_with_the_categories(
     """There's no category selector: the list opens on Examples and Documents."""
     monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
     p = ui.Prototype(host_app=app, on_done=lambda _: None)
+    fresh_stack(p)
     app.main_window.content = p.get_content()
     p.reload_menu(p.script_list)
     assert titles(p) == ["Examples", "Documents"]
@@ -327,6 +341,184 @@ def test_own_icon_is_used_as_a_splash(
 
 
 # ---------------------------------------------------------------------------
+# Setup view: cache, package updates, health (#77)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def site(proto: ui.Prototype, tmp_path: Path) -> Path:
+    """A user site-packages folder, in a temp cache, holding one package."""
+    proto.cache_path = tmp_path / "cache"
+    site = proto.site_packages
+    dist = site / "humanize-4.10.0.dist-info"
+    dist.mkdir(parents=True)
+    (dist / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: humanize\nVersion: 4.10.0\n"
+    )
+    (site / "humanize.py").write_text("X = 1\n")
+    return site
+
+
+def answer_dialogs(
+    proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch, answer: bool
+) -> list[str]:
+    """Answer every confirmation with `answer`, recording the questions."""
+    asked: list[str] = []
+
+    async def confirm(text: str, title: str) -> bool:
+        asked.append(title)
+        return answer
+
+    monkeypatch.setattr(proto, "confirm", confirm)
+    return asked
+
+
+def test_setup_menu_opens_pages_with_back(
+    proto: ui.Prototype, app: toga.App, site: Path
+) -> None:
+    """Each menu entry opens its page over the tabs; Back (even twice) returns."""
+    tabs = app.main_window.content
+    stack = proto.content_stack()
+    depth = len(stack)
+    for page, title in proto.SETUP_PAGES.items():
+        proto.open_setup_page(page)
+        assert app.main_window.title == title
+        assert app.main_window.content is not tabs
+        assert len(stack) == depth + 1
+        assert proto.setup_view.parent is not None
+        proto.close_setup_page()
+        assert app.main_window.content is tabs
+        proto.close_setup_page()  # a double tap pops nothing more
+        assert app.main_window.content is tabs and len(stack) == depth
+        assert proto.setup_page is None
+
+
+def test_setup_shows_user_packages(proto: ui.Prototype, site: Path) -> None:
+    """The Packages page counts and lists user packages."""
+    proto.open_setup_page("packages")
+    assert proto.packages_summary.startswith("1 user package (")
+    assert "humanize" in proto.setup_html and "4.10.0" in proto.setup_html
+    assert setup_pages.NOT_CHECKED in proto.setup_html
+
+
+def test_wipe_needs_confirmation(
+    proto: ui.Prototype, app: toga.App, site: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Declining keeps the packages; confirming deletes them."""
+    proto.open_setup_page("packages")
+    asked = answer_dialogs(proto, monkeypatch, answer=False)
+    run(app, proto.handle_wipe_cache(proto.update_all_button))
+    assert site.exists() and asked == ["Wipe user packages"]
+
+    answer_dialogs(proto, monkeypatch, answer=True)
+    run(app, proto.handle_wipe_cache(proto.update_all_button))
+    assert not site.exists()
+    assert proto.packages_summary == "No user packages"
+    assert "No user packages" in proto.setup_html
+
+
+def test_check_and_install_updates(
+    proto: ui.Prototype, app: toga.App, site: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Found updates are listed, and Update all installs exactly those versions."""
+    from mypystub import maintenance
+
+    found = [
+        maintenance.Update("humanize", Version("4.10.0"), Version("4.12.0"), False)
+    ]
+    monkeypatch.setattr(maintenance, "find_updates", lambda client, inv, **kw: found)
+    proto.open_setup_page("packages")
+    assert not proto.update_all_button.enabled
+    run(app, proto.handle_check_updates(proto.update_all_button))
+    assert "4.10.0 → 4.12.0" in proto.setup_html
+    assert proto.update_all_button.enabled
+
+    installed: list[list[str]] = []
+
+    async def install(requirements: list[str], target: Path, **kwargs: object) -> None:
+        installed.append(requirements)
+
+    monkeypatch.setattr(piplike, "resolve_and_install_async", install)
+    run(app, proto.handle_update_all(proto.update_all_button))
+    assert installed == [["humanize==4.12.0"]]
+    assert not proto.update_all_button.enabled
+    assert "Up to date" in proto.setup_html
+
+
+def test_check_updates_offline_says_so(
+    proto: ui.Prototype, app: toga.App, site: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no network, the page and status line explain instead of failing."""
+    from mypystub import maintenance
+
+    def offline(client: object, inventory: object, **kwargs: object) -> None:
+        raise maintenance.MaintenanceError("Couldn't reach PyPI: offline")
+
+    monkeypatch.setattr(maintenance, "find_updates", offline)
+    proto.open_setup_page("packages")
+    run(app, proto.handle_check_updates(proto.update_all_button))
+    assert proto.setup_activity.text.text == "Couldn't reach PyPI: offline"
+    assert "check: Couldn&#x27;t reach PyPI: offline" in proto.setup_html
+    assert not proto.update_all_button.enabled
+
+
+def test_health_check_states(
+    proto: ui.Prototype, app: toga.App, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Health shows a summary and details; offline it says so."""
+    from mypystub import maintenance
+
+    status = maintenance.PythonStatus(
+        Version("3.15.1"), Version("3.15.2"), None, Version("3.16.0b1")
+    )
+    monkeypatch.setattr(maintenance, "check_python", lambda client, current: status)
+    monkeypatch.setattr(maintenance, "find_updates", lambda client, inv, **kw: [])
+    proto.open_setup_page("health")
+    assert setup_pages.NOT_CHECKED in proto.setup_html
+    run(app, proto.handle_check_health(proto.update_all_button))
+    assert "⚠ 1 update needs a new app build (TestFlight)" in proto.setup_html
+    assert "Python 3.15.1 → 3.15.2 available" in proto.setup_html
+
+    def offline(client: object, current: str) -> None:
+        raise maintenance.MaintenanceError("Couldn't reach python.org: offline")
+
+    monkeypatch.setattr(maintenance, "check_python", offline)
+    run(app, proto.handle_check_health(proto.update_all_button))
+    assert "check (offline?)" in proto.setup_html
+    assert "reach python.org: offline" in proto.setup_html
+
+
+# ---------------------------------------------------------------------------
+# Setup view: permissions (#80)
+# ---------------------------------------------------------------------------
+
+
+def test_setup_lists_permissions(proto: ui.Prototype) -> None:
+    """Each declared permission is listed with its status."""
+    proto.open_setup_page("permissions")
+    for name in ("Location", "Camera", "Photo library", "Local network"):
+        assert f"<td>{name}</td>" in proto.setup_html
+
+
+def test_open_settings_button(
+    proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The button opens Settings on iOS, and explains itself elsewhere."""
+    from mypystub import permissions
+
+    proto.open_setup_page("permissions")
+    proto.handle_open_settings(proto.update_all_button)
+    assert proto.setup_activity.text.text == "Settings can only be opened on iOS"
+
+    opened: list[bool] = []
+    monkeypatch.setattr(
+        permissions, "open_app_settings", lambda: opened.append(True) or True
+    )
+    proto.handle_open_settings(proto.update_all_button)
+    assert opened == [True]
+
+
+# ---------------------------------------------------------------------------
 # How a run ends (#64): real scripts on a live loop
 # ---------------------------------------------------------------------------
 
@@ -488,6 +680,8 @@ def test_stale_run_end_is_ignored(proto: ui.Prototype) -> None:
     proto.finish_run(context, None, run_id=1)
     assert proto.tabs.current_tab.text == "Script"
     assert proto.ended_run != 1
+
+
 def test_installs_use_configured_and_script_aliases(
     proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -35,6 +35,15 @@ Clear can be used when the log gets too long.
 
 ## Settings
 
+The Setup tab has four sections:
+
+- **Projects**: create a new project from the template (below).
+- **Packages**: how many packages your prototypes have installed, and their size. *Check for updates* asks [PyPI](https://pypi.org) for newer versions (through its [JSON API](https://docs.pypi.org/api/json/)), and *Update all* installs them. *Wipe user packages…* deletes them all; prototypes reinstall what they need on their next run, which needs the network.
+- **Health**: *Check app health* compares the app's Python with [python.org's releases](https://www.python.org/downloads/) (through its [downloads API](https://www.python.org/api/v2/downloads/release/?is_published=true)): the latest dot release for this version, and the next version if it's out or in pre-release. It also compares the packages built into the app with PyPI. These can only be updated by a new build of the app.
+- **App**: back up your files, or exit back to the launcher you came from.
+
+Nothing is checked online until you tap a button.
+
 Here is the tool which generates a new "Project" or module for you to edit. If I've done it right then this is _also_
 a good enough example that can be built standalone using *Briefcase* into an app standalone via a Mac.
 
@@ -87,6 +96,8 @@ somepackage = { kind = "substitute", target = "somepackage-pure", when = "always
 ## Hardware
 
 Prototypes can use your **location**, **camera**, **photo library** (to save images) and **local network**. iOS asks for permission the first time a prototype uses each one, and you can change your answer later in the Settings app. The Examples' `hardware/` folder has a script for each.
+
+**Changed your mind about a permission?** iOS only asks once. To change your answer, tap *Open Settings* in the Setup tab (its Permissions section shows what's allowed), or go to the Settings app → MyPyStub. A permission only appears there after a prototype has asked for it. The hardware examples offer to open Settings when a permission was declined.
 
 ## Help
 

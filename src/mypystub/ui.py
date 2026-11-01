@@ -1,18 +1,21 @@
 import asyncio
+import importlib
 import io
+import platform
 import shutil
 import sys
 import traceback
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import httpx2
 import toga
 from toga.style import Pack
 
-from . import about, runner
+from . import about, maintenance, permissions, runner, setup_pages
 from . import hooks as h
 from . import piplike as pip
 from . import settings as s
@@ -324,6 +327,22 @@ class Prototype:
         self.about_share = toga.Button(
             "Share", on_press=self.handle_about_share, visibility="hidden"
         )
+        # Setup view (#77): a menu of sections, each opening a detail page (a
+        # WebView, since Labels don't wrap) with native buttons for its actions
+        self.setup_view = toga.WebView(flex=1)
+        self.setup_page: str | None = None
+        self.setup_html = ""
+        self.update_all_button = toga.Button(
+            "Update all", on_press=self.handle_update_all, enabled=False
+        )
+        self.setup_activity = LabelledActivity()
+        self.packages_summary = ""
+        self.pending_updates: list[maintenance.Update] = []
+        # None until checked; the last check's error, if it failed
+        self.checked_updates: list[maintenance.Update] | None = None
+        self.update_error: str | None = None
+        self.health: maintenance.Health | None = None
+        self.health_error: str | None = None
         # Category being browsed (None: the list of categories), and the folder
         # within it, relative to the category's root
         self.category: str | None = None
@@ -851,9 +870,256 @@ class Prototype:
                 self.error(f"Could not share environment details: {e}", "Share")
             )
 
-    def handle_wipe_cache(self, widget: toga.Button, **kwargs: Any) -> None:
-        for f in Path(self.app.paths.cache).iterdir():
-            print(f)
+    @property
+    def site_packages(self) -> Path:
+        """Where prototypes' dependencies are installed."""
+        return Path(self.cache_path) / "site_packages"
+
+    async def confirm(self, text: str, title: str) -> bool:
+        """Ask a yes/no question; True if the user said yes."""
+        assert isinstance(self.app.main_window, toga.MainWindow)
+        return bool(await self.app.main_window.dialog(toga.QuestionDialog(title, text)))
+
+    def refresh_packages(self) -> None:
+        """Count the user packages and their size."""
+        count = len(pip.get_package_inventory(self.site_packages))
+        if not count:
+            self.packages_summary = "No user packages"
+            return
+        size = maintenance.human_size(maintenance.dir_size(self.site_packages))
+        noun = "package" if count == 1 else "packages"
+        self.packages_summary = f"{count} user {noun} ({size})"
+
+    def with_client(self, check: Callable[..., Any], *args: Any) -> Any:
+        """Run a network check with a short-lived HTTP client (off the loop)."""
+        with httpx2.Client(timeout=15.0) as client:
+            return check(client, *args)
+
+    # -- Setup detail pages -------------------------------------------------
+
+    SETUP_PAGES: ClassVar[dict[str, str]] = {
+        "packages": "Packages",
+        "health": "App health",
+        "permissions": "Permissions",
+    }
+
+    def setup_page_html(self, page: str) -> str:
+        """The HTML body of one Setup page, from the current state."""
+        match page:
+            case "packages":
+                return setup_pages.packages_html(
+                    self.packages_summary,
+                    pip.get_package_inventory(self.site_packages),
+                    self.checked_updates,
+                    self.update_error,
+                )
+            case "health":
+                return setup_pages.health_html(self.health, self.health_error)
+            case _:
+                return setup_pages.permissions_html(permissions.status(self.app))
+
+    def render_setup_page(self) -> None:
+        """Redraw the open Setup page, if there is one."""
+        if self.setup_page is None:
+            return
+        self.setup_html = self.setup_page_html(self.setup_page)
+        self.setup_view.content = html_page(self.setup_html)
+
+    def setup_actions(self, page: str) -> list[toga.Widget]:
+        """Native buttons for one Setup page's actions."""
+        match page:
+            case "packages":
+                return [
+                    toga.Button(
+                        "Check for updates", on_press=self.handle_check_updates
+                    ),
+                    self.update_all_button,
+                    toga.Button("Wipe user packages…", on_press=self.handle_wipe_cache),
+                ]
+            case "health":
+                return [
+                    toga.Button("Check app health", on_press=self.handle_check_health)
+                ]
+            case _:
+                return [
+                    toga.Button("Open Settings", on_press=self.handle_open_settings)
+                ]
+
+    def open_setup_page(self, page: str) -> None:
+        """Show a Setup page over the launcher, with a Back button.
+
+        It's pushed onto the window's content stack like any other view, so Back
+        pops it and restores the tabs as they were.
+        """
+        if page == "packages":
+            self.refresh_packages()
+        actions = self.setup_actions(page)
+        # These widgets are reused, so take them out of the last page first
+        for widget in (self.setup_view, self.setup_activity, *actions):
+            if widget.parent is not None:
+                widget.parent.remove(widget)
+        self.setup_activity.update(on=False)
+        content = toga.Column(
+            children=[
+                toga.Row(
+                    children=[toga.Button("‹ Back", on_press=self.close_setup_page)]
+                ),
+                self.setup_view,
+                toga.Column(margin=(4, 8), children=actions),
+                self.setup_activity,
+            ]
+        )
+        mw = self.app.main_window
+        assert isinstance(mw, toga.MainWindow)
+        stack = self.content_stack()
+        # Back can't pop past this page, even if it's tapped twice
+        stack.floor = len(stack)
+        stack.append((mw.title, mw.content))
+        mw.title = self.SETUP_PAGES[page]
+        mw.content = content
+        self.setup_page = page
+        self.render_setup_page()
+
+    def close_setup_page(
+        self, widget: toga.Widget | None = None, **kwargs: Any
+    ) -> None:
+        """Back: pop the Setup page and return to the tabs."""
+        mw = self.app.main_window
+        assert isinstance(mw, toga.MainWindow)
+        mw.title, mw.content = self.content_stack().pop()
+        self.setup_page = None
+
+    def setup_menu_button(self, page: str) -> toga.Button:
+        """A Setup menu entry that opens one of the detail pages."""
+        return toga.Button(
+            f"{self.SETUP_PAGES[page]} ›", on_press=lambda w: self.open_setup_page(page)
+        )
+
+    # -- Setup actions --------------------------------------------------------
+
+    def handle_open_settings(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Open this app's page in the iOS Settings app."""
+        if not permissions.open_app_settings():
+            self.setup_activity.update("Settings can only be opened on iOS", on=False)
+
+    async def handle_wipe_cache(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Delete user-installed packages, after confirmation."""
+        if not await self.confirm(
+            "Delete all user-installed packages? Prototypes reinstall their "
+            "dependencies on their next run, which needs the network.",
+            "Wipe user packages",
+        ):
+            return
+        await asyncio.to_thread(maintenance.wipe, self.site_packages)
+        importlib.invalidate_caches()
+        self.pending_updates = []
+        self.checked_updates = None
+        self.update_error = None
+        self.update_all_button.enabled = False
+        self.refresh_packages()
+        self.render_setup_page()
+        self.setup_activity.update("User packages deleted", on=False)
+
+    async def handle_check_updates(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Ask PyPI whether user packages have newer versions."""
+        self.setup_activity.update("Checking PyPI for updates")
+        inventory = pip.get_package_inventory(self.site_packages)
+        try:
+            updates = await asyncio.to_thread(
+                self.with_client, maintenance.find_updates, inventory
+            )
+        except maintenance.MaintenanceError as e:
+            self.pending_updates = []
+            self.update_error = str(e)
+            self.update_all_button.enabled = False
+            self.render_setup_page()
+            self.setup_activity.update(str(e), on=False)
+            return
+        self.pending_updates = updates
+        self.checked_updates = updates
+        self.update_error = None
+        self.update_all_button.enabled = bool(updates)
+        self.render_setup_page()
+        found = f"{len(updates)} update(s) available" if updates else "Up to date"
+        self.setup_activity.update(found, on=False)
+
+    async def handle_update_all(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Install the versions found by the last update check."""
+        if not self.pending_updates:
+            return
+        requirements = maintenance.upgrade_requirements(self.pending_updates)
+        try:
+            await pip.resolve_and_install_async(
+                requirements,
+                self.site_packages,
+                on_progress=self.setup_activity.update,
+            )
+        except Exception as e:  # noqa: BLE001
+            self.setup_activity.update("Update failed", on=False)
+            await self.error(str(e), "Update failed")
+            return
+        self.pending_updates = []
+        self.checked_updates = []
+        self.update_all_button.enabled = False
+        self.refresh_packages()
+        self.render_setup_page()
+        self.setup_activity.update("Packages updated", on=False)
+
+    async def handle_check_health(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Compare Python and bundled packages with python.org and PyPI."""
+        self.setup_activity.update("Checking python.org and PyPI")
+        bundled = pip.get_bundled_inventory(self.site_packages)
+
+        def check(client: httpx2.Client) -> maintenance.Health:
+            python = maintenance.check_python(client, platform.python_version())
+            updates = maintenance.find_updates(
+                client, bundled, critical=maintenance.APP_CRITICAL
+            )
+            return maintenance.Health(python, updates)
+
+        try:
+            health = await asyncio.to_thread(self.with_client, check)
+        except maintenance.MaintenanceError as e:
+            self.health_error = str(e)
+            self.render_setup_page()
+            self.setup_activity.update(on=False)
+            return
+        self.health = health
+        self.health_error = None
+        self.render_setup_page()
+        self.setup_activity.update(on=False)
+
+    def setup_sections(self) -> list[toga.Widget]:
+        """The Setup tab: a short menu; details open on their own pages."""
+
+        def heading(text: str) -> toga.Label:
+            return toga.Label(text, font_weight="bold", margin=(12, 0, 4, 0))
+
+        exit_visible = len(getattr(self.app.main_window, "content_stack", [])) > 0
+        return [
+            heading("Projects"),
+            toga.Row(
+                align_items="center",
+                children=[
+                    toga.Label("New Project"),
+                    toga.TextInput(
+                        id="new_project_name",
+                        flex=1,
+                        on_confirm=self.close_keyboard,
+                    ),
+                    toga.Button("Add", on_press=self.new_project),
+                ],
+            ),
+            heading("Maintenance"),
+            *(self.setup_menu_button(page) for page in self.SETUP_PAGES),
+            heading("App"),
+            toga.Button("Backup", on_press=self.handle_backup_press),
+            toga.Button(
+                "Exit",
+                visibility="visible" if exit_visible else "hidden",
+                on_press=self.do_on_done_callback,
+            ),
+        ]
 
     def choose_container(self, *args: Any, **kwargs: Any) -> toga.Widget:
         assert isinstance(self.app.main_window, toga.MainWindow)
@@ -917,36 +1183,13 @@ class Prototype:
                     "Setup",
                     toga.Column(
                         children=[
-                            toga.Row(
-                                align_items="center",
-                                children=[
-                                    toga.Label("New Project"),
-                                    toga.TextInput(
-                                        id="new_project_name",
-                                        flex=1,
-                                        on_confirm=self.close_keyboard,
-                                    ),
-                                    toga.Button("Add", on_press=self.new_project),
-                                ],
-                            ),
-                            toga.Divider(),
-                            toga.Button("Backup", on_press=self.handle_backup_press),
-                            toga.Button("Wipe Cache", on_press=self.handle_wipe_cache),
-                            toga.Divider(),
-                            toga.Button(
-                                "Exit",
-                                visibility=(
-                                    "visible"
-                                    if hasattr(self.app.main_window, "content_stack")
-                                    and len(
-                                        getattr(
-                                            self.app.main_window, "content_stack", []
-                                        )
-                                    )
-                                    > 0
-                                    else "hidden"
+                            toga.ScrollContainer(
+                                horizontal=False,
+                                flex=1,
+                                content=toga.Column(
+                                    margin=(0, 8),
+                                    children=self.setup_sections(),
                                 ),
-                                on_press=self.do_on_done_callback,
                             ),
                         ]
                     ),
