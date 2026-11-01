@@ -63,7 +63,6 @@ Prototypes can use your **location**, **camera**, **photo library** (to save ima
 
 This help page! You are here.
 
+## Credits
 
-
-
-
+Icons: [Uicons by Flaticon](https://www.flaticon.com/uicons).

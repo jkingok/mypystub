@@ -27,6 +27,7 @@ UIUserInterfaceIdiomPad = 1
 # skipped, so rows show no icon until the icon is downloaded.
 KIND_ICONS = {
     "folder": "folder.png",
+    "project": "box.png",
     "script": "file-code.png",
 }
 
@@ -484,7 +485,20 @@ class Prototype:
     def bundled_icon(self, filename: str) -> toga.Image | None:
         """Load an icon from resources/icons, or None until the file is added."""
         path = self.icon_path / filename
-        return toga.Image(path) if path.exists() else None
+        if not path.exists():
+            return None
+        image = toga.Image(path)
+        if sys.platform == "ios":
+            # The icons are black line art; tint them with the label colour so
+            # they follow light and dark mode like the row text does
+            from toga_iOS.libs import UIColor
+
+            native = image._impl.native
+            image._impl.native = native.imageWithTintColor(
+                UIColor.labelColor(),
+                renderingMode=1,  # UIImageRenderingModeAlwaysOriginal
+            )
+        return image
 
     def reload_menu(
         self, widget: toga.DetailedList | toga.Selection, **kwargs: Any
