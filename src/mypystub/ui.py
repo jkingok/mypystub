@@ -115,12 +115,10 @@ def open_share_sheet(w: toga.Widget, file_path: Path) -> None:
     :param file_path: Absolute string path to the local file.
     """
     if sys.platform == "ios":
-        from rubicon.objc import ObjCClass
+        from toga_iOS.libs import NSURL, NSMutableArray
 
-        # Load the required Objective-C classes
-        UIActivityViewController = ObjCClass("UIActivityViewController")
-        NSURL = ObjCClass("NSURL")
-        NSMutableArray = ObjCClass("NSMutableArray")
+        from .bridge import UIActivityViewController
+
         # 1. Ensure the file path exists and convert it into a native file URL
         absolute_path = str(file_path.resolve())
         file_url = NSURL.fileURLWithPath_(absolute_path)

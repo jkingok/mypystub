@@ -9,11 +9,9 @@ import toga
 
 def save_to_photo_library(photo: toga.Image) -> None:
     """Save `photo` to Photos. iOS asks for permission the first time."""
-    from rubicon.objc.runtime import (  # pyright: ignore[reportMissingImports]
-        load_library,
-    )
+    # Toga has already loaded UIKit; reuse its library handle
+    from toga_iOS.libs import uikit  # pyright: ignore[reportMissingImports]
 
-    uikit = load_library("UIKit")
     save = uikit.UIImageWriteToSavedPhotosAlbum
     save.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p]
     save.restype = None
