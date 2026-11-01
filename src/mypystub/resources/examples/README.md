@@ -7,6 +7,7 @@ They are grouped into folders the same way you can organise your own scripts in 
 - `basics/`
   - `hello_world.py`: print a greeting.
   - `hello_you.py`: read input with `input()`.
+  - `hello_project/`: a project folder with a `pyproject.toml`, a package under `src/`, and a dependency (`humanize`, installed on first run). It appears in the list as one entry, "Hello Project".
 - `threads/`
   - `main_thread.py`: run work on the Toga main thread from a background script.
 - `errors/`

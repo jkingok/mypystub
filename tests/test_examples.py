@@ -30,10 +30,20 @@ def test_examples_are_grouped_in_folders() -> None:
     tree = walk(BUNDLED)
     assert tree["."] == ["basics", "errors", "hardware", "maintenance", "threads"]
     assert tree["hardware"] == ["router_check", "take_photo", "where_am_i"]
-    assert tree["basics"] == ["hello_world", "hello_you"]
+    assert tree["basics"] == ["Hello Project", "hello_world", "hello_you"]
     assert tree["errors"] == ["main_thread_error", "test_error"]
     assert tree["threads"] == ["main_thread"]
     assert tree["maintenance"] == ["wipe_site_packages_from_cache"]
+
+
+def test_project_example_is_one_runnable_entry() -> None:
+    """The project folder shows as a single project, not a folder to open."""
+    entries = piplike.scan_all_prototypes(BUNDLED / "basics")
+    (project,) = [e for e in entries if e["kind"] == "project"]
+    assert project["title"] == "Hello Project"
+    assert project["dependencies"] == ["humanize"]
+    assert project["entry_point"].is_file()
+    assert (project["folder_root"] / "hello_project" / "__init__.py").is_file()
 
 
 def test_example_folders_do_not_shadow_modules() -> None:

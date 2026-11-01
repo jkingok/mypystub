@@ -1,0 +1,18 @@
+# A prototype laid out as a small project. MyPyStub lists this folder as one
+# entry, installs its dependencies on first run, and runs the entry point with
+# src/ on the import path. The same layout also works outside the app:
+#   python -m hello_project   (from src/, after installing the dependencies)
+
+[project]
+name = "hello-project"
+version = "0.1.0"
+description = "A project folder with its own package and a dependency."
+requires-python = ">=3.12"
+dependencies = [
+    "humanize",
+]
+
+[tool.stub_launcher]
+display_name = "Hello Project"
+entry_point = "src/hello_project/__main__.py"
+import_path = "src"
