@@ -10,13 +10,13 @@ from typing import Any, cast
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import toga
-from markdown import markdown as md
 from toga.style import Pack
 
 from . import about, runner
 from . import hooks as h
 from . import piplike as pip
 from . import settings as s
+from .pages import help_html, html_page
 
 UIUserInterfaceIdiomPad = 1
 
@@ -34,105 +34,6 @@ KIND_ICONS = {
     "project": "box.png",
     "script": "file-code.png",
 }
-
-
-def help_html(markdown_text: str) -> str:
-    """Render Help page Markdown, including ```fenced``` code blocks."""
-    return md(markdown_text, extensions=["fenced_code"])
-
-
-def html_page(body: str) -> str:
-    """Wrap an HTML fragment in a page styled for the in-app web views."""
-    return f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <!-- Configures iOS viewport: sets width, prevents horizontal scroll, and fits notch/home indicator areas -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  
-  <!-- Informs the browser that the site supports both light and dark system themes -->
-  <meta name="color-scheme" content="light dark">
-  
-  <title>Embedded Content</title>
-
-  <style>
-    /* CSS Variables using light-dark() to switch automatically based on system preference */
-    :root {{
-      color-scheme: light dark;
-      --bg-color: light-dark(#ffffff, #121212);
-      --text-color: light-dark(#1c1c1e, #f2f2f7);
-      --card-bg: light-dark(#f2f2f7, #1c1c1e);
-      --border-color: light-dark(#e5e5ea, #3a3a3c);
-    }}
-
-    /* Prevent accidental horizontal overflow */
-    *, *::before, *::after {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      margin: 0;
-      padding: 0;
-      background-color: var(--bg-color);
-      color: var(--text-color);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.5;
-      
-      /* Ensures text wraps properly when zoomed */
-      overflow-wrap: break-word;
-      word-break: break-word;
-    }}
-
-    /* Images scale down to fit container width, preventing layout break on zoom */
-    img, video, svg {{
-      max-width: 100%;
-      height: auto;
-    }}
-
-    table {{
-      width: 100%;
-      border-collapse: collapse;
-    }}
-
-    th, td {{
-      text-align: left;
-      vertical-align: top;
-      padding: 4px 8px;
-      border-bottom: 1px solid var(--border-color);
-    }}
-
-    /* Keep labels on one line; long values (paths, build strings) wrap instead */
-    th {{
-      white-space: nowrap;
-    }}
-
-    code {{
-      font-family: ui-monospace, Menlo, monospace;
-      font-size: 0.9em;
-    }}
-
-    /* Code blocks keep their lines and scroll sideways instead of wrapping */
-    pre {{
-      background-color: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 8px 12px;
-      overflow-x: auto;
-    }}
-
-    pre code {{
-      white-space: pre;
-      word-break: normal;
-      overflow-wrap: normal;
-    }}
-  </style>
-</head>
-<body>
-    {body}
-</body>
-</html>
-"""
 
 
 def is_ipad_from_window(toga_window: toga.Window) -> bool:

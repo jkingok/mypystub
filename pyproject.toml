@@ -10,6 +10,8 @@ dependencies = [
     "httpx2",
     "installer",
     "markdown",
+    # Syntax highlighting for code in the Help page (pure Python)
+    "pygments",
     "resolvelib",
     "tomlkit",
     "unearth",
@@ -77,6 +79,8 @@ requires = [
     "httpx2",
     "installer",
     "markdown",
+    # Syntax highlighting for code in the Help page (pure Python)
+    "pygments",
     "resolvelib",
     "tomlkit",
     "unearth",
