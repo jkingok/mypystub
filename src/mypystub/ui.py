@@ -527,7 +527,6 @@ class Prototype:
             ]:
                 # Recursively scan files inside the newly extracted directory tree
                 for file_path in target.rglob("*"):
-
                     if file_path.is_file() and file_path.suffix in [
                         ".py",
                         ".toml",

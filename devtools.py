@@ -102,7 +102,7 @@ def main():
                 if new_module.code != source_code:
                     py_file.write_text(new_module.code, encoding="utf-8")
                     modified_count += 1
-            except Exception: # noqa: BLE001, S112
+            except Exception:  # noqa: BLE001, S112
                 # If a file fails parsing here, compileall or mypy will catch it
                 continue
 
@@ -204,7 +204,6 @@ def main():
         from pyflakes.reporter import Reporter
 
         class CounterReporter(Reporter):
-
             def __init__(self, warning_stream, error_stream):
                 super().__init__(warning_stream, error_stream)
                 self.count = 0

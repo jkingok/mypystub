@@ -234,7 +234,6 @@ def bootstrap_application() -> Any:
 
     # This is equivalent to the toga.App.app.paths.data on many platforms
     if sys.platform == "android":
-
         user_documents_dir = Path(
             "."
         )  # Default to current directory on Android as a fallback

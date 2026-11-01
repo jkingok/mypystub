@@ -29,10 +29,22 @@ DESKTOP_SIZES = [16, 32, 48, 64, 72, 96, 128, 192, 256, 512, 1024]
 # Briefcase-specific Android variants: (variant_name, size)
 ANDROID_BRIEFCASE_SPECS = [
     # Legacy Square & Round variants
-    ("square", 48), ("square", 72), ("square", 96), ("square", 144), ("square", 192),
-    ("round", 48),  ("round", 72),  ("round", 96),  ("round", 144),  ("round", 192),
+    ("square", 48),
+    ("square", 72),
+    ("square", 96),
+    ("square", 144),
+    ("square", 192),
+    ("round", 48),
+    ("round", 72),
+    ("round", 96),
+    ("round", 144),
+    ("round", 192),
     # Adaptive variants (Foreground layer dimensions)
-    ("adaptive", 108), ("adaptive", 162), ("adaptive", 216), ("adaptive", 324), ("adaptive", 432)
+    ("adaptive", 108),
+    ("adaptive", 162),
+    ("adaptive", 216),
+    ("adaptive", 324),
+    ("adaptive", 432),
 ]
 
 
@@ -41,11 +53,11 @@ def render_icon_canvas(
     target_size: int,
     bg_hex: str | None = None,
     padding_pct: float = 0.0,
-    opaque: bool = False
+    opaque: bool = False,
 ) -> Image.Image:
     """
-    Resizes `img` maintaining aspect ratio using ImageOps.contain, centers it onto 
-    a square canvas of `target_size` x `target_size`, applying optional background 
+    Resizes `img` maintaining aspect ratio using ImageOps.contain, centers it onto
+    a square canvas of `target_size` x `target_size`, applying optional background
     fill and padding.
     """
     # 1. Determine inner bounding box accounting for padding
@@ -53,13 +65,15 @@ def render_icon_canvas(
     inner_size = max(inner_size, 1)
 
     # 2. Resize maintaining aspect ratio using ImageOps.contain
-    contained_img = ImageOps.contain(img, (inner_size, inner_size), method=Image.Resampling.LANCZOS)
+    contained_img = ImageOps.contain(
+        img, (inner_size, inner_size), method=Image.Resampling.LANCZOS
+    )
 
     # 3. Create canvas (transparent or solid color)
     if bg_hex:
         bg_color = ImageColor.getcolor(bg_hex, "RGBA")
     else:
-        bg_color = (0, 0, 0, 0) # Fully transparent canvas
+        bg_color = (0, 0, 0, 0)  # Fully transparent canvas
 
     canvas = Image.new("RGBA", (target_size, target_size), bg_color)
 
@@ -89,7 +103,9 @@ def generate_all_icons():
         print(f"Loaded source image: {SRC_ICON} ({width}x{height}px)")
 
         # --- 1. iOS ICONS (Opaque RGB + Padded + Aspect Preserved) ---
-        print(f"\n--- 1. Generating iOS Icons ({int(IOS_PADDING_PERCENT*100)}% Padding, Opaque) ---")
+        print(
+            f"\n--- 1. Generating iOS Icons ({int(IOS_PADDING_PERCENT * 100)}% Padding, Opaque) ---"
+        )
         ios_dir = OUTPUT_DIR / "ios"
         ios_dir.mkdir(parents=True, exist_ok=True)
 
@@ -99,7 +115,7 @@ def generate_all_icons():
                 target_size=size,
                 bg_hex=SPLASH_BACKGROUND_COLOR,
                 padding_pct=IOS_PADDING_PERCENT,
-                opaque=True
+                opaque=True,
             )
             out_path = ios_dir / f"icon-{size}.png"
             ios_icon.save(out_path, format="PNG")
@@ -125,9 +141,7 @@ def generate_all_icons():
             padding = 0.18 if variant == "adaptive" else 0.0
 
             android_icon = render_icon_canvas(
-                img,
-                target_size=size,
-                padding_pct=padding
+                img, target_size=size, padding_pct=padding
             )
             out_path = android_dir / f"icon-{variant}-{size}.png"
             android_icon.save(out_path, format="PNG")
