@@ -69,7 +69,10 @@ class FakeIndex:
     # canonical name -> list of (version, filename, requires)
     packages: dict[str, list[tuple[str, str, list[str]]]] = field(default_factory=dict)
     requests: list[str] = field(default_factory=list)
+    lookups: list[str] = field(default_factory=list)
     fail_downloads: bool = False
+    # Simulate having no network: every index lookup and HTTP request fails
+    offline: bool = False
 
     def add(
         self,
@@ -87,6 +90,9 @@ class FakeIndex:
     # PackageFinder interface used by PyPIWheelProvider
     def find_matches(self, name: str) -> list[SimpleNamespace]:
         """Return unearth-like matches for `name`, newest first."""
+        self.lookups.append(name)
+        if self.offline:
+            raise OSError("no network")
         return [
             SimpleNamespace(
                 name=name, version=version, link=Link(f"{INDEX}/{filename}")
@@ -100,6 +106,8 @@ class FakeIndex:
         """Serve wheel files and their PEP 658 .metadata files."""
         url = str(request.url)
         self.requests.append(url)
+        if self.offline:
+            raise httpx2.ConnectError("no network", request=request)
         filename = url.rsplit("/", 1)[-1]
         for name, versions in self.packages.items():
             for version, wheel_name, requires in versions:
@@ -128,6 +136,7 @@ def make_provider(
     index: FakeIndex,
     tmp_path: Path,
     system: dict[str, str] | None = None,
+    installed: dict[str, str] | None = None,
     **kwargs: object,
 ) -> PyPIWheelProvider:
     """Build a provider wired to the fake index."""
@@ -137,6 +146,8 @@ def make_provider(
         cache_dir=tmp_path / "cache",
         system_packages={k: Version(v) for k, v in (system or {}).items()},
         http_client=client,
+        installed_packages={k: Version(v) for k, v in (installed or {}).items()},
+        target_dir=tmp_path / "site",
         **kwargs,  # pyright: ignore[reportArgumentType]
     )
 
@@ -153,12 +164,14 @@ def find(
     requirement: str,
     excluded: list[Candidate] | None = None,
 ) -> list[Candidate]:
-    """Call find_matches the way resolvelib does, with iterator values."""
+    """Call find_matches the way resolvelib does, and list every candidate."""
     req = Requirement(requirement)
     name = provider.identify(req)
-    return provider.find_matches(
+    matches = provider.find_matches(
         name, {name: iter([req])}, {name: iter(excluded or [])}
     )
+    # A callable is a lazy factory (resolvelib only calls it when needed)
+    return list(matches() if callable(matches) else matches)
 
 
 @pytest.fixture
@@ -213,19 +226,16 @@ def test_identify_applies_default_pyyaml_substitution(
     assert provider.identify(Requirement("Other_Pkg")) == "other-pkg"
 
 
-def test_find_matches_prefers_system_then_newest(
+def test_bundled_package_is_the_only_candidate(
     index: FakeIndex, tmp_path: Path
 ) -> None:
-    """A satisfying system package comes first, then PyPI versions newest first."""
+    """A bundled package wins outright: PyPI is never consulted for it (#66)."""
     index.add("pkg", "1.0")
     index.add("pkg", "2.0")
     provider = make_provider(index, tmp_path, system={"pkg": "1.5"})
     matches = find(provider, "pkg")
-    assert [(str(c.version), c.is_system) for c in matches] == [
-        ("1.5", True),
-        ("2.0", False),
-        ("1.0", False),
-    ]
+    assert [(str(c.version), c.is_system) for c in matches] == [("1.5", True)]
+    assert index.lookups == []
 
 
 def test_find_matches_skips_system_when_disabled(
@@ -239,12 +249,27 @@ def test_find_matches_skips_system_when_disabled(
 
 
 def test_find_matches_applies_specifier(index: FakeIndex, tmp_path: Path) -> None:
-    """Candidates outside the requested specifier are dropped, system included."""
+    """PyPI candidates outside the requested specifier are dropped."""
     index.add("pkg", "1.0")
     index.add("pkg", "2.0")
-    provider = make_provider(index, tmp_path, system={"pkg": "3.0"})
+    provider = make_provider(index, tmp_path)
     matches = find(provider, "pkg<2")
     assert [str(c.version) for c in matches] == ["1.0"]
+
+
+def test_bundled_package_wins_over_conflicting_specifier(
+    index: FakeIndex, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pin the bundled copy doesn't meet is warned about, not downloaded (#66).
+
+    A second copy in site_packages would shadow the app's own and mix versions.
+    """
+    index.add("pkg", "1.0")
+    provider = make_provider(index, tmp_path, system={"pkg": "3.0"})
+    pins = resolve(provider, "pkg<2")
+    assert pins["pkg"].is_system and str(pins["pkg"].version) == "3.0"
+    assert index.lookups == []
+    assert "bundled pkg 3.0 does not satisfy pkg<2" in capsys.readouterr().out
 
 
 def test_find_matches_rejects_iphoneos_wheels(index: FakeIndex, tmp_path: Path) -> None:
@@ -415,7 +440,7 @@ def test_resolve_and_install_async_installs_tree(
 def test_resolve_and_install_async_upgrades_and_skips(
     patched_network: FakeIndex, tmp_path: Path
 ) -> None:
-    """Installed matching versions are skipped; older ones are replaced."""
+    """Installed matching versions are skipped; older ones are replaced on request."""
     target = tmp_path / "site"
     cache = tmp_path / "cache"
     patched_network.add("lib", "1.0")
@@ -438,7 +463,7 @@ def test_resolve_and_install_async_upgrades_and_skips(
     patched_network.add("lib", "2.0")
     asyncio.run(
         piplike.resolve_and_install_async(
-            ["lib"], target, cache_dir=cache, use_system=False
+            ["lib>=2"], target, cache_dir=cache, use_system=False
         )
     )
     assert piplike.get_package_inventory(target) == {"lib": "2.0"}
@@ -505,7 +530,7 @@ def test_progress_messages_arrive_in_order_on_loop_thread(
 
     loop_thread = asyncio.run(run())
     texts = [m for m, _ in messages]
-    assert texts[0] == "Resolving dependencies"
+    assert texts[0] == "Checking dependencies"
     assert {"Resolved app 1.0", "Resolved lib 2.0"} <= set(texts)
     assert "Downloading lib 2.0" in texts
     assert "Installing app 1.0" in texts
@@ -522,7 +547,7 @@ def test_upgrade_reports_removal(patched_network: FakeIndex, tmp_path: Path) -> 
     messages: list[str] = []
     asyncio.run(
         piplike.resolve_and_install_async(
-            ["lib"], target, use_system=False, on_progress=messages.append
+            ["lib>=2"], target, use_system=False, on_progress=messages.append
         )
     )
     assert messages.index("Removing lib 1.0") < messages.index("Installing lib 2.0")
@@ -564,3 +589,132 @@ def test_event_loop_stays_responsive_during_slow_resolution(
 
     # Resolution takes >= 0.4s; a blocked loop would manage only a tick or two.
     assert asyncio.run(run()) >= 10
+
+
+# ---------------------------------------------------------------------------
+# Offline-first resolution (#66)
+# ---------------------------------------------------------------------------
+
+
+def test_installed_package_is_preferred_and_pypi_is_lazy(
+    index: FakeIndex, tmp_path: Path
+) -> None:
+    """An installed match comes first; PyPI is only asked if it is rejected."""
+    index.add("pkg", "1.0")
+    index.add("pkg", "2.0")
+    provider = make_provider(index, tmp_path, installed={"pkg": "1.0"})
+    pins = resolve(provider, "pkg")
+    assert pins["pkg"].is_installed and str(pins["pkg"].version) == "1.0"
+    assert index.lookups == []
+
+    # An installed version outside the specifier falls through to PyPI.
+    pins = resolve(make_provider(index, tmp_path, installed={"pkg": "1.0"}), "pkg>=2")
+    assert not pins["pkg"].is_installed and str(pins["pkg"].version) == "2.0"
+    assert index.lookups == ["pkg"]
+
+
+def test_installed_dependencies_are_read_locally(
+    index: FakeIndex, tmp_path: Path
+) -> None:
+    """Dependencies of installed packages come from their metadata on disk."""
+    site = tmp_path / "site"
+    site.mkdir()
+    piplike.unpack_wheel(build_wheel(index.directory, "app", "1.0", ["lib"]), site)
+    piplike.unpack_wheel(build_wheel(index.directory, "lib", "2.0"), site)
+    index.offline = True
+    provider = make_provider(index, tmp_path, installed={"app": "1.0", "lib": "2.0"})
+    pins = resolve(provider, "app")
+    assert {k: (str(v.version), v.is_installed) for k, v in pins.items()} == {
+        "app": ("1.0", True),
+        "lib": ("2.0", True),
+    }
+    assert index.lookups == [] and index.requests == []
+
+
+def test_toga_is_provided_by_bundled_toga_core(
+    index: FakeIndex, tmp_path: Path
+) -> None:
+    """Scripts that declare `toga` use the bundled toga-core and backend."""
+    provider = make_provider(
+        index, tmp_path, system={"toga-core": "0.5.8.dev1", "toga-ios": "0.5.8.dev1"}
+    )
+    pins = resolve(provider, "toga>=0.5")
+    assert pins["toga"].is_system
+    assert index.lookups == []
+
+
+def test_offline_run_succeeds_when_everything_is_bundled(
+    patched_network: FakeIndex, tmp_path: Path
+) -> None:
+    """With no network, bundled requirements still resolve and install nothing."""
+    patched_network.offline = True
+    target = tmp_path / "site"
+    asyncio.run(piplike.resolve_and_install_async(["resolvelib", "toga"], target))
+    assert piplike.get_package_inventory(target) == {}
+    assert patched_network.lookups == [] and patched_network.requests == []
+
+
+def test_offline_rerun_reuses_installed_packages(
+    patched_network: FakeIndex, tmp_path: Path
+) -> None:
+    """After one online install, the same script runs offline."""
+    patched_network.add("app", "1.0", requires=["lib"])
+    patched_network.add("lib", "2.0")
+    target = tmp_path / "site"
+    asyncio.run(piplike.resolve_and_install_async(["app"], target, use_system=False))
+
+    patched_network.offline = True
+    patched_network.lookups.clear()
+    patched_network.requests.clear()
+    messages: list[str] = []
+    asyncio.run(
+        piplike.resolve_and_install_async(
+            ["app"], target, use_system=False, on_progress=messages.append
+        )
+    )
+    assert patched_network.lookups == [] and patched_network.requests == []
+    assert messages[-1] == "Dependencies already satisfied"
+
+
+def test_force_reinstall_ignores_installed_packages(
+    patched_network: FakeIndex, tmp_path: Path
+) -> None:
+    """force_reinstall goes back to the index even when a match is installed."""
+    patched_network.add("lib", "1.0")
+    target = tmp_path / "site"
+    asyncio.run(piplike.resolve_and_install_async(["lib"], target, use_system=False))
+    patched_network.lookups.clear()
+    asyncio.run(
+        piplike.resolve_and_install_async(
+            ["lib"], target, use_system=False, force_reinstall=True
+        )
+    )
+    assert patched_network.lookups == ["lib"]
+
+
+def test_user_site_on_sys_path_is_not_treated_as_bundled(
+    patched_network: FakeIndex, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Packages in the user site stay upgradeable after it joins sys.path."""
+    target = tmp_path / "site"
+    patched_network.add("lib", "1.0")
+    asyncio.run(piplike.resolve_and_install_async(["lib"], target))
+    monkeypatch.syspath_prepend(str(target))  # as the launcher does
+    assert "lib" not in piplike.get_bundled_inventory(target)
+
+    patched_network.add("lib", "2.0")
+    asyncio.run(piplike.resolve_and_install_async(["lib>=2"], target))
+    assert piplike.get_package_inventory(target) == {"lib": "2.0"}
+
+
+def test_offline_missing_package_names_the_package(
+    patched_network: FakeIndex, tmp_path: Path
+) -> None:
+    """Offline with something missing, the error says what needed the network."""
+    patched_network.offline = True
+    with pytest.raises(piplike.DependencyError, match="not-here is not installed"):
+        asyncio.run(
+            piplike.resolve_and_install_async(
+                ["not-here"], tmp_path / "site", use_system=False
+            )
+        )

@@ -30,12 +30,20 @@ class DependencyError(Exception):
     """Raised when dependency resolution, downloading, or unpacking fails."""
 
 
+# Requirement names that the app satisfies through a differently named bundled
+# distribution. The `toga` meta-package is not bundled, but toga-core and the
+# platform backend are, so scripts that declare `toga` need nothing installed.
+PROVIDED_BY = {"toga": "toga-core"}
+
+
 @dataclass(frozen=True)
 class Candidate:
     name: str
     version: Version
     link: Link | None = None
     is_system: bool = False
+    # Already unpacked into the target site-packages by an earlier run
+    is_installed: bool = False
     # Use frozenset for immutability so dataclass remains hashable
     requested_extras: frozenset[str] = frozenset()
 
@@ -43,7 +51,9 @@ class Candidate:
         object.__setattr__(self, "name", canonicalize_name(self.name))
 
     def __str__(self) -> str:
-        source = "system" if self.is_system else "pypi"
+        source = (
+            "system" if self.is_system else "installed" if self.is_installed else "pypi"
+        )
         extras_str = (
             f"[{','.join(sorted(self.requested_extras))}]"
             if self.requested_extras
@@ -62,12 +72,31 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         package_substitutions: dict[str, str] | None = None,
         use_system: bool = True,
         max_candidates: int = 5,
+        installed_packages: dict[str, Version] | None = None,
+        target_dir: Path | None = None,
     ):
+        """Resolve against bundled, then installed, then PyPI packages.
+
+        `system_packages` are bundled with the app and always win: PyPI is never
+        consulted for them, so nothing can shadow the app's own copies.
+        `installed_packages` were unpacked into `target_dir` by earlier runs and
+        are reused when they satisfy the requirement. PyPI is only queried
+        lazily, when no local candidate fits, so satisfied scripts run offline.
+        """
         self.finder = finder
         self.cache_dir = cache_dir
         self.system_packages = {
             canonicalize_name(k): v for k, v in system_packages.items()
         }
+        for provided, provider in PROVIDED_BY.items():
+            alias, source = canonicalize_name(provided), canonicalize_name(provider)
+            if alias not in self.system_packages and source in self.system_packages:
+                self.system_packages[alias] = self.system_packages[source]
+        self.installed_packages = {
+            canonicalize_name(k): v for k, v in (installed_packages or {}).items()
+        }
+        self.target_dir = target_dir
+        self._warned: set[str] = set()
         self.http_client = http_client
         self.use_system = use_system
         self.max_candidates = max_candidates
@@ -88,23 +117,23 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
 
     def find_matches(
         self, identifier, requirements, incompatibilities
-    ) -> list[Candidate]:
+    ) -> list[Candidate] | Callable[[], Iterator[Candidate]]:
         canon_id = canonicalize_name(identifier)
         req_specs = [
             r for r in requirements.get(identifier, []) if isinstance(r, Requirement)
         ]
 
         # resolvelib maps identifier -> candidates already ruled out (backtracking)
-        excluded = set(incompatibilities.get(identifier, ()))
+        excluded: set[Candidate] = set(incompatibilities.get(identifier, ()))
 
         # Collect explicitly requested extras as a frozenset
         active_extras: frozenset[str] = frozenset(
             extra for req in req_specs if req.extras for extra in req.extras
         )
 
-        candidates: list[Candidate] = []
-
-        # 1. System Candidate Lookup
+        # 1. Bundled packages always win, even against a conflicting specifier.
+        # A second copy in site_packages would shadow the app's own, which is
+        # already imported, and mix versions. PyPI is never consulted for them.
         if self.use_system and canon_id in self.system_packages:
             sys_cand = Candidate(
                 name=canon_id,
@@ -112,15 +141,58 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 is_system=True,
                 requested_extras=active_extras,
             )
-            if sys_cand not in excluded and all(
-                self.is_satisfied_by(req, sys_cand) for req in req_specs
-            ):
-                candidates.append(sys_cand)
+            for req in req_specs:
+                self._warn_if_bundled_mismatch(req, sys_cand)
+            return [] if sys_cand in excluded else [sys_cand]
 
-        # 2. PyPI Candidate Lookup
-        matches = self.finder.find_matches(canon_id)
+        # 2. A copy installed by an earlier run, if it fits
+        local: list[Candidate] = []
+        if canon_id in self.installed_packages:
+            installed = Candidate(
+                name=canon_id,
+                version=self.installed_packages[canon_id],
+                is_installed=True,
+                requested_extras=active_extras,
+            )
+            if installed not in excluded and all(
+                self.is_satisfied_by(req, installed) for req in req_specs
+            ):
+                local.append(installed)
+
+        # 3. PyPI, only if resolvelib iterates past the local candidates
+        def candidates() -> Iterator[Candidate]:
+            yield from local
+            yield from self._pypi_candidates(
+                canon_id,
+                req_specs,
+                excluded,
+                active_extras,
+                skip={c.version for c in local},
+            )
+
+        return candidates
+
+    def _pypi_candidates(
+        self,
+        canon_id: str,
+        req_specs: list[Requirement],
+        excluded: set[Candidate],
+        active_extras: frozenset[str],
+        skip: set[Version],
+    ) -> list[Candidate]:
+        """Query the index for candidates, newest first."""
+        try:
+            matches = self.finder.find_matches(canon_id)
+        except Exception as exc:
+            # Offline, DNS failure, index error: name the package that needed it
+            raise DependencyError(
+                f"{canon_id} is not installed and the package index could not be "
+                f"reached: {exc}"
+            ) from exc
+
+        candidates: list[Candidate] = []
         for match in matches:
-            if not match.version:
+            if not match.version or Version(match.version) in skip:
                 continue
 
             filename = match.link.filename.lower()
@@ -145,14 +217,29 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             ):
                 candidates.append(cand)
 
-        sorted_candidates = sorted(
-            candidates,
-            key=lambda c: (c.is_system, c.version),
-            reverse=True,
-        )
-        return sorted_candidates[: self.max_candidates]
+        candidates.sort(key=lambda c: c.version, reverse=True)
+        return candidates[: self.max_candidates]
+
+    def _warn_if_bundled_mismatch(self, req: Requirement, cand: Candidate) -> None:
+        """Log once when a bundled package doesn't meet a script's specifier."""
+        if (
+            req.specifier
+            and not req.specifier.contains(cand.version, prereleases=True)
+            and cand.name not in self._warned
+        ):
+            self._warned.add(cand.name)
+            print(
+                f"[Resolver] Warning: bundled {cand.name} {cand.version} does not "
+                f"satisfy {req}; using the bundled copy"
+            )
 
     def is_satisfied_by(self, requirement: Requirement, candidate: Candidate) -> bool:
+        if candidate.is_system:
+            # Bundled packages always win (see find_matches)
+            if self.identify(requirement) == candidate.name:
+                self._warn_if_bundled_mismatch(requirement, candidate)
+                return True
+            return False
         return (canonicalize_name(requirement.name) == candidate.name) and not (
             requirement.specifier
             and not requirement.specifier.contains(candidate.version, prereleases=True)
@@ -164,6 +251,8 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
 
         if candidate.is_system:
             deps = self._get_system_dependencies(candidate)
+        elif candidate.is_installed:
+            deps = self._get_installed_dependencies(candidate)
         else:
             metadata_text = self._fetch_candidate_metadata(candidate)
             deps = self._parse_metadata_requirements(
@@ -224,6 +313,18 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         except importlib.metadata.PackageNotFoundError:
             pass
         return reqs
+
+    def _get_installed_dependencies(self, candidate: Candidate) -> list[Requirement]:
+        """Read an installed package's dependencies from its metadata on disk."""
+        if self.target_dir is None:
+            return []
+        dist = get_installed_distribution(self.target_dir, candidate.name)
+        if dist is None or not dist.requires:
+            return []
+        raw_metadata = "\n".join(f"Requires-Dist: {r}" for r in dist.requires)
+        return self._parse_metadata_requirements(
+            raw_metadata, candidate.requested_extras
+        )
 
     def _fetch_candidate_metadata(self, candidate: Candidate) -> str:
         if not candidate.link:
@@ -325,7 +426,7 @@ async def resolve_and_install_async(
 
     is_temp_cache = False
 
-    progress("Resolving dependencies")
+    progress("Checking dependencies")
     if cache_dir is None:
         try:
             cache_dir = Path(
@@ -355,9 +456,14 @@ async def resolve_and_install_async(
 
         # Offload resolution phase to thread so unearth/resolvelib don't freeze Toga UI
         def _sync_resolve_pass():
-            raw_system_pkgs = get_package_inventory(None) if use_system else {}
+            raw_system_pkgs = get_bundled_inventory(target_dir) if use_system else {}
             system_packages = {
                 name: Version(ver) for name, ver in raw_system_pkgs.items()
+            }
+            # Reuse earlier installs unless asked to reinstall
+            raw_installed = {} if force_reinstall else get_package_inventory(target_dir)
+            installed_packages = {
+                name: Version(ver) for name, ver in raw_installed.items()
             }
 
             # 1. Initialize finder with target index and constraints
@@ -379,6 +485,8 @@ async def resolve_and_install_async(
                     http_client=sync_http,
                     use_system=use_system,
                     max_candidates=5,  # Limit to top 5 candidates per package
+                    installed_packages=installed_packages,
+                    target_dir=target_dir,
                 )
 
                 # Use custom progress reporter to track execution in console/UI
@@ -394,9 +502,10 @@ async def resolve_and_install_async(
             raise DependencyError(f"Dependency resolution failed: {exc}") from exc
 
         # Async Download & Install Phase
+        changed = 0
         async with httpx2.AsyncClient(timeout=30.0) as async_http:
             for candidate in resolution.mapping.values():
-                if candidate.is_system:
+                if candidate.is_system or candidate.is_installed:
                     continue
 
                 installed = await asyncio.to_thread(
@@ -426,6 +535,7 @@ async def resolve_and_install_async(
                     )
 
                 # Unpack wheel on a worker thread
+                changed += 1
                 progress(f"Installing {candidate.name} {candidate.version}")
                 try:
                     await asyncio.to_thread(unpack_wheel, wheel_path, target_dir)
@@ -434,7 +544,7 @@ async def resolve_and_install_async(
                         f"Failed to unpack {wheel_path.name}: {exc}"
                     ) from exc
         print("successfully met all requirements")
-        progress("Dependencies ready")
+        progress("Dependencies ready" if changed else "Dependencies already satisfied")
     finally:
         if is_temp_cache and cache_dir.exists():
             print("removing temporary wheel cache")
@@ -503,8 +613,7 @@ def scan_script(item: Path) -> dict[str, Any] | None:
             current = platform.python_version()
             if Version(current) not in SpecifierSet(requires_python):
                 print(
-                    f"Skipping {item.name} needs Python {requires_python} "
-                    f"not {current}"
+                    f"Skipping {item.name} needs Python {requires_python} not {current}"
                 )
                 return None
         # TODO we can implement our custom tool in this
@@ -641,6 +750,22 @@ def get_package_inventory(target_path: Path | None = None) -> dict[str, str]:
 
 
 # Maintenance Helpers
+
+
+def get_bundled_inventory(exclude: Path | None = None) -> dict[str, str]:
+    """Return packages importable from ``sys.path``, excluding ``exclude``.
+
+    The launcher prepends the user site-packages to ``sys.path`` after the first
+    run, so exclude it here: those packages are user installs, not bundled ones.
+    """
+    excluded = exclude.resolve() if exclude else None
+    paths = [
+        p for p in sys.path if excluded is None or Path(p or ".").resolve() != excluded
+    ]
+    packages: dict[str, str] = {}
+    for dist in importlib.metadata.distributions(path=paths):
+        packages.setdefault(canonicalize_name(dist.metadata["Name"]), dist.version)
+    return packages
 
 
 def get_installed_distribution(
