@@ -221,3 +221,64 @@ def test_install_happens_on_script_tab_and_errors_show_over_it(
     ]
     # Then, with no output, the run ends back on the list
     assert proto.tabs.current_tab.text == "List"
+
+
+# ---------------------------------------------------------------------------
+# Splash in the Script view
+# ---------------------------------------------------------------------------
+
+
+def splash_during_install(
+    proto: ui.Prototype, app: toga.App, title: str, monkeypatch: pytest.MonkeyPatch
+) -> object:
+    """Tap `title` and return the Script view's splash image while it installs."""
+    seen: list[object] = []
+
+    async def install(*args: object, **kwargs: object) -> None:
+        seen.append(proto.splash.image)
+        raise piplike.DependencyError("stop after recording")
+
+    monkeypatch.setattr(piplike, "resolve_and_install_async", install)
+    tap(proto, title, monkeypatch, app)
+    return seen[0]
+
+
+def test_default_icons_are_not_used_as_a_splash(
+    proto: ui.Prototype,
+    app: toga.App,
+    docs: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A row showing a 24x24 default icon gets no stretched splash in Script."""
+    icons = tmp_path / "icons"
+    icons.mkdir()
+    shutil.copy(ICONS / "list.png", icons / "file-code.png")
+    proto.icon_path = icons
+    (docs / "plain.py").write_text(
+        '"""Plain."""\n# /// script\n# dependencies = ["x"]\n# ///\n'
+    )
+    proto.reload_menu(proto.script_list)
+    row = next(r for r in proto.script_list.data if r.title == "plain")
+    assert isinstance(row.icon, toga.Image)  # the list still shows the default
+
+    assert splash_during_install(proto, app, "plain", monkeypatch) is None
+
+
+def test_own_icon_is_used_as_a_splash(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A prototype that sets its own icon still gets it as the splash."""
+    shutil.copy(ICONS / "eye.png", docs / "me.png")
+    (docs / "branded.py").write_text(
+        '"""Branded."""\n'
+        "# /// script\n"
+        '# dependencies = ["x"]\n'
+        "# [tool.stub_launcher]\n"
+        '# icon = "me.png"\n'
+        "# ///\n"
+    )
+    proto.reload_menu(proto.script_list)
+
+    splash = splash_during_install(proto, app, "branded", monkeypatch)
+    assert isinstance(splash, toga.Image)

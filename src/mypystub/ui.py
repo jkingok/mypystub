@@ -515,19 +515,24 @@ class Prototype:
                 }
             )
         for proto in self.prototypes_data:
-            # Safely build a toga.Image if an icon path was specified and exists
-            row_icon = None
+            # The prototype's own icon, if it set one and the file exists. Only
+            # this is used as the Script view's splash; the small default icons
+            # below are for the list alone and look poor stretched to a splash.
+            own_icon = None
             if proto["icon_path"] and proto["icon_path"].exists():
-                row_icon = toga.Image(
+                own_icon = toga.Image(
                     proto["icon_path"]
                 )  # This should be Icon, but it works
-            elif icon_file := KIND_ICONS.get(proto.get("kind", "")):
+            row_icon = own_icon
+            icon_file = KIND_ICONS.get(proto.get("kind", ""))
+            if row_icon is None and icon_file:
                 row_icon = self.bundled_icon(icon_file)
 
             # Toga ignores the custom keys (entry_point, folder, ...) for rendering,
             # but holds onto them for callbacks!
             row = {k: v for k, v in proto.items() if k != "icon_path"}
             row["icon"] = row_icon
+            row["splash"] = own_icon
             list_items.append(row)
 
         self.script_list.data = list_items
@@ -693,10 +698,15 @@ class Prototype:
         # progress there instead of leaving the list looking frozen.
         title = getattr(selected_row, "title", "script")
         self.print_text.value = ""
-        if icon := getattr(selected_row, "icon", None):
-            self.splash.image = icon
+        # Only a prototype's own icon is shown as a splash, never a default one
+        if splash := getattr(selected_row, "splash", None):
+            self.splash.image = splash
             self.splash.style.flex = 1
             self.script_scroll.style.flex = 0
+        else:
+            self.splash.image = None
+            self.splash.style.flex = 0
+            self.script_scroll.style.flex = 1
         self.app.widgets["tabs"].current_tab = "Script"
         self.script_activity.update(f"Preparing {title}")
 
