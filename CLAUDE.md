@@ -46,7 +46,7 @@ Two tiers. Desktop and CI use industry-standard tools. The on-device pipeline is
 Use `uv` for everything except on-device code.
 
 - `uv sync` installs the environment, including the `dev` group. `uv run pytest` runs tests.
-- `uv run ruff check .` and `uv run pyright` run the desktop checks (pyright is configured in `pyproject.toml`).
+- `uv run ruff check .`, `uv run ruff format --check .` and `uv run pyright` run the desktop checks (pyright is configured in `pyproject.toml`). Run `uv run ruff format .` before committing.
 - `uv run pre-commit install` once per clone runs ruff, pyright, and pytest before each commit.
 - `uv.lock` is committed. Run `uv lock` after changing dependencies.
 - `python devtools.py` runs the on-device pipeline. It skips mypy on iOS.

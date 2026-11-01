@@ -40,6 +40,9 @@ jobs:
       - name: Run Ruff Linter
         run: uv run --locked ruff check .
 
+      - name: Check Ruff Formatting
+        run: uv run --locked ruff format --check .
+
       - name: Run pyright Type Checker
         run: uv run --locked pyright
 

@@ -6,6 +6,8 @@ repos:
     hooks:
       - id: ruff-check
         exclude: ^src/launcher/
+      - id: ruff-format
+        exclude: ^src/launcher/
 
   - repo: local
     hooks:

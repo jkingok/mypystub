@@ -1,0 +1,9 @@
+# Commits that only reformat code; `git blame` skips them.
+# GitHub reads this file automatically. Locally, run once per clone:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# If the format commit is squash-merged, its hash on main changes: replace the
+# hash below with the merged commit's.
+
+# Format the repository with ruff format (#72)
+bc761a60184ba9f96542f8545f939ee8d0488664
