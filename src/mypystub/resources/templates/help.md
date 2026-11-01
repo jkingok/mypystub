@@ -55,6 +55,10 @@ A single-file script can do the same in its [inline script metadata](https://pac
 
 Another way to modify the behaviour of the app is to replace the launcher completely by placing a `patch_app.py` into the same "MyPyStub" folder.
 
+## Hardware
+
+Prototypes can use your **location**, **camera**, **photo library** (to save images) and **local network**. iOS asks for permission the first time a prototype uses each one, and you can change your answer later in the Settings app. The Examples' `hardware/` folder has a script for each.
+
 ## Help
 
 This help page! You are here.

@@ -89,6 +89,16 @@ test_requires = [
 icon="assets/icons/png/icon-512"
 splash_background_color="#7f7f7f"
 
+# Hardware that prototypes may use. Briefcase turns these into iOS usage
+# descriptions and Android manifest permissions; Toga refuses to start location
+# or the camera without them. App Review requires each one to be used, so every
+# permission has an example in resources/examples/hardware/ (enforced by
+# tests/test_packaging.py). Background location, microphone and motion are left
+# out until there is an example that uses them.
+permission.fine_location = "Prototypes you run in MyPyStub may use your precise location."
+permission.camera = "Prototypes you run in MyPyStub may take photos or video."
+permission.photo_library = "Prototypes you run in MyPyStub may save images to your photo library."
+
 [tool.briefcase.app.mypystub.macOS]
 universal_build = true
 requires = [
@@ -254,6 +264,9 @@ info."UIFileSharingEnabled" = true
 
 # Allow opening documents in place
 info."LSSupportsOpeningDocumentsInPlace" = true
+
+# Usage descriptions with no cross-platform Briefcase permission key
+info."NSLocalNetworkUsageDescription" = "Prototypes you run in MyPyStub may connect to devices on your local network."
 
 [tool.briefcase.app.mypystub.android]
 requires = [

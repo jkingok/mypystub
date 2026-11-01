@@ -12,6 +12,10 @@ They are grouped into folders the same way you can organise your own scripts in 
 - `errors/`
   - `main_thread_error.py`: an error raised on the Toga main thread.
   - `test_error.py`: raises on import, to exercise error display in the launcher. It is not a pytest test; pytest only collects `tests/`.
+- `hardware/`
+  - `where_am_i.py`: ask for location permission and print your position. In the Simulator, set one with Features → Location.
+  - `take_photo.py`: take a photo and save it to your photo library (camera and photo library permissions; needs a real device, the Simulator has no camera).
+  - `router_check.py`: check whether your router answers (local network permission).
 - `maintenance/`
   - `wipe_site_packages_from_cache.py`: removes user-installed packages from the app cache.
 

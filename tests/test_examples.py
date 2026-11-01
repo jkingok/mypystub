@@ -28,7 +28,8 @@ def walk(folder: Path) -> dict[str, list[str]]:
 def test_examples_are_grouped_in_folders() -> None:
     """The top level shows only folders, and every sample is reachable."""
     tree = walk(BUNDLED)
-    assert tree["."] == ["basics", "errors", "maintenance", "threads"]
+    assert tree["."] == ["basics", "errors", "hardware", "maintenance", "threads"]
+    assert tree["hardware"] == ["router_check", "take_photo", "where_am_i"]
     assert tree["basics"] == ["hello_world", "hello_you"]
     assert tree["errors"] == ["main_thread_error", "test_error"]
     assert tree["threads"] == ["main_thread"]
@@ -59,3 +60,30 @@ def test_every_example_has_a_docstring() -> None:
         if not ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
     ]
     assert not missing, f"add a one-line module docstring to: {missing}"
+
+
+def is_main_guard(node: ast.stmt) -> bool:
+    """Whether `node` is an `if __name__ == "__main__":` block."""
+    return (
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == "__name__"
+    )
+
+
+def test_guarded_examples_define_main() -> None:
+    """The launcher imports a script under its own name, then calls main().
+
+    Code that only runs under `if __name__ == "__main__":` never runs in the app,
+    so an example with that guard must also define main().
+    """
+    silent = []
+    for path in sorted(BUNDLED.rglob("*.py")):
+        body = ast.parse(path.read_text(encoding="utf-8")).body
+        has_main = any(
+            isinstance(node, ast.FunctionDef) and node.name == "main" for node in body
+        )
+        if any(is_main_guard(node) for node in body) and not has_main:
+            silent.append(path.name)
+    assert not silent, f"move the guarded code into main(): {silent}"
