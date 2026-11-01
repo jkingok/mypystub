@@ -1,0 +1,223 @@
+"""UI tests for the launcher, run on Toga's dummy backend (#53).
+
+Skipped where toga_dummy isn't installed, such as on device.
+"""
+
+import os
+import re
+import shutil
+from collections.abc import Callable, Coroutine
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+pytest.importorskip("toga_dummy")
+os.environ["TOGA_BACKEND"] = "toga_dummy"
+
+import toga
+
+from mypystub import piplike, ui
+
+ICONS = Path(ui.__file__).parent / "resources" / "icons"
+
+
+@pytest.fixture(scope="module")
+def app() -> toga.App:
+    """One dummy app for the module; Toga expects a single App per process."""
+    app = toga.App("UI test", "org.example.uitest", startup=lambda app: toga.Box())
+    app.main_window = toga.MainWindow()
+    return app
+
+
+@pytest.fixture
+def docs(tmp_path: Path) -> Path:
+    """A User documents folder with nested scripts."""
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    (tmp_path / "a" / "b" / "deep.py").write_text('"""Deep down."""\n')
+    (tmp_path / "top.py").write_text('"""At the top."""\n')
+    return tmp_path
+
+
+@pytest.fixture
+def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prototype:
+    """A launcher on the User category, with dialogs recorded instead of shown."""
+    monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
+    p = ui.Prototype(host_app=app, on_done=lambda _: None)
+    app.main_window.content = p.get_content()
+    p.dir_selection.selection.value = "User"
+    p.change_category(p.dir_selection.selection)
+    p.dialogs = []  # type: ignore[attr-defined]
+
+    async def record(text: str, title: str | None = None) -> None:
+        p.dialogs.append(  # type: ignore[attr-defined]
+            (title, text, p.tabs.current_tab.text, p.script_activity.text.text)
+        )
+
+    monkeypatch.setattr(p, "error", record)
+    # On iOS, clear_selection deselects the row once it has been read; do the
+    # same on the dummy backend, or every list reload re-fires on_select.
+    monkeypatch.setattr(
+        p, "clear_selection", lambda widget: widget._impl._set_value("selection", None)
+    )
+    return p
+
+
+def titles(p: ui.Prototype) -> list[str]:
+    """Row titles currently in the list."""
+    return [row.title for row in p.script_list.data]
+
+
+def tap(
+    p: ui.Prototype, title: str, monkeypatch: pytest.MonkeyPatch, app: toga.App
+) -> None:
+    """Select the row titled `title` on this list only, and run the handler."""
+    # The dummy backend's selection is per widget, so lists from other tests
+    # can't pick it up; the handler clears it once read (see the fixture).
+    p.script_list._impl._set_value("selection", titles(p).index(title))
+    run(app, p.handle_row_selection(p.script_list))
+
+
+def run(app: toga.App, coro: Coroutine[Any, Any, Any]) -> Any:
+    """Run `coro` on the app's loop."""
+    return app.loop.run_until_complete(coro)
+
+
+# ---------------------------------------------------------------------------
+# Folder navigation (#35)
+# ---------------------------------------------------------------------------
+
+
+def test_folders_drill_down_and_back_up(
+    proto: ui.Prototype, app: toga.App, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Folder rows open, ".." goes up, and changing category resets."""
+    assert titles(proto) == ["a", "top"]
+    tap(proto, "a", monkeypatch, app)
+    assert titles(proto) == ["..", "b"] and proto.subfolder == Path("a")
+    tap(proto, "b", monkeypatch, app)
+    assert titles(proto) == ["..", "deep"]
+    tap(proto, "..", monkeypatch, app)
+    assert proto.subfolder == Path("a")
+
+    proto.dir_selection.selection.value = "Examples"
+    proto.change_category(proto.dir_selection.selection)
+    assert proto.subfolder == Path()
+
+
+def test_script_rows_show_docstrings(proto: ui.Prototype) -> None:
+    """A script's docstring is its subtitle (#49)."""
+    row = next(r for r in proto.script_list.data if r.title == "top")
+    assert row.subtitle == "At the top."
+
+
+def test_kind_icons_appear_once_downloaded(proto: ui.Prototype, tmp_path: Path) -> None:
+    """Folder, ".." and script rows have no icon until the icon file exists (#50)."""
+    # Start from an empty icons folder; the bundled one may already have them
+    icons = tmp_path / "icons"
+    icons.mkdir()
+    proto.icon_path = icons
+    proto.subfolder = Path("a")  # so the ".." row is listed too
+    proto.reload_menu(proto.script_list)
+    assert titles(proto) == ["..", "b"]
+    assert all(row.icon is None for row in proto.script_list.data)
+
+    for name in ("folder.png", "file-code.png", "arrow-small-left.png"):
+        shutil.copy(ICONS / "list.png", icons / name)
+    proto.reload_menu(proto.script_list)
+    assert all(isinstance(row.icon, toga.Image) for row in proto.script_list.data)
+
+    # A script row too
+    proto.subfolder = Path()
+    proto.reload_menu(proto.script_list)
+    assert isinstance(proto.script_list.data[-1].icon, toga.Image)  # "top"
+
+
+# ---------------------------------------------------------------------------
+# Help and About (#34)
+# ---------------------------------------------------------------------------
+
+
+def test_help_about_switch(
+    proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """About shows environment sections; Help comes back; Share stays iOS-only."""
+    pages: list[str] = []
+    monkeypatch.setattr(
+        proto.help_view._impl, "set_content", lambda root, html: pages.append(html)
+    )
+    proto.help_selection.selection.value = "About"
+    proto.show_help_page()
+    sections = re.findall(r"<h2>(.*?)</h2>", pages[-1])
+    assert [s.split(" (")[0] for s in sections] == [
+        "App",
+        "Python",
+        "Paths",
+        "Bundled packages",
+        "User packages",
+    ]
+    assert proto.about_share.style.visibility == "hidden"  # not iOS
+
+    proto.help_selection.selection.value = "Help"
+    proto.show_help_page()
+    assert "Bundled packages" not in pages[-1]
+
+
+# ---------------------------------------------------------------------------
+# Running with dependencies (#33)
+# ---------------------------------------------------------------------------
+
+
+def fake_installer(
+    events: list[tuple[str, str]], p: ui.Prototype, fail: bool
+) -> Callable[..., Coroutine[Any, Any, None]]:
+    """A stand-in for resolve_and_install_async that records the UI state."""
+
+    async def install(
+        requirements: list[str],
+        target: Path,
+        on_progress: Callable[[str], None] | None = None,
+        **kwargs: object,
+    ) -> None:
+        events.append(("install starts on", p.tabs.current_tab.text))
+        assert on_progress is not None
+        on_progress("Downloading lib 2.0")
+        events.append(("status", p.script_activity.text.text))
+        if fail:
+            raise piplike.DependencyError("no such package")
+
+    return install
+
+
+def test_install_happens_on_script_tab_and_errors_show_over_it(
+    proto: ui.Prototype,
+    app: toga.App,
+    docs: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Progress shows on Script; a failure's dialog appears there, then List."""
+    (docs / "needs_dep.py").write_text(
+        '"""Needs a dependency."""\n'
+        "# /// script\n"
+        '# dependencies = ["not-there"]\n'
+        "# ///\n"
+    )
+    proto.reload_menu(proto.script_list)
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        piplike, "resolve_and_install_async", fake_installer(events, proto, fail=True)
+    )
+    proto.tabs.current_tab = "List"
+
+    tap(proto, "needs_dep", monkeypatch, app)
+
+    assert events == [
+        ("install starts on", "Script"),
+        ("status", "Downloading lib 2.0"),
+    ]
+    # The dialog is shown over the Script tab, with the failure in the status line
+    assert proto.dialogs == [  # type: ignore[attr-defined]
+        ("Dependency Error", "no such package", "Script", "Dependency install failed")
+    ]
+    # Then, with no output, the run ends back on the list
+    assert proto.tabs.current_tab.text == "List"
