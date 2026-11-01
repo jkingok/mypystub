@@ -8,6 +8,7 @@ MyPyStub is a Python Briefcase/Toga prototype app for iOS, with macOS, Linux, an
 
 - Track the latest Python and Toga releases. The maintainer already tests on Python 3.15, and CI runs on 3.15. Do not pin old versions in instructions or config; bump them when new releases land.
 - The iOS runtime has no `subprocess` and limited stdlib. Code under `src/` must work there unless it is guarded by platform checks.
+- **Prototypes stay standalone.** Scripts and examples must run unchanged as standalone Briefcase apps, so give them no MyPyStub-specific Python API: they use standard Python, Toga, or Rubicon, never `import mypystub`. The launcher may have internal helpers for its own UI. The takeover protocol (`main_window.content_stack`) is the deliberate exception; it is plain Toga and works outside MyPyStub too.
 
 ## Rules
 
