@@ -49,6 +49,12 @@ class Settings:
         self.config_doc = self._load()  # allow on disk changes
         return self.config_doc[k]
 
+    def get_table(self, k: str) -> dict:
+        """An optional table such as [aliases], as a plain dict ({} if absent)."""
+        self.config_doc = self._load()  # allow on disk changes
+        table = self.config_doc.get(k, {})
+        return table.unwrap() if hasattr(table, "unwrap") else dict(table)
+
     def set(self, k: str, v: str) -> None:
         self.config_doc[k] = v
         self._save()  # preserve immediately

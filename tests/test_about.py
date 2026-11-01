@@ -70,6 +70,7 @@ def test_collect_environment_sections(tmp_path: Path) -> None:
         "Paths",
         "Bundled packages",
         "User packages",
+        "Package aliases",
     ]
     assert section(sections, "App") == [("Name", "MyPyStub"), ("Version", "unknown")]
     assert section(sections, "Paths") == [("Cache", str(tmp_path))]
@@ -110,3 +111,25 @@ def test_wheel_installed_package_is_reported(tmp_path: Path) -> None:
     site.mkdir()
     piplike.unpack_wheel(wheel, site)
     assert section(about.package_sections(site), "User") == [("demo", "1.0")]
+
+
+def test_aliases_section_describes_each_alias(tmp_path: Path) -> None:
+    """The About page lists package aliases in effect (#79)."""
+    from mypystub.piplike import Alias
+
+    sections = about.collect_environment(
+        "MyPyStub",
+        None,
+        {},
+        tmp_path / "site",
+        aliases={
+            "toga": Alias("bundled", "toga-core"),
+            "pyyaml": Alias("substitute", "pyyaml-pure"),
+            "fast": Alias("substitute", "fast-pure", when="always"),
+        },
+    )
+    assert section(sections, "Package aliases") == [
+        ("fast", "fast-pure (always)"),
+        ("pyyaml", "pyyaml-pure (when no compatible wheel)"),
+        ("toga", "toga-core (bundled with the app)"),
+    ]

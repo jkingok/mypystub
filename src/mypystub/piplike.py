@@ -30,10 +30,70 @@ class DependencyError(Exception):
     """Raised when dependency resolution, downloading, or unpacking fails."""
 
 
-# Requirement names that the app satisfies through a differently named bundled
-# distribution. The `toga` meta-package is not bundled, but toga-core and the
-# platform backend are, so scripts that declare `toga` need nothing installed.
-PROVIDED_BY = {"toga": "toga-core"}
+ALIAS_KINDS = ("bundled", "substitute")
+ALIAS_WHEN = ("no_wheel", "always")
+ALIAS_SPECIFIER = ("drop", "keep")
+
+
+@dataclass(frozen=True)
+class Alias:
+    """A requirement that is really satisfied by another distribution (#79).
+
+    :param kind: ``"bundled"``: satisfied by a distribution the app bundles, so
+        nothing is installed (``toga`` is provided by ``toga-core``).
+        ``"substitute"``: install `target` instead, typically a pure-Python
+        replacement for a package with no wheel for this platform.
+    :param target: The distribution that satisfies the requirement.
+    :param when: For substitutes: ``"no_wheel"`` (the default) tries the
+        original first and only substitutes when it has no compatible wheel;
+        ``"always"`` always substitutes.
+    :param specifier: For substitutes: ``"drop"`` (the default) ignores the
+        requirement's version specifier, since the two projects number their
+        versions differently; ``"keep"`` applies it to the substitute.
+    """
+
+    kind: str
+    target: str
+    when: str = "no_wheel"
+    specifier: str = "drop"
+
+
+# Built-in aliases. Each substitute is a verified drop-in: same import name,
+# compatible API, and a pure-Python (py3-none-any) wheel.
+ALIASES = {
+    # The toga meta-package isn't bundled, but toga-core and the backend are
+    "toga": Alias("bundled", "toga-core"),
+    # PyYAML's wheels are compiled and none are built for iOS; pyyaml-pure
+    # provides the same `yaml` package (safe_load, dump, YAMLError, loaders)
+    "pyyaml": Alias("substitute", "pyyaml-pure"),
+}
+
+
+def parse_aliases(table: Mapping[str, Any]) -> dict[str, Alias]:
+    """Read an alias table, as written in launcher.toml or [tool.stub_launcher].
+
+    Each entry is ``name = { kind = "...", target = "...", when = "...",
+    specifier = "..." }``. Raises ValueError for anything malformed, so typos
+    don't silently change what gets installed.
+    """
+    aliases: dict[str, Alias] = {}
+    for name, entry in table.items():
+        if not isinstance(entry, Mapping) or "target" not in entry:
+            raise ValueError(f"alias {name!r} needs a table with a target")
+        alias = Alias(
+            kind=str(entry.get("kind", "substitute")),
+            target=canonicalize_name(str(entry["target"])),
+            when=str(entry.get("when", "no_wheel")),
+            specifier=str(entry.get("specifier", "drop")),
+        )
+        if (
+            alias.kind not in ALIAS_KINDS
+            or alias.when not in ALIAS_WHEN
+            or alias.specifier not in ALIAS_SPECIFIER
+        ):
+            raise ValueError(f"alias {name!r} has an unknown kind, when or specifier")
+        aliases[canonicalize_name(name)] = alias
+    return aliases
 
 
 @dataclass(frozen=True)
@@ -46,9 +106,15 @@ class Candidate:
     is_installed: bool = False
     # Use frozenset for immutability so dataclass remains hashable
     requested_extras: frozenset[str] = frozenset()
+    # The requirement name this candidate satisfies; differs from `name` when an
+    # alias substitutes another distribution (pyyaml satisfied by pyyaml-pure)
+    identifier: str = ""
 
     def __post_init__(self):
         object.__setattr__(self, "name", canonicalize_name(self.name))
+        object.__setattr__(
+            self, "identifier", canonicalize_name(self.identifier or self.name)
+        )
 
     def __str__(self) -> str:
         source = (
@@ -69,7 +135,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         cache_dir: Path,
         system_packages: dict[str, Version],
         http_client: httpx2.Client,
-        package_substitutions: dict[str, str] | None = None,
+        aliases: Mapping[str, Alias] | None = None,
         use_system: bool = True,
         max_candidates: int = 5,
         installed_packages: dict[str, Version] | None = None,
@@ -85,14 +151,21 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         """
         self.finder = finder
         self.cache_dir = cache_dir
-        self.system_packages = {
+        self.system_packages: dict[str, Version] = {
             canonicalize_name(k): v for k, v in system_packages.items()
         }
-        for provided, provider in PROVIDED_BY.items():
-            alias, source = canonicalize_name(provided), canonicalize_name(provider)
-            if alias not in self.system_packages and source in self.system_packages:
-                self.system_packages[alias] = self.system_packages[source]
-        self.installed_packages = {
+        self.aliases: dict[str, Alias] = {
+            canonicalize_name(k): v for k, v in {**ALIASES, **(aliases or {})}.items()
+        }
+        for name, alias in self.aliases.items():
+            source = canonicalize_name(alias.target)
+            if (
+                alias.kind == "bundled"
+                and name not in self.system_packages
+                and source in self.system_packages
+            ):
+                self.system_packages[name] = self.system_packages[source]
+        self.installed_packages: dict[str, Version] = {
             canonicalize_name(k): v for k, v in (installed_packages or {}).items()
         }
         self.target_dir = target_dir
@@ -100,15 +173,17 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         self.http_client = http_client
         self.use_system = use_system
         self.max_candidates = max_candidates
-        self.package_substitutions = {
-            canonicalize_name(k): canonicalize_name(v)
-            for k, v in (package_substitutions or {"pyyaml": "pyyaml-pure"}).items()
-        }
         self._dep_cache: dict[Candidate, list[Requirement]] = {}
 
     def identify(self, requirement_or_candidate) -> str:
-        raw_name = canonicalize_name(requirement_or_candidate.name)
-        return self.package_substitutions.get(raw_name, raw_name)
+        if isinstance(requirement_or_candidate, Candidate):
+            return requirement_or_candidate.identifier
+        return canonicalize_name(requirement_or_candidate.name)
+
+    def substitute_for(self, identifier: str) -> Alias | None:
+        """The substitute alias for `identifier`, if there is one."""
+        alias = self.aliases.get(identifier)
+        return alias if alias and alias.kind == "substitute" else None
 
     def get_preference(
         self, identifier, resolutions, candidates, information, backtrack_causes
@@ -145,42 +220,75 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 self._warn_if_bundled_mismatch(req, sys_cand)
             return [] if sys_cand in excluded else [sys_cand]
 
-        # 2. A copy installed by an earlier run, if it fits
+        # 2. A copy installed by an earlier run, if it fits: the package itself,
+        # or its substitute (so an installed pyyaml-pure satisfies pyyaml offline)
+        substitute = self.substitute_for(canon_id)
         local: list[Candidate] = []
-        if canon_id in self.installed_packages:
+        names = [canon_id] + ([substitute.target] if substitute else [])
+        for name in names:
+            if name not in self.installed_packages:
+                continue
             installed = Candidate(
-                name=canon_id,
-                version=self.installed_packages[canon_id],
+                name=name,
+                version=self.installed_packages[name],
                 is_installed=True,
                 requested_extras=active_extras,
+                identifier=canon_id,
             )
             if installed not in excluded and all(
                 self.is_satisfied_by(req, installed) for req in req_specs
             ):
                 local.append(installed)
 
-        # 3. PyPI, only if resolvelib iterates past the local candidates
+        # 3. PyPI, only if resolvelib iterates past the local candidates. With a
+        # substitute alias: the original first (unless when="always"), and the
+        # substitute only if the original has no compatible wheel.
         def candidates() -> Iterator[Candidate]:
             yield from local
-            yield from self._pypi_candidates(
-                canon_id,
-                req_specs,
-                excluded,
-                active_extras,
-                skip={c.version for c in local},
-            )
+            skip = {(c.name, c.version) for c in local}
+            found = []
+            if not (substitute and substitute.when == "always"):
+                found = self._pypi_candidates(
+                    canon_id, canon_id, req_specs, excluded, active_extras, skip
+                )
+                yield from found
+            if substitute and not found:
+                reason = (
+                    "always"
+                    if substitute.when == "always"
+                    else "no compatible wheel for this platform"
+                )
+                self._note(
+                    f"alias:{canon_id}",
+                    f"[Resolver] {canon_id} → {substitute.target} ({reason})",
+                )
+                yield from self._pypi_candidates(
+                    substitute.target,
+                    canon_id,
+                    req_specs,
+                    excluded,
+                    active_extras,
+                    skip,
+                )
 
         return candidates
+
+    def _note(self, key: str, message: str) -> None:
+        """Print `message` once per resolution."""
+        if key not in self._warned:
+            self._warned.add(key)
+            print(message)
 
     def _pypi_candidates(
         self,
         canon_id: str,
+        identifier: str,
         req_specs: list[Requirement],
         excluded: set[Candidate],
         active_extras: frozenset[str],
-        skip: set[Version],
+        skip: set[tuple[str, Version]],
     ) -> list[Candidate]:
-        """Query the index for candidates, newest first."""
+        """Index candidates for `canon_id`, satisfying `identifier`, newest first."""
         try:
             matches = self.finder.find_matches(canon_id)
         except Exception as exc:
@@ -192,7 +300,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
 
         candidates: list[Candidate] = []
         for match in matches:
-            if not match.version or Version(match.version) in skip:
+            if not match.version:
+                continue
+            if (canonicalize_name(match.name), Version(match.version)) in skip:
                 continue
 
             filename = match.link.filename.lower()
@@ -211,6 +321,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 link=match.link,
                 is_system=False,
                 requested_extras=active_extras,
+                identifier=identifier,
             )
             if cand not in excluded and all(
                 self.is_satisfied_by(req, cand) for req in req_specs
@@ -240,7 +351,20 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 self._warn_if_bundled_mismatch(requirement, candidate)
                 return True
             return False
-        return (canonicalize_name(requirement.name) == candidate.name) and not (
+        if self.identify(requirement) != candidate.identifier:
+            return False
+        if candidate.name != candidate.identifier:
+            # A substitute: version numbers belong to a different project
+            alias = self.substitute_for(candidate.identifier)
+            if alias is None or alias.specifier == "drop":
+                if requirement.specifier:
+                    self._note(
+                        f"spec:{candidate.identifier}",
+                        f"[Resolver] {candidate.identifier} → {candidate.name}: "
+                        f"ignoring {requirement.specifier}",
+                    )
+                return True
+        return not (
             requirement.specifier
             and not requirement.specifier.contains(candidate.version, prereleases=True)
         )
@@ -288,14 +412,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 if not (is_base_dep or is_requested_extra):
                     continue
 
-            # Apply package substitutions (e.g., pyyaml -> pyyaml-pure)
-            canon_req_name = canonicalize_name(req.name)
-            if canon_req_name in self.package_substitutions:
-                subbed_name = self.package_substitutions[canon_req_name]
-                spec_str = str(req.specifier) if req.specifier else ""
-                marker_str = f" ; {req.marker}" if req.marker else ""
-                req = Requirement(f"{subbed_name}{spec_str}{marker_str}")
-
+            # Aliases (pyyaml -> pyyaml-pure) are applied per platform in find_matches
             reqs.append(req)
 
         return reqs
@@ -406,13 +523,15 @@ async def resolve_and_install_async(
     force_reinstall: bool = False,
     use_system: bool = True,
     on_progress: Callable[[str], None] | None = None,
+    aliases: Mapping[str, Alias] | None = None,
 ) -> None:
     """
     Async dependency resolver and installer compatible with Toga / asyncio event loops.
 
     Blocking work (resolution, metadata scans, unpacking) runs in worker threads.
     `on_progress` receives short status messages, always on the event loop thread,
-    so it may update widgets directly.
+    so it may update widgets directly. `aliases` (from launcher.toml or the
+    script) are merged over the built-in ALIASES.
     """
     loop = asyncio.get_running_loop()
 
@@ -487,6 +606,7 @@ async def resolve_and_install_async(
                     max_candidates=5,  # Limit to top 5 candidates per package
                     installed_packages=installed_packages,
                     target_dir=target_dir,
+                    aliases=aliases,
                 )
 
                 # Use custom progress reporter to track execution in console/UI
@@ -632,6 +752,7 @@ def scan_script(item: Path) -> dict[str, Any] | None:
         "entry_point": item,
         "folder_root": item.parent,
         "dependencies": dependencies,
+        "aliases": parse_aliases(launcher.get("aliases", {})),
         "kind": "script",
     }
 
@@ -670,6 +791,7 @@ def scan_project(item: Path) -> dict[str, Any]:
         "folder_root": item / tool_meta.get("import_path", "src"),
         # PEP 621 dependencies list (default to empty list if missing)
         "dependencies": project_meta.get("dependencies", []),
+        "aliases": parse_aliases(tool_meta.get("aliases", {})),
         "kind": "project",
     }
 

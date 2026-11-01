@@ -1,2 +1,8 @@
 # Launcher requires configuration
 # This can be performed in app or via this file
+
+# Package aliases, merged over the built-in ones (see Help, "Packages with
+# compiled parts"). For example, to always use a pure-Python replacement:
+#
+# [aliases]
+# somepackage = { kind = "substitute", target = "somepackage-pure", when = "always" }

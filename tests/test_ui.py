@@ -195,6 +195,7 @@ def test_help_about_switch(
         "Paths",
         "Bundled packages",
         "User packages",
+        "Package aliases",
     ]
     assert proto.about_share.style.visibility == "hidden"  # not iOS
 
@@ -322,3 +323,34 @@ def test_own_icon_is_used_as_a_splash(
 
     splash = splash_during_install(proto, app, "branded", monkeypatch)
     assert isinstance(splash, toga.Image)
+
+
+def test_installs_use_configured_and_script_aliases(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """launcher.toml aliases and the script's own are passed to the installer."""
+    (docs / "aliased.py").write_text(
+        '"""Aliased."""\n'
+        "# /// script\n"
+        '# dependencies = ["fast"]\n'
+        "# [tool.stub_launcher.aliases]\n"
+        '# fast = { kind = "substitute", target = "fast-pure" }\n'
+        "# ///\n"
+    )
+    configured = {"slow": piplike.Alias("substitute", "slow-pure")}
+    monkeypatch.setattr(proto, "configured_aliases", lambda: configured)
+    seen: list[object] = []
+
+    async def install(*args: object, **kwargs: object) -> None:
+        seen.append(kwargs.get("aliases"))
+        raise piplike.DependencyError("stop")
+
+    monkeypatch.setattr(piplike, "resolve_and_install_async", install)
+    proto.reload_menu(proto.script_list)
+    tap(proto, "aliased", monkeypatch, app)
+    assert seen == [
+        {
+            "slow": piplike.Alias("substitute", "slow-pure"),
+            "fast": piplike.Alias("substitute", "fast-pure"),
+        }
+    ]

@@ -287,3 +287,37 @@ def test_folder_rows_preview_their_contents(tmp_path: Path) -> None:
     write(tmp_path / "games" / "snake.py")
     (entry,) = piplike.scan_all_prototypes(tmp_path)
     assert entry["subtitle"] == "2 scripts"
+
+
+def test_script_and_project_aliases_are_read(tmp_path: Path) -> None:
+    """[tool.stub_launcher.aliases] in PEP 723 or pyproject.toml is passed on (#79)."""
+    write(
+        tmp_path / "s.py",
+        script_with_metadata(
+            'dependencies = ["fast"]\n'
+            "[tool.stub_launcher.aliases]\n"
+            'fast = { kind = "substitute", target = "fast-pure" }'
+        ),
+    )
+    write(
+        tmp_path / "proj" / "pyproject.toml",
+        "[project]\nname = 'proj'\n"
+        "[tool.stub_launcher.aliases]\n"
+        'thing = { kind = "bundled", target = "core-thing" }\n',
+    )
+    entries = {e["title"]: e for e in piplike.scan_all_prototypes(tmp_path)}
+    assert entries["s"]["aliases"] == {"fast": piplike.Alias("substitute", "fast-pure")}
+    assert entries["proj"]["aliases"] == {
+        "thing": piplike.Alias("bundled", "core-thing")
+    }
+
+
+def test_bad_alias_table_skips_the_entry(tmp_path: Path) -> None:
+    """A malformed alias table is reported like other malformed metadata."""
+    write(
+        tmp_path / "s.py",
+        script_with_metadata(
+            '[tool.stub_launcher.aliases]\nfast = { kind = "rename", target = "x" }'
+        ),
+    )
+    assert list(piplike.scan_all_prototypes(tmp_path)) == []

@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from html import escape
 from pathlib import Path
 
-from .piplike import get_package_inventory
+from .piplike import ALIASES, Alias, get_package_inventory
 
 Row = tuple[str, str]
 Section = tuple[str, list[Row]]
@@ -47,11 +47,26 @@ def package_sections(user_site: Path) -> list[Section]:
     ]
 
 
+def alias_rows(aliases: Mapping[str, Alias]) -> list[Row]:
+    """Describe package aliases (#79), sorted by requirement name."""
+    rows: list[Row] = []
+    for name, alias in sorted(aliases.items()):
+        if alias.kind == "bundled":
+            how = "bundled with the app"
+        elif alias.when == "always":
+            how = "always"
+        else:
+            how = "when no compatible wheel"
+        rows.append((name, f"{alias.target} ({how})"))
+    return rows
+
+
 def collect_environment(
     app_name: str,
     app_version: str | None,
     paths: Mapping[str, Path],
     user_site: Path,
+    aliases: Mapping[str, Alias] | None = None,
 ) -> list[Section]:
     """Gather every section shown on the About page."""
     return [
@@ -59,6 +74,7 @@ def collect_environment(
         ("Python", python_rows()),
         ("Paths", [(name, str(path)) for name, path in paths.items()]),
         *package_sections(user_site),
+        ("Package aliases", alias_rows({**ALIASES, **(aliases or {})})),
     ]
 
 

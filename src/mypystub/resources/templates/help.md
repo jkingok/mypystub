@@ -66,6 +66,24 @@ A run ends when your script returns. If your script takes over the screen, it mu
 
 Each run gets its own `sys.argv`, environment and working directory (the script's folder, or the project folder), and they are restored afterwards. Your own modules are reloaded on the next run, so edits take effect without restarting the app.
 
+## Packages with compiled parts
+
+The launcher installs your prototypes' dependencies from [PyPI](https://pypi.org) as pure-Python wheels. Packages with compiled (binary) parts need a wheel built specifically for iOS, which most projects don't publish yet. BeeWare tracks which packages have one in its [mobile wheels](https://beeware.org/mobile-wheels/) project. Projects build them with [cibuildwheel](https://cibuildwheel.pypa.io/), which supports iOS. Binary wheels can't be added to the app after it's built, so the useful ones are bundled with it.
+
+Where a pure-Python replacement exists, the launcher can use it instead. These **aliases** are listed on the About page:
+
+- **substitute**: install another package in its place. Built in: `pyyaml` → `pyyaml-pure`, which provides the same `yaml` module. By default it's only used when the original has no compatible wheel, and the version pin is ignored, because the two projects number their versions differently.
+- **bundled**: already provided by the app. Built in: `toga` → the bundled `toga-core`.
+
+You can add your own in `launcher.toml`, or for one script or project in `[tool.stub_launcher.aliases]`:
+
+```toml
+[tool.stub_launcher.aliases]
+somepackage = { kind = "substitute", target = "somepackage-pure", when = "always" }
+```
+
+`when` is `"no_wheel"` (the default) or `"always"`; `specifier` is `"drop"` (the default) or `"keep"`.
+
 ## Hardware
 
 Prototypes can use your **location**, **camera**, **photo library** (to save images) and **local network**. iOS asks for permission the first time a prototype uses each one, and you can change your answer later in the Settings app. The Examples' `hardware/` folder has a script for each.

@@ -683,6 +683,10 @@ class Prototype:
                     required_packages,
                     target_user_packages,
                     on_progress=self.script_activity.update,
+                    aliases={
+                        **self.configured_aliases(),
+                        **(getattr(selected_row, "aliases", None) or {}),
+                    },
                 )
             except Exception as e:  # noqa: BLE001
                 # DependencyError, or e.g. an invalid requirement string
@@ -766,6 +770,15 @@ class Prototype:
                 )
             )
 
+    def configured_aliases(self) -> dict[str, pip.Alias]:
+        """Package aliases from launcher.toml's [aliases] ({} if absent or bad)."""
+        try:
+            table = cast(Any, self.app).settings.get_table("aliases")
+            return pip.parse_aliases(table)
+        except (ValueError, OSError) as e:
+            print(f"Ignoring [aliases] in launcher.toml: {e}")
+            return {}
+
     def about_sections(self) -> list[about.Section]:
         paths = {
             "Documents": Path(self.data_path),
@@ -778,6 +791,7 @@ class Prototype:
             self.app.version,
             paths,
             Path(self.cache_path) / "site_packages",
+            aliases=self.configured_aliases(),
         )
 
     def show_help_page(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:

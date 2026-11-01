@@ -217,12 +217,14 @@ def test_candidate_str_shows_extras_and_source() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_identify_applies_default_pyyaml_substitution(
-    index: FakeIndex, tmp_path: Path
-) -> None:
-    """pyyaml is swapped for the pure-Python build by default."""
+def test_identify_uses_the_requested_name(index: FakeIndex, tmp_path: Path) -> None:
+    """Requirements are identified by their own (canonical) name (#79).
+
+    Substitutes are chosen per platform in find_matches, so a pyyaml requirement
+    stays "pyyaml" even where pyyaml-pure ends up installed.
+    """
     provider = make_provider(index, tmp_path)
-    assert provider.identify(Requirement("PyYAML>=6")) == "pyyaml-pure"
+    assert provider.identify(Requirement("PyYAML>=6")) == "pyyaml"
     assert provider.identify(Requirement("Other_Pkg")) == "other-pkg"
 
 
@@ -308,15 +310,15 @@ def test_parse_metadata_requirements_filters_extras(
     assert [r.name for r in reqs] == ["base", "socks"]
 
 
-def test_parse_metadata_requirements_substitutes_names(
+def test_parse_metadata_requirements_keeps_names(
     index: FakeIndex, tmp_path: Path
 ) -> None:
-    """Substituted packages keep their version specifier."""
+    """Dependencies are no longer renamed; aliases are resolved per platform."""
     provider = make_provider(index, tmp_path)
     reqs = provider._parse_metadata_requirements(
         "Requires-Dist: PyYAML>=6.0\n", frozenset()
     )
-    assert [str(r) for r in reqs] == ["pyyaml-pure>=6.0"]
+    assert [str(r) for r in reqs] == ["PyYAML>=6.0"]
 
 
 def test_fetch_metadata_handles_missing_and_errors(
@@ -718,3 +720,134 @@ def test_offline_missing_package_names_the_package(
                 ["not-here"], tmp_path / "site", use_system=False
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Package aliases (#79)
+# ---------------------------------------------------------------------------
+
+IPHONEOS_ONLY = "pyyaml-6.0.3-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+
+
+def test_builtin_aliases() -> None:
+    """toga is provided by the bundled toga-core; pyyaml falls back to pure."""
+    aliases = piplike.ALIASES
+    assert aliases["toga"] == piplike.Alias("bundled", "toga-core")
+    assert aliases["pyyaml"] == piplike.Alias("substitute", "pyyaml-pure")
+    assert aliases["pyyaml"].when == "no_wheel"
+
+
+def test_parse_aliases_from_toml_tables() -> None:
+    """launcher.toml / [tool.stub_launcher.aliases] tables become Alias values."""
+    aliases = piplike.parse_aliases(
+        {
+            "Foo_Bar": {"kind": "substitute", "target": "foo-pure", "when": "always"},
+            "thing": {"kind": "bundled", "target": "core-thing"},
+        }
+    )
+    assert aliases == {
+        "foo-bar": piplike.Alias("substitute", "foo-pure", when="always"),
+        "thing": piplike.Alias("bundled", "core-thing"),
+    }
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        {"x": {"kind": "rename", "target": "y"}},
+        {"x": {"kind": "substitute"}},
+        {"x": {"kind": "substitute", "target": "y", "when": "sometimes"}},
+        {"x": {"kind": "substitute", "target": "y", "specifier": "maybe"}},
+        {"x": "y"},
+    ],
+)
+def test_parse_aliases_rejects_bad_entries(table: dict) -> None:
+    """Typos in an alias table fail loudly instead of being ignored."""
+    with pytest.raises(ValueError, match="alias"):
+        piplike.parse_aliases(table)
+
+
+def test_substitute_unused_when_the_original_has_a_wheel(
+    index: FakeIndex, tmp_path: Path
+) -> None:
+    """Where PyYAML has a compatible wheel (desktop), it's installed as asked."""
+    index.add("pyyaml", "6.0.3")
+    index.add("pyyaml-pure", "0.1.0")
+    pins = resolve(make_provider(index, tmp_path), "PyYAML>=6")
+    assert (pins["pyyaml"].name, str(pins["pyyaml"].version)) == ("pyyaml", "6.0.3")
+    assert "pyyaml-pure" not in index.lookups
+
+
+def test_substitute_used_when_the_original_has_no_wheel(
+    index: FakeIndex, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With only an iPhoneOS-device wheel, pyyaml-pure is used, specifier dropped."""
+    index.add("pyyaml", "6.0.3", filename=IPHONEOS_ONLY)
+    index.add("pyyaml-pure", "0.1.0")
+    pins = resolve(make_provider(index, tmp_path), "PyYAML>=6")
+    assert (pins["pyyaml"].name, str(pins["pyyaml"].version)) == (
+        "pyyaml-pure",
+        "0.1.0",
+    )
+    out = capsys.readouterr().out
+    assert "pyyaml → pyyaml-pure (no compatible wheel for this platform)" in out
+    assert "ignoring >=6" in out
+
+
+def test_substitute_specifier_can_be_kept(index: FakeIndex, tmp_path: Path) -> None:
+    """With specifier="keep", the pin applies to the substitute too."""
+    index.add("pyyaml-pure", "0.1.0")
+    aliases = {"pyyaml": piplike.Alias("substitute", "pyyaml-pure", specifier="keep")}
+    provider = make_provider(index, tmp_path, aliases=aliases)
+    with pytest.raises(resolvelib.ResolutionImpossible):
+        resolve(provider, "PyYAML>=6")
+
+
+def test_substitute_always(index: FakeIndex, tmp_path: Path) -> None:
+    """when="always" skips the original even where it would install."""
+    index.add("pyyaml", "6.0.3")
+    index.add("pyyaml-pure", "0.1.0")
+    aliases = {"pyyaml": piplike.Alias("substitute", "pyyaml-pure", when="always")}
+    pins = resolve(make_provider(index, tmp_path, aliases=aliases), "pyyaml")
+    assert pins["pyyaml"].name == "pyyaml-pure"
+    assert "pyyaml" not in index.lookups
+
+
+def test_transitive_dependency_is_substituted(index: FakeIndex, tmp_path: Path) -> None:
+    """A dependency's own requirement on PyYAML gets the substitute too."""
+    index.add("app", "1.0", requires=["PyYAML>=5"])
+    index.add("pyyaml", "6.0.3", filename=IPHONEOS_ONLY)
+    index.add("pyyaml-pure", "0.1.0")
+    pins = resolve(make_provider(index, tmp_path), "app")
+    assert pins["pyyaml"].name == "pyyaml-pure"
+
+
+def test_installed_substitute_satisfies_offline(
+    index: FakeIndex, tmp_path: Path
+) -> None:
+    """Once pyyaml-pure is installed, `pyyaml` resolves with no network (#66)."""
+    index.offline = True
+    provider = make_provider(index, tmp_path, installed={"pyyaml-pure": "0.1.0"})
+    pins = resolve(provider, "PyYAML>=6")
+    assert pins["pyyaml"].is_installed and pins["pyyaml"].name == "pyyaml-pure"
+    assert index.lookups == []
+
+
+def test_resolve_and_install_async_takes_extra_aliases(
+    patched_network: FakeIndex, tmp_path: Path
+) -> None:
+    """Aliases from launcher.toml or a script are merged over the built-ins."""
+    patched_network.add(
+        "fast", "2.0", filename="fast-2.0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+    )
+    patched_network.add("fast-pure", "1.0")
+    target = tmp_path / "site"
+    asyncio.run(
+        piplike.resolve_and_install_async(
+            ["fast"],
+            target,
+            use_system=False,
+            aliases={"fast": piplike.Alias("substitute", "fast-pure")},
+        )
+    )
+    assert piplike.get_package_inventory(target) == {"fast-pure": "1.0"}
