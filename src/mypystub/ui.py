@@ -15,11 +15,13 @@ import httpx2
 import toga
 from toga.style import Pack
 
-from . import about, maintenance, permissions, runner, setup_pages
+from . import about, maintenance, permissions, row_info, runner, setup_pages
 from . import hooks as h
 from . import piplike as pip
 from . import settings as s
-from .pages import help_html, html_page
+from .pages import help_html, html_page, readme_html
+from .run_settings import Layer, RunSettings, merged_env, settings_key
+from .run_with import RunWithForm
 
 UIUserInterfaceIdiomPad = 1
 
@@ -347,11 +349,18 @@ class Prototype:
         # within it, relative to the category's root
         self.category: str | None = None
         self.subfolder = Path()
+        # Content-stack depths under each screen pushed by push_screen()
+        self.screen_bases: list[int] = []
+        # Toga's swipe actions are the same for every row (#59): swipe left
+        # for Info, swipe right for Setup
         self.script_list = toga.DetailedList(
             on_refresh=self.reload_menu,
             on_select=self.handle_row_selection,
+            primary_action="Info",
+            on_primary_action=self.handle_info,
+            secondary_action="Setup",
+            on_secondary_action=self.handle_run_with,
             style=Pack(flex=1),
-            # data=self.reload_menu()
         )
         self.log_text = toga.MultilineTextInput(
             readonly=True,
@@ -361,6 +370,15 @@ class Prototype:
     async def todo(self, name: str) -> None:
         assert isinstance(self.app.main_window, toga.MainWindow)
         await self.app.main_window.dialog(toga.InfoDialog("TODO", name))
+
+    async def ask(self, title: str, text: str) -> bool:
+        """Ask a yes/no question; True for yes."""
+        assert isinstance(self.app.main_window, toga.MainWindow)
+        return bool(await self.app.main_window.dialog(toga.QuestionDialog(title, text)))
+
+    async def tell(self, title: str, text: str) -> None:
+        """Show a message (the title first, for the Setup form)."""
+        await self.info(text, title)
 
     async def info(self, text: str, title: str | None = None) -> None:
         assert isinstance(self.app.main_window, toga.MainWindow)
@@ -704,6 +722,11 @@ class Prototype:
 
         if not hasattr(selected_row, "entry_point"):
             return
+        await self.run_row(selected_row)
+
+    async def run_row(self, selected_row: Any) -> None:
+        """Run a script or project row with the settings saved in its Setup."""
+        settings, env = self.run_settings_for(selected_row)
 
         # 1. Read the parsed dependency requirements array
         required_packages = getattr(selected_row, "dependencies", [])
@@ -756,7 +779,11 @@ class Prototype:
         try:
             if not entry_point.is_file():
                 raise FileNotFoundError(f"Entry point not found: {entry_point}")
-            context = runner.RunContext(runner.target_for(entry_point, folder_root))
+            context = runner.RunContext(
+                runner.target_for(entry_point, folder_root),
+                argv=settings.args,
+                env=env,
+            )
         except Exception as e:  # noqa: BLE001
             self.script_activity.update(on=False)
             await self.error(f"Failed to execute script:\n{e!s}", "Load Failure")
@@ -765,6 +792,173 @@ class Prototype:
 
         self.script_activity.update(f"Running {title}")
         self.app.loop.call_soon(lambda: self.start(context))
+
+    # -- Swipe actions: Info and Setup (#59) -----------------------------------
+
+    def row_path(self, row: Any) -> Path | None:
+        """The file or folder a row stands for."""
+        match row_info.row_type(row):
+            case "category":
+                return self.category_dirs()[row.category]
+            case "folder":
+                return Path(row.folder)
+            case "script":
+                return Path(row.entry_point)
+            case "project":
+                return Path(row.project_dir)
+            case _:
+                return None
+
+    def row_key(self, row: Any) -> str:
+        """The key a row's settings are saved under: its path in its category."""
+        path = self.row_path(row)
+        assert self.category is not None and path is not None
+        base = self.get_category_dir().resolve()
+        try:
+            relative = path.resolve().relative_to(base)
+        except ValueError:
+            relative = Path(path.name)
+        return settings_key(self.category, relative)
+
+    def up_destination(self, row: Any) -> str:
+        """Where a ".." row leads, for messages."""
+        if getattr(row, "categories", False) or self.category is None:
+            return "the categories"
+        parent = self.subfolder.parent
+        if parent == Path():
+            return self.category
+        return f"{self.category}/{parent.as_posix()}"
+
+    @property
+    def settings(self) -> s.Settings:
+        """The launcher's settings file."""
+        return cast(Any, self.app).settings
+
+    def setup_layer(self) -> Layer:
+        """Setup's environment variables, inherited by every run."""
+        return Layer("Setup", self.settings.get_environment())
+
+    def run_settings_for(self, row: Any) -> tuple[RunSettings, dict[str, str]]:
+        """A runnable row's saved settings, and its environment with Setup's."""
+        own = self.settings.get_run_with(self.row_key(row))
+        env = merged_env([self.setup_layer().env, own.env])
+        return own, env
+
+    def handle_info(self, widget: toga.DetailedList, row: Any, **kwargs: Any) -> None:
+        """Swipe left: Info."""
+        asyncio.ensure_future(self.show_info(row))
+
+    async def show_info(self, row: Any) -> None:
+        """Show what's known about a row, or say why there's nothing."""
+        kind = row_info.row_type(row)
+        title = str(getattr(row, "title", ""))
+        if kind == "up":
+            await self.info(row_info.up_info_message(self.up_destination(row)), title)
+            return
+        if kind in ("category", "folder"):
+            folder = self.row_path(row)
+            assert folder is not None
+            if readme := row_info.find_readme(folder):
+                self.show_readme(title, readme)
+                return
+            message = row_info.no_readme_message(
+                kind, title, pip.folder_summary(folder)
+            )
+            await self.info(message, title)
+            return
+        await self.info(row_info.prototype_summary(row), title)
+
+    def show_readme(self, title: str, readme: Path) -> None:
+        """Show a README on its own screen, rendered like the Help page."""
+        try:
+            text = readme.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            text = f"Couldn't read {readme.name}: {e}"
+        view = toga.WebView(flex=1, on_navigation_starting=self.open_external)
+        self.readme_page = html_page(readme_html(text, readme.name))
+        view.content = self.readme_page
+        self.readme_view = view
+        self.push_screen(
+            title,
+            toga.Column(
+                children=[
+                    toga.Row(
+                        children=[
+                            toga.Button("‹ Back", on_press=lambda w: self.pop_screen())
+                        ]
+                    ),
+                    view,
+                ]
+            ),
+        )
+
+    def open_external(self, widget: toga.WebView, url: str, **kwargs: Any) -> bool:
+        """Open web links in the system browser, not inside the README view."""
+        if url.startswith(("http://", "https://", "mailto:")):
+            import webbrowser
+
+            webbrowser.open(url)
+            return False
+        return True
+
+    def handle_run_with(
+        self, widget: toga.DetailedList, row: Any, **kwargs: Any
+    ) -> None:
+        """Swipe right: Setup."""
+        asyncio.ensure_future(self.run_with(row))
+
+    async def run_with(self, row: Any) -> None:
+        """Open the Setup form, or say why a row has none."""
+        kind = row_info.row_type(row)
+        title = str(getattr(row, "title", ""))
+        if not row_info.runnable(kind):
+            message = row_info.run_with_message(kind, title, self.up_destination(row))
+            await self.info(message, title)
+            return
+        self.open_run_with(row)
+
+    def open_run_with(self, row: Any) -> RunWithForm:
+        """Open the Setup form for a script or project row."""
+        key = self.row_key(row)
+        saved = self.settings.get_run_with(key)
+
+        def save(settings: RunSettings) -> None:
+            self.settings.set_run_with(key, settings)
+
+        form = RunWithForm(
+            str(getattr(row, "title", "")),
+            args=saved.args,
+            env=saved.env,
+            inherited=[self.setup_layer()],
+            screens=self,
+            on_save=save,
+            ask=self.ask,
+            tell=self.tell,
+        )
+        form.open()
+        self.run_with_form = form
+        return form
+
+    def open_setup_environment(
+        self, widget: toga.Widget | None = None, **kwargs: Any
+    ) -> RunWithForm:
+        """Setup's environment variables, inherited by every run."""
+        form = RunWithForm(
+            "Setup",
+            args=None,
+            env=self.settings.get_environment(),
+            screens=self,
+            on_save=lambda settings: self.settings.set_environment(settings.env),
+            ask=self.ask,
+            tell=self.tell,
+            args_note="Every script and project inherits these variables. "
+            "To override them, or set arguments, swipe right on a script and "
+            "choose Setup.",
+            screen_title="Environment",
+        )
+        form.open()
+        self.run_with_form = form
+        return form
 
     def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         if log_path := getattr(sys.stdout, "path", None):
@@ -969,14 +1163,7 @@ class Prototype:
                 self.setup_activity,
             ]
         )
-        mw = self.app.main_window
-        assert isinstance(mw, toga.MainWindow)
-        stack = self.content_stack()
-        # Back can't pop past this page, even if it's tapped twice
-        stack.floor = len(stack)
-        stack.append((mw.title, mw.content))
-        mw.title = self.SETUP_PAGES[page]
-        mw.content = content
+        self.push_screen(self.SETUP_PAGES[page], content)
         self.setup_page = page
         self.render_setup_page()
 
@@ -984,10 +1171,40 @@ class Prototype:
         self, widget: toga.Widget | None = None, **kwargs: Any
     ) -> None:
         """Back: pop the Setup page and return to the tabs."""
+        self.pop_screen()
+        self.setup_page = None
+
+    def push_screen(self, title: str, content: toga.Widget) -> None:
+        """Show `content` over the launcher; :meth:`pop_screen` goes back.
+
+        Screens go on the window's content stack like any other view. The
+        floor stops a double-tapped Back from popping past this screen.
+        """
         mw = self.app.main_window
         assert isinstance(mw, toga.MainWindow)
-        mw.title, mw.content = self.content_stack().pop()
-        self.setup_page = None
+        stack = self.content_stack()
+        self.screen_bases.append(len(stack))
+        stack.floor = len(stack)
+        stack.append((mw.title, mw.content))
+        mw.title = title
+        mw.content = content
+
+    def pop_screen(self) -> None:
+        """Go back to the screen under the last :meth:`push_screen`.
+
+        A pop below the floor is ignored by the stack. After popping a screen
+        that was pushed over another of ours (an editor over the Setup
+        form), the floor drops back so that one can be popped too.
+        """
+        mw = self.app.main_window
+        assert isinstance(mw, toga.MainWindow)
+        stack = self.content_stack()
+        popping = len(stack) > stack.floor
+        mw.title, mw.content = stack.pop()
+        if popping and self.screen_bases:
+            self.screen_bases.pop()
+            if self.screen_bases:
+                stack.floor = self.screen_bases[-1]
 
     def setup_menu_button(self, page: str) -> toga.Button:
         """A Setup menu entry that opens one of the detail pages."""
@@ -1110,6 +1327,7 @@ class Prototype:
                     toga.Button("Add", on_press=self.new_project),
                 ],
             ),
+            toga.Button("Environment ›", on_press=self.open_setup_environment),
             heading("Maintenance"),
             *(self.setup_menu_button(page) for page in self.SETUP_PAGES),
             heading("App"),

@@ -792,6 +792,7 @@ def scan_project(item: Path) -> dict[str, Any]:
         # PEP 621 dependencies list (default to empty list if missing)
         "dependencies": project_meta.get("dependencies", []),
         "aliases": parse_aliases(tool_meta.get("aliases", {})),
+        "project_dir": item,
         "kind": "project",
     }
 

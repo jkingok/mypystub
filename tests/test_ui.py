@@ -9,6 +9,7 @@ import re
 import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -752,3 +753,409 @@ def test_nested_takeover_example_ends_back_at_the_launcher(
     press("Back")
     wait_for(app, lambda: proto.ended_run == proto.run_id)
     assert app.main_window.content is launcher
+
+
+# ---------------------------------------------------------------------------
+# Swipe actions: Info and Setup (#59)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def config(
+    proto: ui.Prototype, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Point the launcher's settings at a fresh launcher.toml for this test."""
+    settings = proto.settings
+    path = tmp_path / "launcher.toml"
+    shutil.copy(settings.config_defaults, path)
+    monkeypatch.setattr(settings, "config_file", path)
+    settings.config_doc = settings._load()
+    return path
+
+
+@pytest.fixture
+def messages(proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
+    """Info dialogs and yes/no questions, recorded instead of shown."""
+    shown: list[tuple] = []
+
+    async def info(text: str, title: str | None = None) -> None:
+        shown.append((title, text))
+
+    monkeypatch.setattr(proto, "info", info)
+    return shown
+
+
+def row(p: ui.Prototype, title: str) -> Any:
+    """The list row titled `title`."""
+    return next(r for r in p.script_list.data if r.title == title)
+
+
+def press(app: toga.App, button: toga.Button) -> None:
+    """Press a button and let any async handler finish."""
+    button._impl.simulate_press()
+    run(app, asyncio.sleep(0.01))
+
+
+def select(form_list: toga.DetailedList, handler: Callable, index: int) -> None:
+    """Tap row `index` of one of the form's lists."""
+    form_list._impl._set_value("selection", index)
+    handler(form_list)
+
+
+def editor_fields(app: toga.App) -> list[toga.TextInput]:
+    """The text fields on the editor screen that's showing."""
+    content = app.main_window.content
+    return [
+        w.children[0]
+        for w in content.children
+        if w.children and isinstance(w.children[0], toga.TextInput)
+    ]
+
+
+def editor_save(app: toga.App) -> toga.Button:
+    """The editor screen's Done button."""
+    return app.main_window.content.children[-1].children[-1]
+
+
+def editor_cancel(app: toga.App) -> toga.Button:
+    """The editor screen's Cancel button."""
+    return app.main_window.content.children[-1].children[0]
+
+
+def test_launcher_list_has_info_and_run_with_swipes(proto: ui.Prototype) -> None:
+    """Swipe left is Info and swipe right is Setup, on every row."""
+    assert proto.script_list._primary_action == "Info"
+    assert proto.script_list._secondary_action == "Setup"
+
+
+def test_swipes_on_rows_that_cannot_run_say_why(
+    proto: ui.Prototype, app: toga.App, messages: list[tuple]
+) -> None:
+    """Folders and ".." explain, by name, why there's nothing to show or run."""
+    proto.handle_run_with(proto.script_list, row=row(proto, "a"))
+    run(app, asyncio.sleep(0.01))
+    assert messages[-1] == (
+        "a",
+        (
+            "a is a folder, so there's nothing to run. Open it and swipe a script "
+            "or project inside."
+        ),
+    )
+    run(app, proto.show_info(row(proto, "a")))
+    assert messages[-1] == (
+        "a",
+        "a has no README to show. It holds 1 subfolder. Add a README.md to describe it.",
+    )
+    run(app, proto.show_info(row(proto, "..")))
+    assert messages[-1][1] == (
+        "This row goes back to the categories, so there's nothing to describe."
+    )
+    run(app, proto.run_with(row(proto, "..")))
+    assert messages[-1][1] == (
+        "This row goes back to the categories, so there's nothing to run."
+    )
+
+
+def test_up_rows_name_the_folder_they_lead_to(
+    proto: ui.Prototype, app: toga.App, messages: list[tuple]
+) -> None:
+    """Deeper down, ".." names its destination."""
+    proto.subfolder = Path("a/b")
+    proto.reload_menu(proto.script_list)
+    run(app, proto.run_with(row(proto, "..")))
+    assert (
+        messages[-1][1]
+        == "This row goes back to Documents/a, so there's nothing to run."
+    )
+
+
+def test_category_swipes(
+    proto: ui.Prototype, app: toga.App, messages: list[tuple]
+) -> None:
+    """Categories can't run; Examples has a README, Documents here has none."""
+    proto.show_category(None)
+    proto.reload_menu(proto.script_list)
+    run(app, proto.run_with(row(proto, "Documents")))
+    assert messages[-1][1].startswith("Documents holds your own scripts and projects.")
+    run(app, proto.show_info(row(proto, "Documents")))
+    assert "Documents has no README to show." in messages[-1][1]
+
+    tabs = app.main_window.content
+    run(app, proto.show_info(row(proto, "Examples")))
+    assert app.main_window.title == "Examples"
+    assert "<h1>Examples</h1>" in proto.readme_page
+    proto.pop_screen()
+    assert app.main_window.content is tabs
+
+
+def test_folder_readme_is_shown_safely(
+    proto: ui.Prototype, app: toga.App, docs: Path, messages: list[tuple]
+) -> None:
+    """A folder's README opens on its own screen, without its raw HTML."""
+    (docs / "a" / "README.md").write_text("# About a\n\n<script>alert(1)</script>\n")
+    tabs = app.main_window.content
+    run(app, proto.show_info(row(proto, "a")))
+    assert messages == []
+    assert app.main_window.title == "a"
+    page = proto.readme_page
+    assert "<h1>About a</h1>" in page and "<script>alert" not in page
+    assert proto.open_external(proto.readme_view, "about:blank") is True
+    proto.pop_screen()
+    proto.pop_screen()  # a double tap pops nothing more
+    assert app.main_window.content is tabs
+
+
+def test_script_info_shows_description_and_dependencies(
+    proto: ui.Prototype, app: toga.App, messages: list[tuple]
+) -> None:
+    """Until the full Info view, scripts show a short summary."""
+    run(app, proto.show_info(row(proto, "top")))
+    assert messages[-1] == ("top", "At the top.\n\nNo dependencies.")
+
+
+def test_run_with_form_edits_arguments(
+    proto: ui.Prototype, app: toga.App, config: Path
+) -> None:
+    """Add, select, move, edit and delete arguments; buttons follow the selection."""
+    tabs = app.main_window.content
+    form = proto.open_run_with(row(proto, "top"))
+    assert app.main_window.title == "Setup · top"
+    assert not form.arg_buttons["edit"].enabled
+    for value in ("--name", "Ada", "x"):
+        form.add_arg()
+        (field,) = editor_fields(app)
+        field.value = value
+        press(app, editor_save(app))
+    assert form.args == ["--name", "Ada", "x"]
+    assert form.arg_index == 2  # the new row is selected
+    assert [r.subtitle for r in form.args_list.data] == [
+        "Argument 1",
+        "Argument 2",
+        "Argument 3",
+    ]
+
+    select(form.args_list, form._arg_selected, 0)
+    enabled = {w: b.enabled for w, b in form.move_buttons.items()}
+    assert enabled == {"top": False, "up": False, "down": True, "bottom": True}
+    press(app, form.move_buttons["bottom"])
+    assert form.args == ["Ada", "x", "--name"] and form.arg_index == 2
+    press(app, form.move_buttons["up"])
+    assert form.args == ["Ada", "--name", "x"] and form.arg_index == 1
+    press(app, form.move_buttons["top"])
+    assert form.args == ["--name", "Ada", "x"] and form.arg_index == 0
+
+    select(form.args_list, form._arg_selected, 1)
+    press(app, form.arg_buttons["edit"])
+    (field,) = editor_fields(app)
+    assert field.value == "Ada"
+    field.value = "Ada Lovelace"
+    press(app, editor_save(app))
+    press(app, form.arg_buttons["delete"])
+    assert form.args == ["--name", "x"] and form.arg_index is None
+    assert not form.arg_buttons["delete"].enabled
+
+    form.done()
+    assert app.main_window.content is tabs
+    # Every change was saved as it was made
+    assert proto.settings.get_run_with("Documents/top.py").args == ["--name", "x"]
+
+
+def test_run_with_form_environment_is_sorted_and_inherits_setup(
+    proto: ui.Prototype, app: toga.App, config: Path
+) -> None:
+    """Variables stay A–Z; Setup's show as inherited and can be overridden."""
+    proto.settings.set_environment({"GREETING": "Hello"})
+    form = proto.open_run_with(row(proto, "top"))
+    assert [(r.title, r.subtitle) for r in form.env_list.data] == [
+        ("GREETING", "Hello · from Setup")
+    ]
+    select(form.env_list, form._env_selected, 0)
+    assert form.env_buttons["edit"].enabled
+    assert not form.env_buttons["delete"].enabled  # it's set in Setup
+    assert "set in Setup" in form.env_note.text
+
+    press(app, form.env_buttons["edit"])  # override it here
+    name, value = editor_fields(app)
+    assert (name.value, value.value) == ("GREETING", "Hello")
+    value.value = "Hi"
+    press(app, editor_save(app))
+    for new_name in ("zed", "Alpha"):
+        form.add_env()
+        name, value = editor_fields(app)
+        name.value, value.value = new_name, ""
+        press(app, editor_save(app))
+    assert [(r.title, r.subtitle) for r in form.env_list.data] == [
+        ("Alpha", "(empty)"),
+        ("GREETING", "Hi"),
+        ("zed", "(empty)"),
+    ]
+
+    select(form.env_list, form._env_selected, 1)
+    assert "overrides an inherited value" in form.env_note.text
+    press(app, form.env_buttons["delete"])  # the inherited value is back
+    assert form.env == {"zed": "", "Alpha": ""}
+    assert form.env_list.data[1].subtitle == "Hello · from Setup"
+
+
+def test_run_with_form_refuses_bad_names(
+    proto: ui.Prototype, app: toga.App, config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bad names keep the editor open; replacing a name asks first."""
+    told: list[tuple[str, str]] = []
+    answers: list[bool] = [False]
+
+    async def tell(title: str, text: str) -> None:
+        told.append((title, text))
+
+    async def ask(title: str, text: str) -> bool:
+        return answers.pop(0)
+
+    monkeypatch.setattr(proto, "tell", tell)
+    monkeypatch.setattr(proto, "ask", ask)
+    form = proto.open_run_with(row(proto, "top"))
+    form.add_env()
+    name, value = editor_fields(app)
+    for bad in ("A=B", "MY VAR", "1ST", "my-var"):
+        name.value = bad
+        press(app, editor_save(app))
+        assert told and told[-1][0] == "Variable name"
+        assert app.main_window.title == "Add variable"  # still editing
+    assert form.env == {}
+    name.value, value.value = "A", "x\0y"
+    press(app, editor_save(app))
+    assert told[-1][0] == "Variable value" and "NUL" in told[-1][1]
+    assert app.main_window.title == "Add variable"
+    name.value, value.value = "A", "1"
+    press(app, editor_save(app))
+    assert form.env == {"A": "1"}
+
+    form.add_env()
+    name, value = editor_fields(app)
+    name.value, value.value = "A", "2"
+    press(app, editor_save(app))  # "Replace?" answered no
+    assert form.env == {"A": "1"}
+    assert app.main_window.title == "Add variable"
+
+
+def test_setup_form_saves_as_you_go_and_done_never_runs(
+    proto: ui.Prototype, app: toga.App, config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each change is saved straight away; Done only closes, it doesn't run."""
+    runs: list[Any] = []
+
+    async def run_row(r: Any) -> None:
+        runs.append(r.title)
+
+    monkeypatch.setattr(proto, "run_row", run_row)
+    form = proto.open_run_with(row(proto, "top"))
+    assert "run_with" not in config.read_text()  # opening saves nothing
+    form.add_arg()
+    (field,) = editor_fields(app)
+    field.value = "one"
+    press(app, editor_save(app))
+    assert proto.settings.get_run_with("Documents/top.py").args == ["one"]
+    form.add_env()
+    name, value = editor_fields(app)
+    name.value, value.value = "B", "2"
+    press(app, editor_save(app))
+    assert proto.settings.get_run_with("Documents/top.py").env == {"B": "2"}
+
+    form.add_arg()
+    (field,) = editor_fields(app)
+    field.value = "abandoned"
+    press(app, editor_cancel(app))  # the editor's Cancel drops the typing
+    assert proto.settings.get_run_with("Documents/top.py").args == ["one"]
+
+    form.done()
+    run(app, asyncio.sleep(0.01))
+    assert runs == []
+    form = proto.open_run_with(row(proto, "top"))
+    assert (form.args, form.env) == (["one"], {"B": "2"})
+    form.done()
+
+
+def test_tap_runs_with_saved_arguments_and_inherited_environment(
+    proto: ui.Prototype,
+    app: toga.App,
+    docs: Path,
+    config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tap passes the saved argv, and Setup's variables under the script's own."""
+    from mypystub.run_settings import RunSettings
+
+    proto.settings.set_environment({"GREETING": "Hello", "WHO": "world"})
+    proto.settings.set_run_with(
+        "Documents/case.py", RunSettings(["--loud", "two words"], {"WHO": "Ada"})
+    )
+    source = (
+        "import os, sys\n"
+        "print(sys.argv[1:])\n"
+        "print(os.environ['GREETING'], os.environ['WHO'])\n"
+    )
+    run_to_end(proto, app, docs, source, monkeypatch)
+    assert proto.print_text.value == "['--loud', 'two words']\nHello Ada\n"
+    assert "WHO" not in os.environ  # restored after the run
+
+
+def test_setup_environment_page(
+    proto: ui.Prototype, app: toga.App, config: Path
+) -> None:
+    """The Setup tab's Environment page edits variables only, saving as it goes."""
+    form = proto.open_setup_environment()
+    assert not form.with_args
+    assert app.main_window.title == "Environment"
+    form.add_env()
+    name, value = editor_fields(app)
+    name.value, value.value = "GREETING", "Hello"
+    press(app, editor_save(app))
+    assert proto.settings.get_environment() == {"GREETING": "Hello"}
+    form.done()
+
+
+def test_setup_forms_have_only_done(proto: ui.Prototype, config: Path) -> None:
+    """With changes saved as they're made, Done is the only button needed."""
+    for form in (
+        proto.open_run_with(row(proto, "top")),
+        proto.open_setup_environment(),
+    ):
+        buttons = [
+            w.text
+            for w in form.content.children[-1].children
+            if isinstance(w, toga.Button)
+        ]
+        assert buttons == ["Done"]
+        form.done()
+
+
+def test_run_with_toolbars_use_spaced_symbols(
+    proto: ui.Prototype, config: Path
+) -> None:
+    """Toolbar buttons are symbols, to fit a phone, with space between them."""
+    form = proto.open_run_with(row(proto, "top"))
+
+    def labels(box: toga.Widget) -> list[str]:
+        return [w.text for w in box.children if isinstance(w, toga.Button)]
+
+    args_header, _, _, move_row, env_header = form.content.children[:5]
+    assert labels(args_header) == ["+", "✎", "⌫"]
+    assert labels(env_header) == ["+", "✎", "⌫"]
+    assert labels(move_row) == ["⤒", "↑", "↓", "⤓"]
+    for button in args_header.children[1:] + env_header.children[1:]:
+        assert button.style.margin_left > 0 and button.style.margin_right > 0
+    form.done()
+
+
+def test_lists_keep_their_selection_when_the_form_reappears(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On iOS, a reappearing table must not clear the highlighted row."""
+    from mypystub import run_with
+
+    native_controller = SimpleNamespace(clearsSelectionOnViewWillAppear=True)
+    widget = SimpleNamespace(_impl=SimpleNamespace(native_controller=native_controller))
+    run_with.keep_selection(widget)  # type: ignore[arg-type]
+    assert native_controller.clearsSelectionOnViewWillAppear  # not iOS: untouched
+    monkeypatch.setattr(run_with.sys, "platform", "ios")
+    run_with.keep_selection(widget)  # type: ignore[arg-type]
+    assert native_controller.clearsSelectionOnViewWillAppear is False

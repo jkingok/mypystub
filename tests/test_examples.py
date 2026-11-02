@@ -41,6 +41,8 @@ def test_examples_are_grouped_in_folders() -> None:
         "Hello Project",
         "hello_world",
         "hello_you",
+        "show_args",
+        "show_env",
         "with_dependency",
     ]
     assert tree["errors"] == ["main_thread_error", "test_error"]

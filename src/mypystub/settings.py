@@ -6,8 +6,12 @@ import tomlkit  # Pure-Python style-preserving library
 from toga.paths import Paths
 from tomlkit.toml_document import TOMLDocument
 
+from mypystub.run_settings import RunSettings, sorted_env, usable_env
+
 DEFAULTS_NAME = "config.toml"
 CONFIG_NAME = "launcher.toml"
+RUN_WITH = "run_with"  # [run_with."<key>"]: settings saved per path
+ENVIRONMENT = "environment"  # [environment]: Setup's variables, inherited by all
 
 
 class Settings:
@@ -58,3 +62,37 @@ class Settings:
     def set(self, k: str, v: str) -> None:
         self.config_doc[k] = v
         self._save()  # preserve immediately
+
+    def get_run_with(self, key: str) -> RunSettings:
+        """The Setup settings saved for `key` (in [run_with]), or empty ones."""
+        return RunSettings.from_table(self.get_table(RUN_WITH).get(key))
+
+    def set_run_with(
+        self, key: str, settings: RunSettings, *, with_args: bool = True
+    ) -> None:
+        """Save Setup settings for `key`; without args, the environment only."""
+        self.config_doc = self._load()
+        if RUN_WITH not in self.config_doc:
+            self.config_doc[RUN_WITH] = tomlkit.table(is_super_table=True)
+        entry = tomlkit.table()
+        table = settings.to_table(with_args=with_args)
+        if with_args:
+            entry["args"] = table["args"]
+        env = tomlkit.inline_table()
+        env.update(table["env"])
+        entry["env"] = env
+        self.config_doc[RUN_WITH][key] = entry  # type: ignore[index]
+        self._save()
+
+    def get_environment(self) -> dict[str, str]:
+        """Setup's environment variables, which every run inherits."""
+        return usable_env(self.get_table(ENVIRONMENT))
+
+    def set_environment(self, env: dict[str, str]) -> None:
+        """Save Setup's environment variables."""
+        self.config_doc = self._load()
+        table = tomlkit.table()
+        for name, value in sorted_env(env):
+            table[name] = value
+        self.config_doc[ENVIRONMENT] = table
+        self._save()

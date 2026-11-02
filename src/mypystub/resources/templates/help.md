@@ -24,6 +24,15 @@ The list opens on two categories:
 
 Each row previews what's inside. Tap a folder to open it, and `..` to go back up. Tap a script or project to run it.
 
+Swipe a row for more:
+
+- **Swipe left: Info.** A folder or category shows its README (`README.md`, `README.txt` or `README`) if it has one. A script or project shows its description and dependencies.
+- **Swipe right: Setup** sets the command-line arguments and environment variables for a script or project. Arguments keep the order you give them; select one and use ⤒ ↑ ↓ ⤓ to move it to the top, up, down or to the bottom. In both lists, + adds, ✎ edits and ⌫ deletes. Environment variables are listed A–Z, since their order doesn't matter. Their names can use only letters, digits and `_`, and can't start with a digit (like `MY_SETTING`), so a shell could use them too. Changes are saved as you make them; *Done* goes back. A plain tap runs with these settings.
+
+Rows with nothing to show or run say why.
+
+Environment variables are inherited. Those set on the Setup tab's **Environment** page reach every run, and a script or project can override them, or add its own, with its own *Setup* (swipe right). Inherited variables show where they come from, such as "from Setup"; editing one sets an override here, and deleting the override uses the inherited value again.
+
 ## Script
 
 This is the input and output of a running app until it takes over the UI itself.
@@ -35,9 +44,10 @@ Clear can be used when the log gets too long.
 
 ## Settings
 
-The Setup tab has four sections:
+The Setup tab has these sections:
 
 - **Projects**: create a new project from the template (below).
+- **Environment**: environment variables every script and project inherits (see *Swipe right: Setup* above).
 - **Packages**: how many packages your prototypes have installed, and their size. *Check for updates* asks [PyPI](https://pypi.org) for newer versions (through its [JSON API](https://docs.pypi.org/api/json/)), and *Update all* installs them. *Wipe user packages…* deletes them all; prototypes reinstall what they need on their next run, which needs the network.
 - **Health**: *Check app health* compares the app's Python with [python.org's releases](https://www.python.org/downloads/) (through its [downloads API](https://www.python.org/api/v2/downloads/release/?is_published=true)): the latest dot release for this version, and the next version if it's out or in pre-release. It also compares the packages built into the app with PyPI. These can only be updated by a new build of the app.
 - **App**: back up your files, or exit back to the launcher you came from.
@@ -78,7 +88,7 @@ Ways a script can run, each with an example in the Examples category:
 - **Plain script**: `print` and `input` use the Script tab. The run ends when the script returns (`basics/hello_world.py`, `basics/hello_you.py`).
 - **Long-running script**: keeps working, for example in a loop or waiting on a `threading.Event`; the run lasts until it returns (`threads/countdown.py`).
 - **Main-thread work**: Toga widgets must be changed on the app's main thread, so schedule that work with `toga.App.app.loop.call_soon_threadsafe(...)` (`threads/main_thread.py`).
-- **Arguments and environment variables**: read `sys.argv` and `os.environ` as usual (`basics/args_and_env.py`).
+- **Arguments and environment variables**: read `sys.argv` and `os.environ` as usual; set them by swiping right and choosing *Setup* (`basics/args_and_env.py`, `basics/show_args.py`, `basics/show_env.py`).
 - **Dependencies**: list them in a PEP 723 block, and they're installed before the first run (`basics/with_dependency.py`).
 - **Project folder**: a folder with a `pyproject.toml` and its code under `src/` (`basics/hello_project/`).
 - **Taking over the screen**: push onto `main_window.content_stack` and pop on Back; nested screens work too, and the run ends back at the launcher (`takeover/back_button.py`, `takeover/nested_takeover.py`).

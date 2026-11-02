@@ -61,3 +61,41 @@ def test_dependency_example_declares_its_dependency() -> None:
         if e["title"] == "with_dependency"
     ]
     assert entry["dependencies"] == ["humanize"]
+
+
+def test_show_args_lists_each_argument(capsys: pytest.CaptureFixture[str]) -> None:
+    """show_args numbers each argument set with Setup, keeping their order."""
+    run_example("basics/show_args.py", argv=["--name", "Ada Lovelace", ""])
+    assert capsys.readouterr().out.splitlines() == [
+        "1: --name",
+        "2: Ada Lovelace",
+        "3: ",
+    ]
+
+
+def test_show_args_without_arguments(capsys: pytest.CaptureFixture[str]) -> None:
+    """With no arguments, show_args says how to set some."""
+    run_example("basics/show_args.py")
+    assert capsys.readouterr().out.startswith("No arguments.")
+
+
+def test_show_env_named_variables(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """show_env prints the variables named as arguments, set or not."""
+    monkeypatch.delenv("MISSING_ONE", raising=False)
+    run_example(
+        "basics/show_env.py", argv=["GREETING", "MISSING_ONE"], env={"GREETING": "Hi"}
+    )
+    assert capsys.readouterr().out.splitlines() == [
+        "GREETING=Hi",
+        "MISSING_ONE is not set",
+    ]
+
+
+def test_show_env_lists_everything_sorted(capsys: pytest.CaptureFixture[str]) -> None:
+    """With no arguments, show_env lists every variable, alphabetised."""
+    run_example("basics/show_env.py", env={"AAA_FIRST": "1", "zzz_last": "2"})
+    names = [line.split("=", 1)[0] for line in capsys.readouterr().out.splitlines()]
+    assert "AAA_FIRST" in names and "zzz_last" in names
+    assert names == sorted(names, key=str.casefold)

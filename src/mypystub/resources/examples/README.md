@@ -4,9 +4,11 @@ Sample prototypes and scratch scripts, shown in the app's **Examples** category.
 
 They are grouped into folders the same way you can organise your own scripts in the Files app: tap a folder to open it, and `..` to go back. Each script starts with a one-line docstring, which the list shows as its description.
 
-- `basics/`
+- `basics/` (its `README.md` is what Info shows for the folder)
   - `hello_world.py`: print a greeting.
   - `hello_you.py`: read input with `input()`.
+  - `show_args.py`: list the command-line arguments set with **Setup** (swipe right).
+  - `show_env.py`: show the environment variables named as arguments, or all of them.
   - `args_and_env.py`: greet each name in `sys.argv`, using `$GREETING` if it's set.
   - `with_dependency.py`: declare a PyPI dependency in a PEP 723 block; it's installed on the first run.
   - `hello_project/`: a project folder with a `pyproject.toml`, a package under `src/`, and a dependency (`humanize`, installed on first run). It appears in the list as one entry, "Hello Project".
