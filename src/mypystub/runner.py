@@ -11,14 +11,160 @@ Kept free of Toga imports so it can be unit tested on desktop.
   started, which is when its Back/done callback pops it.
 """
 
+from __future__ import annotations
+
+import importlib
 import os
+import re
 import runpy
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Literal, Self
+
+# How a target runs: as a file or module (``python script.py``, ``python -m``),
+# or as an entry point of a project's [project.scripts] (cli),
+# [project.gui-scripts] (gui) or any other [project.entry-points.<group>]
+RunKind = Literal["script", "cli", "gui", "other"]
+
+# PyPA entry point object reference: importable.module[:object.attr][ [extras]]
+_IDENTIFIER = r"[^\W\d]\w*"
+_REFERENCE = re.compile(
+    rf"^\s*(?P<module>{_IDENTIFIER}(?:\.{_IDENTIFIER})*)"
+    rf"(?:\s*:\s*(?P<attrs>{_IDENTIFIER}(?:\.{_IDENTIFIER})*))?"
+    r"\s*(?:\[[^\]]*\])?\s*$"
+)
+
+
+class NotRunnable(Exception):
+    """An entry point names something that can't be called or run."""
+
+
+class UnsupportedGui(Exception):
+    """A GUI entry point starts its own Toga app, which the launcher can't host."""
+
+
+@dataclass(frozen=True)
+class Reference:
+    """An entry point's object reference, such as ``pkg.cli:Tool.run``.
+
+    See the PyPA entry points specification. A trailing ``[extras]`` is
+    accepted and ignored, as the specification deprecates it.
+    """
+
+    module: str
+    attrs: tuple[str, ...] = ()
+
+    @classmethod
+    def parse(cls, text: str) -> Reference:
+        """Parse a reference; ValueError if it isn't one."""
+        match = _REFERENCE.match(text)
+        if not match:
+            raise ValueError(f"Not an entry point reference: {text!r}")
+        attrs = match["attrs"]
+        return cls(match["module"], tuple(attrs.split(".")) if attrs else ())
+
+    def __str__(self) -> str:
+        """The reference without extras, as ``module:attr.attr``."""
+        return f"{self.module}:{'.'.join(self.attrs)}" if self.attrs else self.module
+
+
+def resolve(reference: Reference) -> Any:
+    """Import the module, then follow each attribute: classes, methods, values."""
+    obj: Any = importlib.import_module(reference.module)
+    for attr in reference.attrs:
+        obj = getattr(obj, attr)
+    return obj
+
+
+def _toga_app() -> Any:
+    """The running Toga app, if Toga has been imported (without importing it)."""
+    toga = sys.modules.get("toga")
+    app_class = getattr(toga, "App", None)
+    return getattr(app_class, "app", None)
+
+
+def _set_toga_app(app: Any) -> None:
+    toga = sys.modules.get("toga")
+    if app_class := getattr(toga, "App", None):
+        app_class.app = app
+
+
+def _looks_like_app(obj: object) -> bool:
+    return hasattr(obj, "main_loop") and hasattr(obj, "main_window")
+
+
+class CallAdapter:
+    """Run an entry point by calling it with no arguments."""
+
+    def __init__(self, exit_with_result: bool = False) -> None:
+        """`exit_with_result`: treat the return value as an exit status.
+
+        Console scripts do: their installed wrapper calls ``sys.exit(main())``.
+        """
+        self.exit_with_result = exit_with_result
+
+    def call(self, obj: Any, reference: Reference) -> Any:
+        """Call `obj`, or say why it can't be run."""
+        if not callable(obj):
+            kind = type(obj).__name__
+            article = "an" if kind[:1].lower() in "aeiou" else "a"
+            raise NotRunnable(
+                f"{reference} is {article} {kind}, not something that can run."
+            )
+        result = obj()
+        if self.exit_with_result and result is not None:
+            raise SystemExit(result)
+        return result
+
+
+class GuiAdapter(CallAdapter):
+    """Run a GUI entry point, as far as the launcher can host it.
+
+    Entry points that take over the launcher's window with the takeover
+    protocol (``main_window.content_stack``) work. A typical Briefcase
+    ``main()`` builds and returns its own ``toga.App`` instead; the launcher
+    can't host a second app yet, so that raises :class:`UnsupportedGui`, and
+    the launcher's own app is put back if the new one replaced it. Hosting such
+    apps on a best-effort basis belongs here.
+    """
+
+    def call(self, obj: Any, reference: Reference) -> Any:
+        """Call `obj`; refuse, cleanly, if it made its own Toga app."""
+        before = _toga_app()
+        try:
+            result = super().call(obj, reference)
+        except NotRunnable:
+            raise
+        except Exception as e:
+            if _toga_app() is not before:
+                _set_toga_app(before)
+                raise self.unsupported(reference) from e
+            raise
+        if _toga_app() is not before or (
+            _looks_like_app(result) and result is not before
+        ):
+            _set_toga_app(before)
+            raise self.unsupported(reference)
+        return result
+
+    @staticmethod
+    def unsupported(reference: Reference) -> UnsupportedGui:
+        """The error for an entry point that starts its own app."""
+        return UnsupportedGui(
+            f"{reference} starts its own Toga app, which MyPyStub can't host yet. "
+            "GUI entry points can take over the launcher's window instead, with "
+            "main_window.content_stack (see the takeover examples)."
+        )
+
+
+ADAPTERS: dict[RunKind, CallAdapter] = {
+    "cli": CallAdapter(exit_with_result=True),
+    "gui": GuiAdapter(),
+    "other": CallAdapter(),
+}
 
 
 @dataclass(frozen=True)
@@ -30,12 +176,37 @@ class RunTarget:
     :param workdir: Working directory for the run.
     :param module: Dotted module name to run with ``python -m`` semantics, or
         None to run ``path`` as a script.
+    :param kind: ``"script"`` for files and modules, else the entry point kind.
+    :param reference: The entry point's object reference, for entry points.
+    :param argv0: ``sys.argv[0]``; an entry point's name, else ``path``.
     """
 
     path: Path
     import_root: Path
     workdir: Path
     module: str | None = None
+    kind: RunKind = "script"
+    reference: str | None = None
+    argv0: str | None = None
+
+
+def entry_target(
+    name: str, reference: str, kind: RunKind, project_dir: Path, import_root: Path
+) -> RunTarget:
+    """Build a :class:`RunTarget` for a project's entry point.
+
+    It runs from the project folder with ``import_root`` importable, and
+    ``sys.argv[0]`` is the entry point's name, as for an installed script.
+    """
+    Reference.parse(reference)  # fail early on a malformed reference
+    return RunTarget(
+        path=Path(project_dir) / "pyproject.toml",
+        import_root=Path(import_root),
+        workdir=Path(project_dir),
+        kind=kind,
+        reference=reference,
+        argv0=name,
+    )
 
 
 def target_for(entry_point: Path, folder_root: Path) -> RunTarget:
@@ -82,7 +253,7 @@ class RunContext:
     ) -> None:
         """Prepare a run of `target` with extra `argv` and `env` entries."""
         self.target = target
-        self.argv = [str(target.path), *argv]
+        self.argv = [target.argv0 or str(target.path), *argv]
         self.env = dict(env or {})
         self.purge_roots = [p.resolve() for p in (target.import_root, *purge_roots)]
         self._saved: dict[str, Any] | None = None
@@ -105,7 +276,21 @@ class RunContext:
         return self
 
     def run(self) -> dict[str, Any]:
-        """Execute the target as ``__main__`` and return its globals."""
+        """Execute the target as ``__main__`` and return its globals.
+
+        An entry point that names only a module runs it like ``python -m``.
+        One that names an object is resolved, attribute by attribute, and
+        called by its kind's adapter; its return value is in ``"result"``.
+        """
+        if self.target.reference:
+            reference = Reference.parse(self.target.reference)
+            if not reference.attrs:
+                return runpy.run_module(
+                    reference.module, run_name="__main__", alter_sys=True
+                )
+            obj = resolve(reference)
+            adapter = ADAPTERS.get(self.target.kind, ADAPTERS["other"])
+            return {"result": adapter.call(obj, reference)}
         if self.target.module:
             return runpy.run_module(
                 self.target.module, run_name="__main__", alter_sys=True

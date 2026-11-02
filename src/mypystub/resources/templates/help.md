@@ -31,7 +31,7 @@ Swipe a row for more:
 
 Rows with nothing to show or run say why.
 
-Environment variables are inherited. Those set on the Setup tab's **Environment** page reach every run, and a script or project can override them, or add its own, with its own *Setup* (swipe right). Inherited variables show where they come from, such as "from Setup"; editing one sets an override here, and deleting the override uses the inherited value again.
+Environment variables are inherited. Those set on the Setup tab's **Environment** page reach every run, and a script or project can override them, or add its own, with its own *Setup* (swipe right). A project with several entry points has its own Setup too, with variables but no arguments, which its entry points inherit and can override in turn. Inherited variables show where they come from, such as "from Setup"; editing one sets an override here, and deleting the override uses the inherited value again.
 
 ## Script
 
@@ -91,6 +91,7 @@ Ways a script can run, each with an example in the Examples category:
 - **Arguments and environment variables**: read `sys.argv` and `os.environ` as usual; set them by swiping right and choosing *Setup* (`basics/args_and_env.py`, `basics/show_args.py`, `basics/show_env.py`).
 - **Dependencies**: list them in a PEP 723 block, and they're installed before the first run (`basics/with_dependency.py`).
 - **Project folder**: a folder with a `pyproject.toml` and its code under `src/` (`basics/hello_project/`).
+- **Entry points**: a project's `[project.scripts]` (console), `[project.gui-scripts]` (GUI) and any other `[project.entry-points.<group>]`. A project with one entry point runs it when tapped. With several, it opens like a folder, one row per entry point. `[tool.stub_launcher] entry_point` overrides them all. A reference such as `pkg.cli:Tool.run` is followed attribute by attribute and called, with `sys.argv[0]` set to the entry point's name; one that names only a module runs it like `python -m`. A console entry point's return value is its exit status. GUI entry points work when they take over the window with `main_window.content_stack`; one that starts its own `toga.App` can't be hosted yet (`projects/two_tools/`).
 - **Taking over the screen**: push onto `main_window.content_stack` and pop on Back; nested screens work too, and the run ends back at the launcher (`takeover/back_button.py`, `takeover/nested_takeover.py`).
 
 Each run gets its own `sys.argv`, environment and working directory (the script's folder, or the project folder), and they are restored afterwards. Your own modules are reloaded on the next run, so edits take effect without restarting the app.

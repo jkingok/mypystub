@@ -12,6 +12,8 @@ They are grouped into folders the same way you can organise your own scripts in 
   - `args_and_env.py`: greet each name in `sys.argv`, using `$GREETING` if it's set.
   - `with_dependency.py`: declare a PyPI dependency in a PEP 723 block; it's installed on the first run.
   - `hello_project/`: a project folder with a `pyproject.toml`, a package under `src/`, and a dependency (`humanize`, installed on first run). It appears in the list as one entry, "Hello Project".
+- `projects/`
+  - `two_tools/`: one project with several entry points, listed as a folder. `greet` and `shout` are console entry points (`shout` is a classmethod), `window` is a GUI entry point that takes over the screen, and `hello` and `settings` are in a plugin group (`settings` is a dictionary, so it can't run). It also installs standalone with `pip install -e .`.
 - `takeover/`
   - `back_button.py`: replace the launcher's screen with your own, then hand it back with a Back button. It pushes the launcher onto `main_window.content_stack` and pops it on Back, which is how the launcher knows the run has ended.
   - `nested_takeover.py`: two screens deep; each Back pops one, and the run ends back at the launcher.

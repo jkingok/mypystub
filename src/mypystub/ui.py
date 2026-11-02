@@ -37,7 +37,16 @@ CATEGORY_ICONS = {
 KIND_ICONS = {
     "folder": "folder.png",
     "project": "box.png",
+    "package": "boxes.png",  # a project with several entry points
     "script": "file-code.png",
+}
+
+# Entry points inside a package, by kind. Placeholders until the icons are
+# added: a missing file shows no icon (see bundled_icon).
+ENTRY_ICONS = {
+    "cli": "terminal.png",
+    "gui": "window.png",
+    "other": "plug.png",
 }
 
 
@@ -349,6 +358,8 @@ class Prototype:
         # within it, relative to the category's root
         self.category: str | None = None
         self.subfolder = Path()
+        # A package with several entry points that's open, listing them
+        self.package_dir: Path | None = None
         # Content-stack depths under each screen pushed by push_screen()
         self.screen_bases: list[int] = []
         # Toga's swipe actions are the same for every row (#59): swipe left
@@ -451,6 +462,7 @@ class Prototype:
         """Open a category at its root, or None for the list of categories."""
         self.category = category
         self.subfolder = Path()
+        self.package_dir = None
 
     def bundled_icon(self, filename: str) -> toga.Image | None:
         """Load an icon from resources/icons, or None until the file is added."""
@@ -484,6 +496,10 @@ class Prototype:
                 }
                 for name, path in self.category_dirs().items()
             ]
+            return
+
+        if self.package_dir is not None:
+            self.script_list.data = self.package_rows(self.package_dir)
             return
 
         # 1. Gather all of our TOML configuration profiles
@@ -532,6 +548,30 @@ class Prototype:
             list_items.append(row)
 
         self.script_list.data = list_items
+
+    def current_folder_name(self) -> str:
+        """The folder being browsed, as messages name it."""
+        if self.subfolder == Path():
+            return str(self.category)
+        return f"{self.category}/{self.subfolder.as_posix()}"
+
+    def package_rows(self, package_dir: Path) -> list[dict[str, Any]]:
+        """The rows inside an open package: ".." and its entry points."""
+        package = pip.scan_project(package_dir)
+        rows: list[dict[str, Any]] = [
+            {
+                "title": "..",
+                "subtitle": f"Back to {self.current_folder_name()}",
+                "icon": self.bundled_icon("arrow-small-left.png"),
+                "package_up": True,
+            }
+        ]
+        for row in pip.entry_rows(package) if package["kind"] == "package" else []:
+            row.pop("icon_path")
+            row["icon"] = self.bundled_icon(ENTRY_ICONS[row["entry"].kind])
+            row["splash"] = None
+            rows.append(row)
+        return rows
 
     def new_project(self, widget: toga.Button, **kwargs: Any) -> None:
         def snake(s: str) -> str:
@@ -683,12 +723,14 @@ class Prototype:
         self.script_activity.update("Failed", on=False)
 
         async def report() -> None:
-            message = (
-                f"Script exited with status {error.code}"
-                if isinstance(error, SystemExit)
-                else f"Script failed with: {error!s}"
-            )
-            await self.error(message, "Script Failure")
+            title = "Script Failure"
+            if isinstance(error, (runner.NotRunnable, runner.UnsupportedGui)):
+                message, title = str(error), "Can't Run"
+            elif isinstance(error, SystemExit):
+                message = f"Script exited with status {error.code}"
+            else:
+                message = f"Script failed with: {error!s}"
+            await self.error(message, title)
             if run_id == self.run_id:
                 self.end_script(run_id)
 
@@ -714,13 +756,23 @@ class Prototype:
             self.reload_menu(widget)
             return
 
+        # Packages with several entry points open like folders
+        if getattr(selected_row, "package_up", False):
+            self.package_dir = None
+            self.reload_menu(widget)
+            return
+        if row_info.row_type(selected_row) == "package":
+            self.package_dir = Path(cast(Any, selected_row).project_dir)
+            self.reload_menu(widget)
+            return
+
         # Folder rows (including "..") navigate instead of running anything
         if folder := getattr(selected_row, "folder", None):
             self.subfolder = pip.relative_folder(self.get_category_dir(), folder)
             self.reload_menu(widget)
             return
 
-        if not hasattr(selected_row, "entry_point"):
+        if not row_info.runnable(row_info.row_type(selected_row)):
             return
         await self.run_row(selected_row)
 
@@ -773,16 +825,9 @@ class Prototype:
                 return
 
         # 3. Run it the way Python would: __main__, argv, its folder importable
-        entry_point = Path(cast(Any, selected_row).entry_point)
-        folder_root = Path(getattr(selected_row, "folder_root", entry_point.parent))
-        print(f"Launching {title} from path: {entry_point}")
         try:
-            if not entry_point.is_file():
-                raise FileNotFoundError(f"Entry point not found: {entry_point}")
             context = runner.RunContext(
-                runner.target_for(entry_point, folder_root),
-                argv=settings.args,
-                env=env,
+                self.run_target(selected_row), argv=settings.args, env=env
             )
         except Exception as e:  # noqa: BLE001
             self.script_activity.update(on=False)
@@ -792,6 +837,22 @@ class Prototype:
 
         self.script_activity.update(f"Running {title}")
         self.app.loop.call_soon(lambda: self.start(context))
+
+    def run_target(self, row: Any) -> runner.RunTarget:
+        """What a runnable row runs: a file, or one of its project's entry points."""
+        if entry := getattr(row, "entry", None):
+            project_dir = Path(row.project_dir)
+            folder_root = Path(getattr(row, "folder_root", project_dir))
+            print(f"Launching {entry.name} ({entry.reference}) from {project_dir}")
+            return runner.entry_target(
+                entry.name, entry.reference, entry.kind, project_dir, folder_root
+            )
+        entry_point = Path(row.entry_point)
+        folder_root = Path(getattr(row, "folder_root", entry_point.parent))
+        print(f"Launching {row.title} from path: {entry_point}")
+        if not entry_point.is_file():
+            raise FileNotFoundError(f"Entry point not found: {entry_point}")
+        return runner.target_for(entry_point, folder_root)
 
     # -- Swipe actions: Info and Setup (#59) -----------------------------------
 
@@ -804,13 +865,17 @@ class Prototype:
                 return Path(row.folder)
             case "script":
                 return Path(row.entry_point)
-            case "project":
+            case "project" | "package" | "entry":
                 return Path(row.project_dir)
             case _:
                 return None
 
-    def row_key(self, row: Any) -> str:
-        """The key a row's settings are saved under: its path in its category."""
+    def row_key(self, row: Any, *, entry: bool = True) -> str:
+        """The key a row's settings are saved under: its path in its category.
+
+        An entry point inside a package adds its name to the package's path,
+        unless `entry` is False, which gives the package's own key.
+        """
         path = self.row_path(row)
         assert self.category is not None and path is not None
         base = self.get_category_dir().resolve()
@@ -818,12 +883,17 @@ class Prototype:
             relative = path.resolve().relative_to(base)
         except ValueError:
             relative = Path(path.name)
-        return settings_key(self.category, relative)
+        name = None
+        if entry and row_info.row_type(row) == "entry":
+            name = row.entry.name
+        return settings_key(self.category, relative, name)
 
     def up_destination(self, row: Any) -> str:
         """Where a ".." row leads, for messages."""
         if getattr(row, "categories", False) or self.category is None:
             return "the categories"
+        if getattr(row, "package_up", False):
+            return self.current_folder_name()
         parent = self.subfolder.parent
         if parent == Path():
             return self.category
@@ -838,11 +908,22 @@ class Prototype:
         """Setup's environment variables, inherited by every run."""
         return Layer("Setup", self.settings.get_environment())
 
+    def inherited_layers(self, row: Any) -> list[Layer]:
+        """The environment layers a row inherits: Setup, then its package's."""
+        layers = [self.setup_layer()]
+        if row_info.row_type(row) == "entry":
+            package = self.settings.get_run_with(self.row_key(row, entry=False))
+            layers.append(Layer(str(row.package_title), package.env))
+        return layers
+
     def run_settings_for(self, row: Any) -> tuple[RunSettings, dict[str, str]]:
-        """A runnable row's saved settings, and its environment with Setup's."""
+        """A runnable row's saved settings, and the environment it inherits.
+
+        Setup's variables, then its package's, then its own: inner ones win.
+        """
         own = self.settings.get_run_with(self.row_key(row))
-        env = merged_env([self.setup_layer().env, own.env])
-        return own, env
+        layers = [layer.env for layer in self.inherited_layers(row)]
+        return own, merged_env([*layers, own.env])
 
     def handle_info(self, widget: toga.DetailedList, row: Any, **kwargs: Any) -> None:
         """Swipe left: Info."""
@@ -911,25 +992,30 @@ class Prototype:
         """Open the Setup form, or say why a row has none."""
         kind = row_info.row_type(row)
         title = str(getattr(row, "title", ""))
-        if not row_info.runnable(kind):
+        if not row_info.runnable(kind) and kind != "package":
             message = row_info.run_with_message(kind, title, self.up_destination(row))
             await self.info(message, title)
             return
         self.open_run_with(row)
 
     def open_run_with(self, row: Any) -> RunWithForm:
-        """Open the Setup form for a script or project row."""
+        """Open the Setup form for a runnable row or a package.
+
+        A package with several entry points has no arguments of its own and
+        can't run, so its form sets only the variables its entry points inherit.
+        """
         key = self.row_key(row)
         saved = self.settings.get_run_with(key)
+        runs = row_info.runnable(row_info.row_type(row))
 
         def save(settings: RunSettings) -> None:
-            self.settings.set_run_with(key, settings)
+            self.settings.set_run_with(key, settings, with_args=runs)
 
         form = RunWithForm(
             str(getattr(row, "title", "")),
-            args=saved.args,
+            args=saved.args if runs else None,
             env=saved.env,
-            inherited=[self.setup_layer()],
+            inherited=self.inherited_layers(row),
             screens=self,
             on_save=save,
             ask=self.ask,

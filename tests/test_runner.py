@@ -4,15 +4,20 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 from mypystub.runner import (
+    NotRunnable,
     ObservableStack,
+    Reference,
     RunContext,
     RunLifetime,
+    UnsupportedGui,
     end_action,
+    entry_target,
+    resolve,
     target_for,
 )
 
@@ -359,3 +364,187 @@ def test_floor_without_window_raises() -> None:
     stack.floor = 1
     with pytest.raises(IndexError):
         stack.pop()
+
+
+# ---------------------------------------------------------------------------
+# Entry points (#94)
+# ---------------------------------------------------------------------------
+
+TOOLS = """
+import sys
+
+import runner_registry
+
+SETTINGS = {"colour": "blue"}
+
+
+def ok():
+    runner_registry.items.append(("ok", list(sys.argv)))
+
+
+def fails():
+    return 3
+
+
+class Tool:
+    @classmethod
+    def run(cls):
+        runner_registry.items.append(("Tool.run", list(sys.argv)))
+
+    class Nested:
+        @staticmethod
+        def go():
+            runner_registry.items.append(("Nested.go", None))
+"""
+
+
+@pytest.fixture
+def project(tmp_path: Path) -> Path:
+    """A project with a src/ package of entry point targets."""
+    write(tmp_path / "proj" / "src" / "eptools" / "__init__.py", "")
+    write(tmp_path / "proj" / "src" / "eptools" / "cli.py", TOOLS)
+    write(
+        tmp_path / "proj" / "src" / "eptools" / "__main__.py",
+        "import runner_registry\nrunner_registry.items.append(('main', __name__))\n",
+    )
+    return tmp_path / "proj"
+
+
+def run_entry(project: Path, reference: str, kind: str = "cli", argv=()) -> dict:
+    """Run one entry point of `project` the way the launcher does."""
+    target = entry_target("tool", reference, kind, project, project / "src")  # type: ignore[arg-type]
+    with RunContext(target, argv=argv) as context:
+        return context.run()
+
+
+@pytest.mark.parametrize(
+    ("text", "module", "attrs"),
+    [
+        ("pkg", "pkg", ()),
+        ("pkg.mod:func", "pkg.mod", ("func",)),
+        ("pkg.mod:Class.method.attr", "pkg.mod", ("Class", "method", "attr")),
+        (" pkg.mod : func ", "pkg.mod", ("func",)),
+        ("pkg.mod:func [extra1, extra2]", "pkg.mod", ("func",)),
+    ],
+)
+def test_parse_references(text: str, module: str, attrs: tuple) -> None:
+    """References follow the PyPA syntax; extras are accepted and dropped."""
+    assert Reference.parse(text) == Reference(module, attrs)
+
+
+@pytest.mark.parametrize("text", ["", "1pkg", "pkg:", "pkg:a.", "pkg::a", "a b"])
+def test_malformed_references(text: str) -> None:
+    """Anything else is refused before a run starts."""
+    with pytest.raises(ValueError):
+        Reference.parse(text)
+
+
+def test_entry_target_runs_from_the_project(project: Path) -> None:
+    """argv[0] is the entry point's name; the project is the working directory."""
+    target = entry_target("greet", "eptools.cli:ok", "cli", project, project / "src")
+    assert (target.argv0, target.workdir, target.import_root) == (
+        "greet",
+        project,
+        project / "src",
+    )
+    with pytest.raises(ValueError):
+        entry_target("bad", "not a reference", "cli", project, project / "src")
+
+
+def test_function_entry_point(project: Path, registry: ModuleType) -> None:
+    """A function is called with argv set; state is restored after."""
+    argv = list(sys.argv)
+    run_entry(project, "eptools.cli:ok", argv=["--x", "1"])
+    assert registry.items == [("ok", ["tool", "--x", "1"])]
+    assert sys.argv == argv and "eptools" not in sys.modules
+
+
+def test_methods_and_nested_attributes(project: Path, registry: ModuleType) -> None:
+    """The runner follows attributes: classmethods and nested staticmethods."""
+    run_entry(project, "eptools.cli:Tool.run")
+    run_entry(project, "eptools.cli:Tool.Nested.go", kind="other")
+    assert registry.items == [("Tool.run", ["tool"]), ("Nested.go", None)]
+
+
+def test_module_only_reference_runs_as_main(
+    project: Path, registry: ModuleType
+) -> None:
+    """A reference to a module alone runs it like python -m."""
+    run_entry(project, "eptools", kind="other")
+    assert registry.items == [("main", "__main__")]
+
+
+def test_console_return_value_is_the_exit_status(
+    project: Path, registry: ModuleType
+) -> None:
+    """Console scripts exit with what their function returns, like sys.exit(main())."""
+    with pytest.raises(SystemExit) as raised:
+        run_entry(project, "eptools.cli:fails")
+    assert raised.value.code == 3
+    # Other groups' return values are just results
+    assert run_entry(project, "eptools.cli:fails", kind="other") == {"result": 3}
+
+
+def test_non_callable_entry_point(project: Path, registry: ModuleType) -> None:
+    """A value that can't be called says what it is."""
+    with pytest.raises(NotRunnable, match="eptools.cli:SETTINGS is a dict"):
+        run_entry(project, "eptools.cli:SETTINGS", kind="other")
+
+
+def test_missing_attribute(project: Path, registry: ModuleType) -> None:
+    """A reference to something that isn't there fails like Python would."""
+    with pytest.raises(AttributeError):
+        run_entry(project, "eptools.cli:missing")
+
+
+def test_resolve_follows_attributes() -> None:
+    """resolve() imports the module and walks the attribute path."""
+    assert resolve(Reference("os.path", ("join",))) is os.path.join
+
+
+class FakeApp:
+    """Stands in for toga.App: creating one replaces the running app."""
+
+    app: object = None
+
+    def __init__(self) -> None:
+        FakeApp.app = self
+        self.main_window = None
+
+    def main_loop(self) -> None:
+        """Never called by the launcher."""
+
+
+@pytest.fixture
+def fake_toga(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """A stand-in "toga" module whose running app is a sentinel."""
+    launcher_app = object()
+    monkeypatch.setattr(FakeApp, "app", launcher_app)
+    module = SimpleNamespace(App=FakeApp, launcher_app=launcher_app)
+    monkeypatch.setitem(sys.modules, "toga", module)
+    return module
+
+
+def test_gui_entry_point_using_takeover_runs(
+    project: Path, registry: ModuleType, fake_toga: SimpleNamespace
+) -> None:
+    """A GUI entry point that doesn't make its own app runs like any other."""
+    run_entry(project, "eptools.cli:ok", kind="gui")
+    assert registry.items == [("ok", ["tool"])]
+
+
+def test_gui_entry_point_making_its_own_app_is_refused(
+    project: Path, fake_toga: SimpleNamespace
+) -> None:
+    """Making a second app is refused, and the launcher's app is put back."""
+    write(
+        project / "src" / "eptools" / "gui.py",
+        "import toga\n\n"
+        "def main():\n    return toga.App()\n\n"
+        "def made_but_kept():\n    toga.App()\n\n"
+        "def crashes():\n    toga.App()\n    raise RuntimeError('no loop')\n",
+    )
+    for name in ("main", "made_but_kept", "crashes"):
+        with pytest.raises(UnsupportedGui, match="can't host yet"):
+            run_entry(project, f"eptools.gui:{name}", kind="gui")
+        assert FakeApp.app is fake_toga.launcher_app

@@ -24,6 +24,7 @@ The launcher lists your scripts and project folders; tap one to run it. *This le
 | Arguments and environment variables (set by swiping right for **Setup**) | when the script returns | `basics/args_and_env.py`, `basics/show_args.py`, `basics/show_env.py` |
 | Dependencies (PEP 723) | installed first, then as above | `basics/with_dependency.py` |
 | Project folder (`pyproject.toml`) | as for its entry point | `basics/hello_project/` |
+| Entry points (`[project.scripts]`, `gui-scripts`, other groups) | as for a script; several open like a folder | `projects/two_tools/` |
 | Taking over the screen with Toga | when it hands the screen back | `takeover/back_button.py`, `takeover/nested_takeover.py` |
 
 Swipe left on a row for **Info** (a folder's README, or a script's description), and right for **Setup**, which sets its arguments and environment variables, saving as you go. Variables set on the Setup tab's **Environment** page are inherited by every run. The in-app Help page explains each one (see "How your script is run"), and the examples are in the app's **Examples** category. Your own modules are reloaded on each run, so edits take effect without restarting the app.

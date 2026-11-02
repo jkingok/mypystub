@@ -768,8 +768,53 @@ def _icon_within(folder: Path, relative: str | None) -> Path | None:
     return icon
 
 
+@dataclass(frozen=True)
+class EntryPoint:
+    """One of a project's PEP 621 entry points.
+
+    ``kind`` is ``"cli"`` for ``[project.scripts]``, ``"gui"`` for
+    ``[project.gui-scripts]``, and ``"other"`` for any
+    ``[project.entry-points.<group>]``, whose group is kept in ``group``.
+    """
+
+    name: str
+    reference: str
+    kind: str
+    group: str
+
+    @property
+    def label(self) -> str:
+        """How the list describes the kind: Console, GUI, or the group's name."""
+        return {"cli": "Console", "gui": "GUI"}.get(self.kind, self.group)
+
+
+def project_entry_points(project_meta: Mapping[str, Any]) -> list[EntryPoint]:
+    """Every entry point a ``[project]`` table declares, sorted by name."""
+    found: list[EntryPoint] = []
+    tables: list[tuple[str, str, Any]] = [
+        ("cli", "console_scripts", project_meta.get("scripts", {})),
+        ("gui", "gui_scripts", project_meta.get("gui-scripts", {})),
+    ]
+    other = project_meta.get("entry-points", {})
+    if isinstance(other, Mapping):
+        tables += [("other", group, table) for group, table in other.items()]
+    for kind, group, table in tables:
+        if not isinstance(table, Mapping):
+            continue
+        for name, reference in table.items():
+            if isinstance(reference, str):
+                found.append(EntryPoint(str(name), reference, kind, str(group)))
+    return sorted(found, key=lambda e: (e.name.casefold(), e.name, e.group))
+
+
 def scan_project(item: Path) -> dict[str, Any]:
-    """Describe a project folder from its ``pyproject.toml``."""
+    """Describe a project folder from its ``pyproject.toml``.
+
+    ``[tool.stub_launcher] entry_point`` names the file to run. Without it,
+    the project's PEP 621 entry points decide: one is run when the project is
+    tapped, and several make the project a ``"package"`` that opens like a
+    folder, listing them. A project with neither runs ``main.py``.
+    """
     with open(item / "pyproject.toml", "rb") as f:
         toml_data = tomllib.load(f)
 
@@ -782,7 +827,7 @@ def scan_project(item: Path) -> dict[str, Any]:
     tool_meta = toml_data.get("tool", {}).get("stub_launcher", {})
     icon_relative = tool_meta.get("icon")
 
-    return {
+    row: dict[str, Any] = {
         "title": tool_meta.get("display_name", name),
         "subtitle": desc,
         "icon_path": item / icon_relative if icon_relative else None,
@@ -795,6 +840,33 @@ def scan_project(item: Path) -> dict[str, Any]:
         "project_dir": item,
         "kind": "project",
     }
+    if "entry_point" in tool_meta:
+        return row
+    entries = project_entry_points(project_meta)
+    if len(entries) == 1:
+        row["entry"] = entries[0]  # the project's implied entry point
+    elif entries:
+        del row["entry_point"]
+        row["kind"] = "package"
+        row["entries"] = entries
+    return row
+
+
+def entry_rows(package: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The rows listed inside a package with several entry points."""
+    shared = ("folder_root", "project_dir", "dependencies", "aliases")
+    return [
+        {
+            "title": entry.name,
+            "subtitle": f"{entry.label} · {entry.reference}",
+            "icon_path": None,
+            "entry": entry,
+            "package_title": package["title"],
+            "kind": "entry",
+            **{key: package[key] for key in shared},
+        }
+        for entry in package["entries"]
+    ]
 
 
 def folder_summary(folder: Path) -> str:

@@ -321,3 +321,101 @@ def test_bad_alias_table_skips_the_entry(tmp_path: Path) -> None:
         ),
     )
     assert list(piplike.scan_all_prototypes(tmp_path)) == []
+
+
+# ---------------------------------------------------------------------------
+# PEP 621 entry points (#94)
+# ---------------------------------------------------------------------------
+
+ENTRY_POINTS = """
+[project]
+name = "tools"
+description = "Some tools"
+
+[project.scripts]
+zeta = "tools.cli:zeta"
+alpha = "tools.cli:Alpha.run"
+
+[project.gui-scripts]
+window = "tools.gui:main"
+
+[project.entry-points."tools.plugins"]
+plug = "tools.plugins"
+"""
+
+
+def test_entry_points_of_every_kind() -> None:
+    """Console, GUI and any other group are all read, sorted by name."""
+    import tomllib
+
+    meta = tomllib.loads(ENTRY_POINTS)["project"]
+    entries = piplike.project_entry_points(meta)
+    assert [(e.name, e.kind, e.group, e.reference) for e in entries] == [
+        ("alpha", "cli", "console_scripts", "tools.cli:Alpha.run"),
+        ("plug", "other", "tools.plugins", "tools.plugins"),
+        ("window", "gui", "gui_scripts", "tools.gui:main"),
+        ("zeta", "cli", "console_scripts", "tools.cli:zeta"),
+    ]
+    assert [e.label for e in entries] == ["Console", "tools.plugins", "GUI", "Console"]
+
+
+def test_malformed_entry_point_tables_are_skipped() -> None:
+    """Tables or values of the wrong type are ignored rather than failing."""
+    meta = {
+        "scripts": ["not", "a", "table"],
+        "gui-scripts": {"ok": "pkg:main", "bad": 3},
+        "entry-points": {"group": "not a table"},
+    }
+    assert [e.name for e in piplike.project_entry_points(meta)] == ["ok"]
+
+
+def test_several_entry_points_make_a_package(tmp_path: Path) -> None:
+    """The project opens like a folder listing its entry points."""
+    write(tmp_path / "tools" / "pyproject.toml", ENTRY_POINTS)
+    (entry,) = piplike.scan_all_prototypes(tmp_path)
+    assert entry["kind"] == "package"
+    assert entry["title"] == "tools"
+    assert "entry_point" not in entry
+    assert entry["project_dir"] == tmp_path / "tools"
+    rows = piplike.entry_rows(entry)
+    assert [(r["title"], r["subtitle"], r["kind"]) for r in rows] == [
+        ("alpha", "Console · tools.cli:Alpha.run", "entry"),
+        ("plug", "tools.plugins · tools.plugins", "entry"),
+        ("window", "GUI · tools.gui:main", "entry"),
+        ("zeta", "Console · tools.cli:zeta", "entry"),
+    ]
+    assert all(r["package_title"] == "tools" for r in rows)
+    assert all(r["folder_root"] == tmp_path / "tools" / "src" for r in rows)
+
+
+def test_one_entry_point_is_the_projects_implied_entry(tmp_path: Path) -> None:
+    """With a single entry point, the project runs it when tapped."""
+    write(
+        tmp_path / "one" / "pyproject.toml",
+        '[project]\nname = "one"\n[project.scripts]\nrun = "one.cli:main"\n',
+    )
+    (entry,) = piplike.scan_all_prototypes(tmp_path)
+    assert entry["kind"] == "project"
+    assert entry["entry"].name == "run"
+
+
+def test_explicit_entry_point_overrides_entry_points(tmp_path: Path) -> None:
+    """[tool.stub_launcher] entry_point wins over [project.scripts]."""
+    write(
+        tmp_path / "tools" / "pyproject.toml",
+        ENTRY_POINTS + '\n[tool.stub_launcher]\nentry_point = "main.py"\n',
+    )
+    (entry,) = piplike.scan_all_prototypes(tmp_path)
+    assert entry["kind"] == "project" and "entry" not in entry
+    assert entry["entry_point"] == tmp_path / "tools" / "main.py"
+
+
+def test_no_entry_points_falls_back_to_main_py(tmp_path: Path) -> None:
+    """A [tool.stub_launcher] table without entry_point isn't an entry point."""
+    write(
+        tmp_path / "plain" / "pyproject.toml",
+        '[project]\nname = "plain"\n[tool.stub_launcher]\ndisplay_name = "Plain"\n',
+    )
+    (entry,) = piplike.scan_all_prototypes(tmp_path)
+    assert entry["kind"] == "project" and "entry" not in entry
+    assert entry["entry_point"] == tmp_path / "plain" / "main.py"

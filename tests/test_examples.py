@@ -32,6 +32,7 @@ def test_examples_are_grouped_in_folders() -> None:
         "basics",
         "errors",
         "hardware",
+        "projects",
         "takeover",
         "threads",
     ]
@@ -48,6 +49,7 @@ def test_examples_are_grouped_in_folders() -> None:
     assert tree["errors"] == ["main_thread_error", "test_error"]
     assert tree["threads"] == ["countdown", "main_thread"]
     assert tree["takeover"] == ["back_button", "nested_takeover"]
+    assert tree["projects"] == ["Two Tools"]
 
 
 def test_project_example_is_one_runnable_entry() -> None:

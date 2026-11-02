@@ -1,0 +1,31 @@
+# One project with several entry points. MyPyStub lists it as a folder: open
+# it to see each entry point, and tap one to run it. Outside the app,
+# `pip install -e .` installs the same commands: greet, shout and window.
+
+[project]
+name = "two-tools"
+version = "0.1.0"
+description = "One project, several entry points: console, GUI and a plugin group."
+requires-python = ">=3.12"
+
+# Console entry points
+[project.scripts]
+greet = "two_tools.cli:greet"
+shout = "two_tools.cli:Shout.run"  # a classmethod: the runner follows attributes
+
+# GUI entry points
+[project.gui-scripts]
+window = "two_tools.gui:show"
+
+# Any other group, such as a plugin system's
+[project.entry-points."two_tools.plugins"]
+hello = "two_tools.plugins:hello"
+settings = "two_tools.plugins:SETTINGS"  # not callable, so it can't be run
+
+[tool.stub_launcher]
+display_name = "Two Tools"
+import_path = "src"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"

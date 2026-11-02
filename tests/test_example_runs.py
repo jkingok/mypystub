@@ -99,3 +99,51 @@ def test_show_env_lists_everything_sorted(capsys: pytest.CaptureFixture[str]) ->
     names = [line.split("=", 1)[0] for line in capsys.readouterr().out.splitlines()]
     assert "AAA_FIRST" in names and "zzz_last" in names
     assert names == sorted(names, key=str.casefold)
+
+
+TWO_TOOLS = EXAMPLES / "projects" / "two_tools"
+
+
+def run_two_tools(name: str, argv: list[str] = (), env: dict | None = None) -> dict:
+    """Run one of Two Tools' entry points the way the launcher does."""
+    from mypystub.runner import entry_target
+
+    package = piplike.scan_project(TWO_TOOLS)  # scan_project doesn't print
+    (entry,) = [e for e in package["entries"] if e.name == name]
+    target = entry_target(
+        entry.name, entry.reference, entry.kind, TWO_TOOLS, TWO_TOOLS / "src"
+    )
+    with RunContext(target, argv=argv, env=env) as run:
+        return run.run()
+
+
+def test_two_tools_lists_every_kind_of_entry_point() -> None:
+    """The project opens like a folder of its entry points."""
+    (package,) = piplike.scan_all_prototypes(EXAMPLES / "projects")
+    assert package["kind"] == "package" and package["title"] == "Two Tools"
+    assert [(e.name, e.label) for e in package["entries"]] == [
+        ("greet", "Console"),
+        ("hello", "two_tools.plugins"),
+        ("settings", "two_tools.plugins"),
+        ("shout", "Console"),
+        ("window", "GUI"),
+    ]
+
+
+def test_two_tools_console_entry_points(capsys: pytest.CaptureFixture[str]) -> None:
+    """greet reads --name and $GREETING; shout is a classmethod."""
+    with pytest.raises(SystemExit) as done:
+        run_two_tools("greet", argv=["--name", "Ada"], env={"GREETING": "Hi"})
+    assert done.value.code == 0
+    run_two_tools("shout", argv=["quiet", "please"])
+    assert capsys.readouterr().out.splitlines() == ["Hi, Ada!", "QUIET PLEASE"]
+
+
+def test_two_tools_plugin_entry_points(capsys: pytest.CaptureFixture[str]) -> None:
+    """A callable plugin runs; a dictionary can't."""
+    from mypystub.runner import NotRunnable
+
+    run_two_tools("hello")
+    assert capsys.readouterr().out.startswith("Hello from a plugin.")
+    with pytest.raises(NotRunnable, match="is a dict"):
+        run_two_tools("settings")

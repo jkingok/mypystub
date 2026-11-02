@@ -1159,3 +1159,176 @@ def test_lists_keep_their_selection_when_the_form_reappears(
     monkeypatch.setattr(run_with.sys, "platform", "ios")
     run_with.keep_selection(widget)  # type: ignore[arg-type]
     assert native_controller.clearsSelectionOnViewWillAppear is False
+
+
+# ---------------------------------------------------------------------------
+# Packages with several entry points (#94)
+# ---------------------------------------------------------------------------
+
+TOOLS_PYPROJECT = """
+[project]
+name = "tools"
+description = "Some tools"
+
+[project.scripts]
+echo = "tools.cli:echo"
+
+[project.gui-scripts]
+window = "tools.cli:echo"
+
+[project.entry-points."tools.plugins"]
+value = "tools.cli:VALUE"
+"""
+
+TOOLS_CLI = """
+import os
+import sys
+
+VALUE = 42
+
+
+def echo():
+    print(sys.argv)
+    print(os.environ.get("GREETING"), os.environ.get("WHO"), os.environ.get("LEVEL"))
+"""
+
+
+@pytest.fixture
+def tools(docs: Path, proto: ui.Prototype) -> Path:
+    """A package with console, GUI and plugin entry points in Documents."""
+    project = docs / "tools"
+    (project / "src" / "tools").mkdir(parents=True)
+    (project / "pyproject.toml").write_text(TOOLS_PYPROJECT)
+    (project / "src" / "tools" / "__init__.py").write_text("")
+    (project / "src" / "tools" / "cli.py").write_text(TOOLS_CLI)
+    proto.reload_menu(proto.script_list)
+    return project
+
+
+def test_package_opens_like_a_folder_of_entry_points(
+    proto: ui.Prototype, app: toga.App, tools: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tapping the package lists its entry points; ".." goes back."""
+    assert titles(proto) == ["..", "a", "tools", "top"]
+    assert row(proto, "tools").kind == "package"
+    tap(proto, "tools", monkeypatch, app)
+    assert titles(proto) == ["..", "echo", "value", "window"]
+    assert [r.subtitle for r in proto.script_list.data] == [
+        "Back to Documents",
+        "Console · tools.cli:echo",
+        "tools.plugins · tools.cli:VALUE",
+        "GUI · tools.cli:echo",
+    ]
+    tap(proto, "..", monkeypatch, app)
+    assert titles(proto) == ["..", "a", "tools", "top"]
+
+
+def test_package_and_entry_icons_are_placeholders_until_added(
+    proto: ui.Prototype,
+    app: toga.App,
+    tools: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """boxes, terminal, window and plug icons show once their files exist."""
+    icons = tmp_path / "icons"
+    icons.mkdir()
+    proto.icon_path = icons
+    proto.reload_menu(proto.script_list)
+    assert row(proto, "tools").icon is None
+    tap(proto, "tools", monkeypatch, app)
+    assert all(r.icon is None for r in proto.script_list.data)
+
+    for name in ("boxes.png", "terminal.png", "window.png", "plug.png"):
+        shutil.copy(ICONS / "list.png", icons / name)
+    proto.reload_menu(proto.script_list)
+    assert all(isinstance(r.icon, toga.Image) for r in proto.script_list.data[1:])
+    proto.package_dir = None
+    proto.reload_menu(proto.script_list)
+    assert isinstance(row(proto, "tools").icon, toga.Image)
+
+
+def test_package_info_lists_its_entry_points(
+    proto: ui.Prototype,
+    app: toga.App,
+    tools: Path,
+    messages: list[tuple],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Info on a package lists entries; on an entry it names the package."""
+    run(app, proto.show_info(row(proto, "tools")))
+    assert "• echo: Console · tools.cli:echo" in messages[-1][1]
+    tap(proto, "tools", monkeypatch, app)
+    run(app, proto.show_info(row(proto, "echo")))
+    assert messages[-1][1].startswith(
+        "Console · tools.cli:echo\n\nAn entry point of tools."
+    )
+    run(app, proto.run_with(row(proto, "..")))
+    assert (
+        messages[-1][1] == "This row goes back to Documents, so there's nothing to run."
+    )
+
+
+def test_package_setup_sets_inherited_variables_only(
+    proto: ui.Prototype, app: toga.App, tools: Path, config: Path
+) -> None:
+    """A package's Setup has no arguments; its variables save as they change."""
+    run(app, proto.run_with(row(proto, "tools")))
+    form = proto.run_with_form
+    assert not form.with_args
+    assert app.main_window.title == "Setup · tools"
+    form.env = {"WHO": "Ada"}
+    form.changed()
+    form.done()
+    from mypystub.run_settings import RunSettings
+
+    assert proto.settings.get_run_with("Documents/tools") == RunSettings(
+        [], {"WHO": "Ada"}
+    )
+    assert "args" not in proto.settings.get_table("run_with")["Documents/tools"]
+
+
+def test_entry_inherits_setup_then_package_then_its_own(
+    proto: ui.Prototype,
+    app: toga.App,
+    tools: Path,
+    config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An entry point's form and run layer Setup, its package, then its own."""
+    from mypystub.run_settings import RunSettings
+
+    proto.settings.set_environment({"GREETING": "Hello", "WHO": "world", "LEVEL": "1"})
+    proto.settings.set_run_with("Documents/tools", RunSettings([], {"WHO": "Ada"}))
+    proto.settings.set_run_with(
+        "Documents/tools:echo", RunSettings(["--loud"], {"LEVEL": "2"})
+    )
+    tap(proto, "tools", monkeypatch, app)
+    form = proto.open_run_with(row(proto, "echo"))
+    assert [(r.title, r.subtitle) for r in form.env_list.data] == [
+        ("GREETING", "Hello · from Setup"),
+        ("LEVEL", "2"),
+        ("WHO", "Ada · from tools"),
+    ]
+    assert form.args == ["--loud"]
+    form.done()
+
+    tap(proto, "echo", monkeypatch, app)
+    wait_for(app, lambda: proto.ended_run == proto.run_id)
+    assert proto.print_text.value == "['echo', '--loud']\nHello Ada 2\n"
+
+
+def test_entry_that_cannot_run_says_why(
+    proto: ui.Prototype,
+    app: toga.App,
+    tools: Path,
+    config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-callable entry point gets a "Can't Run" dialog, not a traceback."""
+    tap(proto, "tools", monkeypatch, app)
+    tap(proto, "value", monkeypatch, app)
+    wait_for(app, lambda: proto.ended_run == proto.run_id)
+    title, text, _, _ = proto.dialogs[-1]  # type: ignore[attr-defined]
+    assert title == "Can't Run"
+    assert text == "tools.cli:VALUE is an int, not something that can run."

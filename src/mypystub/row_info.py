@@ -12,7 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-RowType = Literal["category", "up", "folder", "script", "project", "other"]
+RowType = Literal[
+    "category", "up", "folder", "script", "project", "package", "entry", "other"
+]
 
 # Checked in this order; the first that exists (in any letter case) is shown
 README_NAMES = ("readme.md", "readme.markdown", "readme.txt", "readme")
@@ -30,14 +32,18 @@ def row_type(row: Any) -> RowType:
     if getattr(row, "category", None):
         return "category"
     kind = getattr(row, "kind", None)
-    if kind in ("folder", "script", "project"):
+    if kind in ("folder", "script", "project", "package", "entry"):
         return kind
     return "other"
 
 
 def runnable(kind: RowType) -> bool:
-    """Whether rows of this type run when tapped, and so have run settings."""
-    return kind in ("script", "project")
+    """Whether rows of this type run when tapped, and so have their own arguments.
+
+    A package with several entry points opens like a folder instead; it has
+    environment variables that its entry points inherit, but no arguments.
+    """
+    return kind in ("script", "project", "entry")
 
 
 def find_readme(folder: Path) -> Path | None:
@@ -95,8 +101,20 @@ def up_info_message(where: str) -> str:
 
 
 def prototype_summary(row: Any) -> str:
-    """A short description of a script or project, until the full Info view."""
+    """A short description of a script or project, until the full Info view.
+
+    Packages list their entry points; an entry point names its package.
+    """
     lines = [str(getattr(row, "subtitle", "") or "")]
+    if package := getattr(row, "package_title", None):
+        lines.append(f"An entry point of {package}.")
+    if entries := getattr(row, "entries", None):
+        lines.append(
+            "Entry points:\n"
+            + "\n".join(f"• {e.name}: {e.label} · {e.reference}" for e in entries)
+        )
+    elif (entry := getattr(row, "entry", None)) and not package:
+        lines.append(f"Runs {entry.name}: {entry.label} · {entry.reference}")
     dependencies = list(getattr(row, "dependencies", None) or [])
     if dependencies:
         lines.append("Dependencies: " + ", ".join(dependencies))
