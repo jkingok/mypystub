@@ -851,3 +851,39 @@ def test_resolve_and_install_async_takes_extra_aliases(
         )
     )
     assert piplike.get_package_inventory(target) == {"fast-pure": "1.0"}
+
+
+def test_resolver_progress_arrives_before_the_final_message(
+    patched_network: FakeIndex, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Messages from the resolver's thread can't arrive after "already satisfied".
+
+    The worst case: the loop never gets round to the callbacks the thread
+    queued. They're delivered in order when the resolver returns anyway.
+    """
+    patched_network.add("app", "1.0", requires=["lib"])
+    patched_network.add("lib", "2.0")
+    real_loop = asyncio.get_running_loop
+
+    class SlowLoop:
+        """The running loop, except that thread-safe callbacks never run."""
+
+        def __init__(self) -> None:
+            self.loop = real_loop()
+
+        def call_soon_threadsafe(self, *args: object) -> None:
+            """Drop the callback, as if the loop hadn't reached it yet."""
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self.loop, name)
+
+    monkeypatch.setattr(piplike.asyncio, "get_running_loop", SlowLoop)
+    messages: list[str] = []
+    asyncio.run(
+        piplike.resolve_and_install_async(
+            ["app"], tmp_path / "site", use_system=False, on_progress=messages.append
+        )
+    )
+    assert messages.index("Resolved app 1.0") < messages.index("Resolved lib 2.0")
+    assert messages.index("Resolved lib 2.0") < messages.index("Downloading app 1.0")
+    assert messages[-1] == "Dependencies ready"

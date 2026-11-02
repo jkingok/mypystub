@@ -1,6 +1,10 @@
 """
 Module of functions for hooking/monkey-patching APIs for our purposes.
-This includes redirecting input and print into Toga windowed I/O.
+
+During a run, ``input`` reads from the Script tab, and ``sys.stdout`` and
+``sys.stderr`` are teed: everything still goes to the app's log, unchanged,
+and what the prototype writes is also shown in the Script tab, with stderr
+shown separately (#119).
 """
 
 import builtins
@@ -22,46 +26,69 @@ def clean_ansi(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text)
 
 
-class TogaStream(io.TextIOBase):
+# Packages whose writes are the launcher's or the framework's, never the
+# prototype's (toga_iOS and the other toga_* backends count too)
+LAUNCHER_PACKAGES = frozenset({"mypystub", "toga", "travertino", "rubicon"})
+
+
+def written_by_prototype(frame: Any) -> bool:
+    """Whether a write made from `frame` belongs to the running prototype.
+
+    Standard library frames are skipped (print(), traceback, logging and
+    warnings write on someone else's behalf), and the first other frame
+    decides: the launcher's and Toga's own code is not the prototype's;
+    anything else is. With only standard library frames, writes on the script
+    thread are the prototype's, and writes on the main thread aren't.
     """
-    An I/O stream that will integrate with Toga widgets.
+    while frame is not None:
+        name = frame.f_globals.get("__name__") or ""
+        top = name.split(".", 1)[0]
+        if top and top not in sys.stdlib_module_names:
+            return not (top in LAUNCHER_PACKAGES or top.startswith("toga_"))
+        frame = frame.f_back
+    return threading.current_thread() is not threading.main_thread()
+
+
+class RunStream(io.TextIOBase):
+    """``sys.stdout`` or ``sys.stderr`` during a run: a tee.
+
+    Every write goes to the stream it replaced (the app's log) as it was.
+    Writes by the prototype (see :func:`written_by_prototype`) are also passed
+    to `show`.
     """
 
-    def __init__(
-        self, on_write_callback: Callable[[str], None], wait_for_flush: bool = False
-    ) -> None:
-        """
-        Creates the Toga Stream, on_write_callback is a function that accepts a string
-        and updates the Toga GUI safely.
-        """
-        self.pending = ""
-        self.on_write_callback = on_write_callback
-        self.wait_for_flush = wait_for_flush
+    def __init__(self, target: Any, show: Callable[[str], None]) -> None:
+        """Tee writes to `target` and, for the prototype's, to `show`."""
+        self.target = target
+        self.show = show
 
     def write(self, s: str) -> int:
-        """
-        Write the string and return the number of characters "consumed".
-        """
-        s = clean_ansi(s)
-        if s:  # Avoid empty writes
-            if self.wait_for_flush:
-                self.pending += s
-            else:
-                self.on_write_callback(s)
+        """Write to the log, and show the prototype's writes."""
+        self.target.write(s)
+        if s and written_by_prototype(sys._getframe(1)):
+            self.show(s)
         return len(s)
 
     def flush(self) -> None:
-        """
-        Trigger to flush the stream.
+        """Flush the log."""
+        self.target.flush()
 
-        Builtin print occasionally calls flush(); we can treat it as a no-op
-        or use it as a way to ensure we don't overload the threading crosstalk,
-        but in use we didn't see it firing enough and so relying upon it was
-        preventing us from printing to the screen, so we do not require it.
-        """
-        if self.pending:
-            self.on_write_callback(self.pending)
-            self.pending = ""
+    def writable(self) -> bool:
+        """It's an output stream."""
+        return True
+
+    def isatty(self) -> bool:
+        """Not a terminal: no full-screen or cursor tricks can be shown."""
+        return False
+
+    @property
+    def encoding(self) -> str:  # type: ignore[override]
+        """The log's encoding."""
+        return getattr(self.target, "encoding", None) or "utf-8"
+
+    def fileno(self) -> int:
+        """The log's file descriptor, if it has one."""
+        return self.target.fileno()
 
 
 class ScriptRunner:
@@ -79,10 +106,14 @@ class ScriptRunner:
         print_field: toga.MultilineTextInput,
         toggle_input: Callable[[bool], None],
         toggle_print: Callable[[bool], None],
+        on_error_output: Callable[[str], None] | None = None,
     ) -> None:
         """
         Creates the script bridge that combines hooks with access to Toga widgets
         into which input and print are managed.
+
+        `on_error_output` shows the prototype's stderr text; it's called on the
+        main thread. Without it, stderr goes to the log only.
         """
         self.app = app
         self.input_label = input_label
@@ -91,16 +122,16 @@ class ScriptRunner:
         # self.scroll = scroll
         self.toggle_input = toggle_input
         self.toggle_print = toggle_print
+        self.on_error_output = on_error_output
         self.input_field.on_confirm = self.handle_ui_submit
         # Sync primitives
         self._input_event = threading.Event()
         self._input_value = ""
 
-        # Keep track of original builtins
+        # Keep track of the originals, put back when a run ends
         self._original_print = builtins.print
         self._original_input = builtins.input
-
-        self.stream = TogaStream(self.append_to_log)
+        self._original_streams: tuple[Any, Any] | None = None
         # Whether the current run has shown any output in the Script tab
         self.printed = False
 
@@ -115,19 +146,23 @@ class ScriptRunner:
         self.hook_builtins()
 
     def end_run(self) -> None:
-        """Stop capturing output, flushing anything pending."""
-        self.stream.flush()
+        """Stop capturing output."""
         self.unhook_builtins()
 
     def hook_builtins(self) -> None:
-        """Intercept print and input."""
-        builtins.print = self._custom_print
+        """Intercept input, and tee sys.stdout and sys.stderr."""
         builtins.input = self._custom_input
+        if self._original_streams is None:
+            self._original_streams = (sys.stdout, sys.stderr)
+            sys.stdout = RunStream(sys.stdout, self.append_to_log)
+            sys.stderr = RunStream(sys.stderr, self.append_error)
 
     def unhook_builtins(self) -> None:
         """Restore default terminal behavior."""
-        builtins.print = self._original_print
         builtins.input = self._original_input
+        if self._original_streams is not None:
+            sys.stdout, sys.stderr = self._original_streams
+            self._original_streams = None
 
     def mainthread_append_to_log(self, message: str) -> None:
         """
@@ -144,43 +179,31 @@ class ScriptRunner:
             # self.scroll.vertical_position = self.scroll.max_vertical_position
 
     def append_to_log(self, message: str) -> None:
+        """Show the prototype's stdout text in the Script tab, from any thread.
+
+        The text has already gone to the log (see RunStream).
         """
-        Safely appends a message to the UI log view.
-        The @ui.main_thread decorator guarantees this executes safely on
-        the main thread, even when called from a background thread.
-        """
-        self._original_print(message)
+        self._on_main_thread(self.mainthread_append_to_log, clean_ansi(message))
+
+    def append_error(self, message: str) -> None:
+        """Show the prototype's stderr text, from any thread."""
+        self._on_main_thread(self.mainthread_append_error, clean_ansi(message))
+
+    def mainthread_append_error(self, message: str) -> None:
+        """The main thread part of showing stderr text."""
+        if message and self.on_error_output is not None:
+            self.on_error_output(message)
+            self.printed = True
+
+    def _on_main_thread(self, callback: Callable[[str], None], message: str) -> None:
         if threading.current_thread() is threading.main_thread():
             # A script callback on the loop: append now, so the output is
             # counted before any end-of-run check queued after it (#64)
-            self.mainthread_append_to_log(message)
+            callback(message)
         else:
             # From the script thread: only call_soon_threadsafe wakes the loop
             # and keeps output ordered with the run's end
-            self.app.loop.call_soon_threadsafe(self.mainthread_append_to_log, message)
-        # asyncio.create_task(self.mainthread_append_to_log(message))
-
-    def _custom_print(self, *args: Any, **kwargs: Any) -> None:
-        """Generic print wrapper that hijacks the 'file' target.
-
-        The launcher's own prints (from mypystub modules) go to the log only, so
-        they never appear in, or count as, the script's output (#64).
-        """
-        caller = sys._getframe(1).f_globals.get("__name__", "")
-        if caller == "mypystub" or caller.startswith("mypystub."):
-            self._original_print(*args, **kwargs)
-            return
-        # Check if the student explicitly passed a file argument
-        # target_file = kwargs.get("file", None)
-
-        # If they didn't specify a file, or they specified standard output,
-        # redirect it to our custom Toga stream handler.
-        # if target_file is None or target_file in (sys.stdout, sys.__stdout__):
-        kwargs["file"] = self.stream
-
-        # Pass everything (positionals, sep, end, flush, and our modified file)
-        # down to the native builtin print logic.
-        self._original_print(*args, **kwargs)
+            self.app.loop.call_soon_threadsafe(callback, message)
 
     def _custom_input(self, prompt: object = "") -> str:
         """

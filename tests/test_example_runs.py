@@ -178,25 +178,16 @@ def test_repl_keeps_variables_and_ends_on_exit(
     ]
 
 
-def test_console_runs_blocks_and_shows_results_with_print(
+def test_console_runs_blocks_like_a_terminal(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Multi-line blocks work; results and tracebacks go through print()."""
-    printed: list[str] = []
+    """Multi-line blocks work; results go to stdout, banner and errors to stderr."""
     lines = iter(
         ["def f(n):", "    return n * 7", "", "f(6)", "1 / 0", "_ + 1", "exit()"]
     )
     monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
-    real_print = print
-    monkeypatch.setattr(
-        "builtins.print",
-        lambda *a, **k: (printed.append(" ".join(map(str, a))), real_print(*a, **k)),
-    )
-    displayhook = sys.displayhook
     run_example("basics/console.py")  # exit() ends the console, not the run
-    text = "\n".join(printed)
-    assert "Python console." in text and "Bye!" in text
-    assert "42" in printed and "43" in printed  # results, and _ is the last one
-    assert "ZeroDivisionError: division by zero" in text
-    assert capsys.readouterr().err == ""  # nothing went to stderr
-    assert sys.displayhook is displayhook  # put back afterwards
+    out, err = capsys.readouterr()
+    assert out.splitlines() == ["42", "43"]  # results, and _ is the last one
+    assert "Python console." in err and "Bye!" in err
+    assert "ZeroDivisionError: division by zero" in err

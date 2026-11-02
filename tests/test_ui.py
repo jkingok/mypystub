@@ -809,6 +809,8 @@ def test_ipad_tab_row_clears_the_resize_handle(app: toga.App) -> None:
     tabs = ipad_tabs(app, ICONS)
     assert tabs.tab_row.style.margin_right >= 20
     assert tabs.tab_row.style.margin_bottom > 0
+
+
 # Swipe actions: Info and Setup (#59)
 # ---------------------------------------------------------------------------
 
@@ -1398,3 +1400,59 @@ def test_entry_that_cannot_run_says_why(
     title, text, _, _ = proto.dialogs[-1]  # type: ignore[attr-defined]
     assert title == "Can't Run"
     assert text == "tools.cli:VALUE is an int, not something that can run."
+
+
+# ---------------------------------------------------------------------------
+# A run's stdout and stderr (#119)
+# ---------------------------------------------------------------------------
+
+
+def test_stderr_pane_appears_only_when_written_to(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """stderr goes to its own pane, shown on the first write; stdout stays put."""
+    assert proto.error_pane.style.display == "none"
+    source = (
+        "import sys\nsys.stdout.write('out\\n')\nprint('warned', file=sys.stderr)\n"
+    )
+    run_to_end(proto, app, docs, source, monkeypatch)
+    assert proto.print_text.value == "out\n"
+    assert proto.error_text.value == "warned\n"
+    assert proto.error_pane.style.display == "pack"
+    assert proto.error_text.style.color is not None  # the warning colour
+
+
+def test_hide_lasts_until_the_next_write(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hide hides the pane; more stderr shows it again; a new run starts hidden."""
+    run_to_end(proto, app, docs, "import sys\nsys.stderr.write('a\\n')\n", monkeypatch)
+    proto.hide_errors()
+    assert proto.error_pane.style.display == "none"
+    proto.show_error_output("b\n")
+    assert proto.error_pane.style.display == "pack"
+    assert proto.error_text.value == "a\nb\n"
+
+    run_to_end(proto, app, docs, "print('quiet')\n", monkeypatch)
+    assert proto.error_text.value == ""
+    assert proto.error_pane.style.display == "none"
+
+
+def test_script_output_container_is_orientation_aware(proto: ui.Prototype) -> None:
+    """Output and errors share the Script tab: stacked in portrait, side by side
+    in landscape."""
+    from mypystub.widgets import OrientationBox
+
+    assert isinstance(proto.script_output, OrientationBox)
+    assert proto.script_output.children == [proto.script_scroll, proto.error_pane]
+
+
+def test_streams_are_restored_after_a_run(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After the run, sys.stdout and sys.stderr are the app's again."""
+    import sys
+
+    stdout, stderr = sys.stdout, sys.stderr
+    run_to_end(proto, app, docs, "print('x')\n", monkeypatch)
+    assert (sys.stdout, sys.stderr) == (stdout, stderr)

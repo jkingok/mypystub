@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -540,8 +541,22 @@ async def resolve_and_install_async(
         if on_progress:
             on_progress(message)
 
+    # Messages from worker threads wait here in order. The loop delivers them
+    # when it gets round to it, and drain_progress() delivers any still waiting
+    # once the worker is done, so none can arrive after a later message.
+    pending: deque[str] = deque()
+
+    def drain_progress() -> None:
+        while pending:
+            try:
+                message = pending.popleft()
+            except IndexError:  # drained by the other caller meanwhile
+                return
+            progress(message)
+
     def progress_threadsafe(message: str) -> None:
-        loop.call_soon_threadsafe(progress, message)
+        pending.append(message)
+        loop.call_soon_threadsafe(drain_progress)
 
     is_temp_cache = False
 
@@ -620,6 +635,8 @@ async def resolve_and_install_async(
             resolution = await asyncio.to_thread(_sync_resolve_pass)
         except resolvelib.ResolutionError as exc:
             raise DependencyError(f"Dependency resolution failed: {exc}") from exc
+        finally:
+            drain_progress()  # the resolver's messages come before anything after
 
         # Async Download & Install Phase
         changed = 0

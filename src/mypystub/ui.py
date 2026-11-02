@@ -30,8 +30,13 @@ from . import settings as s
 from .pages import help_html, html_page, readme_html
 from .run_settings import Layer, RunSettings, merged_env, settings_key
 from .run_with import RunWithForm
+from .widgets import OrientationBox
 
 UIUserInterfaceIdiomPad = 1
+
+# Text colour for a run's stderr: an orange that reads as a warning, with
+# enough contrast on both the light and the dark background
+WARNING_COLOUR = "#d9480f"
 
 # Default list icons by scanned entry kind (see CREDITS.md). Missing files are
 # skipped, so rows show no icon until the icon is downloaded.
@@ -388,6 +393,26 @@ class Prototype:
             children=[self.input_prompt, self.input_text], text_align="center"
         )
         self.print_text = toga.MultilineTextInput(readonly=True)
+        # The run's stderr, shown beside or below its output (#119). It's
+        # hidden until something is written to it, and Hide hides it again
+        # until the next write.
+        self.error_text = toga.MultilineTextInput(
+            readonly=True, color=WARNING_COLOUR, flex=1
+        )
+        self.error_pane = toga.Column(
+            display="none",
+            children=[
+                toga.Row(
+                    align_items="center",
+                    margin=(0, 4),
+                    children=[
+                        toga.Label("Errors and warnings", color=WARNING_COLOUR, flex=1),
+                        toga.Button("Hide", on_press=self.hide_errors),
+                    ],
+                ),
+                self.error_text,
+            ],
+        )
         self.script_runner = h.ScriptRunner(
             host_app,
             self.input_prompt,
@@ -395,10 +420,12 @@ class Prototype:
             self.print_text,
             self.toggle_input,
             self.toggle_print,
+            on_error_output=self.show_error_output,
         )
         self.script_scroll = toga.ScrollContainer(
             horizontal=False, content=self.print_text, style=Pack(flex=1)
         )
+        self.script_output = OrientationBox(self.script_scroll, self.error_pane)
         self.script_activity = LabelledActivity()
         # Each run gets an id; end-of-run work for an older run is ignored (#64)
         self.run_id = 0
@@ -866,15 +893,17 @@ class Prototype:
         # progress there instead of leaving the list looking frozen.
         title = getattr(selected_row, "title", "script")
         self.print_text.value = ""
+        self.error_text.value = ""
+        self.hide_errors()
         # Only a prototype's own icon is shown as a splash, never a default one
         if splash := getattr(selected_row, "splash", None):
             self.splash.image = splash
             self.splash.style.flex = 1
-            self.script_scroll.style.flex = 0
+            self.script_output.style.flex = 0
         else:
             self.splash.image = None
             self.splash.style.flex = 0
-            self.script_scroll.style.flex = 1
+            self.script_output.style.flex = 1
         self.app.widgets["tabs"].current_tab = "Script"
         self.script_activity.update(f"Preparing {title}")
 
@@ -1180,7 +1209,17 @@ class Prototype:
     def toggle_print(self, on: bool) -> None:
         if on:
             self.splash.style.flex = 0
-            self.script_scroll.style.flex = 1
+            self.script_output.style.flex = 1
+
+    def show_error_output(self, text: str) -> None:
+        """Add a run's stderr text, showing the pane if it was hidden."""
+        self.error_text.value += text
+        self.error_pane.style.display = "pack"
+        self.toggle_print(True)
+
+    def hide_errors(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+        """Hide the stderr pane until something is next written to it."""
+        self.error_pane.style.display = "none"
 
     # Inside your Toga App class layout or commands:
     def handle_backup_press(self, widget: toga.Button, **kwargs: Any) -> None:
@@ -1549,7 +1588,7 @@ class Prototype:
                         id="script_box",
                         children=[
                             self.splash,
-                            self.script_scroll,
+                            self.script_output,
                             toga.Box(id="keyboard_box", style=Pack(flex=0)),
                             self.script_activity,
                         ],
