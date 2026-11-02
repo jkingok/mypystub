@@ -39,9 +39,11 @@ def test_examples_are_grouped_in_folders() -> None:
     assert tree["hardware"] == ["router_check", "take_photo", "where_am_i"]
     assert tree["basics"] == [
         "args_and_env",
+        "console",
         "Hello Project",
         "hello_world",
         "hello_you",
+        "repl",
         "show_args",
         "show_env",
         "with_dependency",

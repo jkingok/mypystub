@@ -1,5 +1,6 @@
 """Tests for running prototypes the way Python does (mypystub.runner, #57)."""
 
+import io
 import os
 import sys
 from collections.abc import Callable
@@ -548,3 +549,57 @@ def test_gui_entry_point_making_its_own_app_is_refused(
         with pytest.raises(UnsupportedGui, match="can't host yet"):
             run_entry(project, f"eptools.gui:{name}", kind="gui")
         assert FakeApp.app is fake_toga.launcher_app
+
+
+# ---------------------------------------------------------------------------
+# exit() and sys.stdin
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def real_stdin(monkeypatch: pytest.MonkeyPatch) -> io.TextIOWrapper:
+    """A real, closable sys.stdin, standing in for the app's."""
+    read_end, write_end = os.pipe()
+    os.close(write_end)
+    stdin = io.TextIOWrapper(io.FileIO(read_end))
+    monkeypatch.setattr(sys, "stdin", stdin)
+    yield stdin
+    stdin.close()
+
+
+def test_exit_does_not_close_the_apps_stdin(
+    tmp_path: Path, real_stdin: io.TextIOWrapper
+) -> None:
+    """site's exit() closes sys.stdin; only the run's guard is closed."""
+    script = write(tmp_path / "bye.py", "import sys\nsys.stdin.close()\nexit()\n")
+    with (
+        pytest.raises(SystemExit) as done,
+        RunContext(target_for(script, tmp_path)) as run,
+    ):
+        run.run()
+    assert done.value.code is None
+    assert sys.stdin is real_stdin and not real_stdin.closed
+
+
+def test_stdin_guard_passes_reads_through(
+    tmp_path: Path, real_stdin: io.TextIOWrapper
+) -> None:
+    """Until it's closed, the guard behaves like the stream it wraps."""
+    with RunContext(target_for(write(tmp_path / "s.py", ""), tmp_path)):
+        assert sys.stdin is not real_stdin
+        assert sys.stdin.fileno() == real_stdin.fileno()
+        assert sys.stdin.read() == ""
+        sys.stdin.close()
+        with pytest.raises(ValueError):
+            sys.stdin.read()
+    assert sys.stdin is real_stdin
+
+
+def test_no_stdin_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Embedded Pythons may have no sys.stdin at all."""
+    monkeypatch.setattr(sys, "stdin", None)
+    with RunContext(target_for(write(tmp_path / "s.py", ""), tmp_path)):
+        assert sys.stdin is None
+    assert sys.stdin is None

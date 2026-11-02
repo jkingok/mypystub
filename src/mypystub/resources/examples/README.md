@@ -7,6 +7,8 @@ They are grouped into folders the same way you can organise your own scripts in 
 - `basics/` (its `README.md` is what Info shows for the folder)
   - `hello_world.py`: print a greeting.
   - `hello_you.py`: read input with `input()`.
+  - `console.py`: the standard library's `code` console, for multi-line Python such as `def` blocks. Results and errors are shown with `print()` so they reach the Script tab; `exit()` leaves the console.
+  - `repl.py`: a tiny read-eval-print loop built from `input`, `eval` and `print`. Variables persist between lines; `exit()` ends the run.
   - `show_args.py`: list the command-line arguments set with **Setup** (swipe right).
   - `show_env.py`: show the environment variables named as arguments, or all of them.
   - `args_and_env.py`: greet each name in `sys.argv`, using `$GREETING` if it's set.

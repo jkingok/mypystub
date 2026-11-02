@@ -234,6 +234,58 @@ def target_for(entry_point: Path, folder_root: Path) -> RunTarget:
     return RunTarget(entry_point, folder_root, entry_point.parent)
 
 
+class StdinGuard:
+    """``sys.stdin`` during a run: closing it closes only this view.
+
+    ``exit()`` and ``quit()`` from :mod:`site` close ``sys.stdin`` before
+    raising :class:`SystemExit`, as a terminal would want. In the launcher that
+    stream is the app's, and it stays open for later runs. Everything else is
+    passed through to the real stream.
+    """
+
+    def __init__(self, stream: Any) -> None:
+        """Wrap `stream`, the app's own ``sys.stdin``."""
+        self._stream = stream
+        self._closed = False
+
+    def close(self) -> None:
+        """Close this view; the app's stream stays open."""
+        self._closed = True
+
+    @property
+    def closed(self) -> bool:
+        """Whether this view, or the stream under it, is closed."""
+        return self._closed or bool(self._stream.closed)
+
+    def _check(self) -> None:
+        if self._closed:
+            raise ValueError("I/O operation on closed file.")
+
+    def read(self, *args: Any) -> str:
+        """Read from the stream, unless this view is closed."""
+        self._check()
+        return self._stream.read(*args)
+
+    def readline(self, *args: Any) -> str:
+        """Read a line from the stream, unless this view is closed."""
+        self._check()
+        return self._stream.readline(*args)
+
+    def readlines(self, *args: Any) -> list[str]:
+        """Read lines from the stream, unless this view is closed."""
+        self._check()
+        return self._stream.readlines(*args)
+
+    def __iter__(self) -> Any:
+        """Iterate over lines, unless this view is closed."""
+        self._check()
+        return iter(self._stream)
+
+    def __getattr__(self, name: str) -> Any:
+        """Everything else (fileno, encoding, isatty...) is the stream's."""
+        return getattr(self._stream, name)
+
+
 class RunContext:
     """Process state for one run, applied on :meth:`open` and undone on :meth:`close`.
 
@@ -268,7 +320,10 @@ class RunContext:
             "cwd": os.getcwd(),
             "path": list(sys.path),
             "modules": set(sys.modules),
+            "stdin": sys.stdin,
         }
+        if sys.stdin is not None:
+            sys.stdin = StdinGuard(sys.stdin)  # type: ignore[assignment]
         sys.argv = list(self.argv)
         os.environ.update(self.env)
         os.chdir(self.target.workdir)
@@ -303,6 +358,7 @@ class RunContext:
             return
         saved, self._saved = self._saved, None
         sys.argv = saved["argv"]
+        sys.stdin = saved["stdin"]
         os.environ.clear()
         os.environ.update(saved["environ"])
         os.chdir(saved["cwd"])

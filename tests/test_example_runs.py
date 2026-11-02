@@ -147,3 +147,56 @@ def test_two_tools_plugin_entry_points(capsys: pytest.CaptureFixture[str]) -> No
     assert capsys.readouterr().out.startswith("Hello from a plugin.")
     with pytest.raises(NotRunnable, match="is a dict"):
         run_two_tools("settings")
+
+
+def test_repl_keeps_variables_and_ends_on_exit(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Variables persist between lines; errors are shown; exit() ends the run."""
+    lines = iter(
+        [
+            "x = 6",
+            "x * 7",
+            "",
+            "import math",
+            "math.pi > 3",
+            "1 / 0",
+            "print('hi')",
+            "exit()",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    with pytest.raises(SystemExit) as done:
+        run_example("basics/repl.py")
+    assert done.value.code is None  # a normal end, like at the terminal
+    assert capsys.readouterr().out.splitlines() == [
+        "Type Python. exit() ends the loop.",
+        "42",
+        "True",
+        "ZeroDivisionError: division by zero",
+        "hi",
+    ]
+
+
+def test_console_runs_blocks_and_shows_results_with_print(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Multi-line blocks work; results and tracebacks go through print()."""
+    printed: list[str] = []
+    lines = iter(
+        ["def f(n):", "    return n * 7", "", "f(6)", "1 / 0", "_ + 1", "exit()"]
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    real_print = print
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *a, **k: (printed.append(" ".join(map(str, a))), real_print(*a, **k)),
+    )
+    displayhook = sys.displayhook
+    run_example("basics/console.py")  # exit() ends the console, not the run
+    text = "\n".join(printed)
+    assert "Python console." in text and "Bye!" in text
+    assert "42" in printed and "43" in printed  # results, and _ is the last one
+    assert "ZeroDivisionError: division by zero" in text
+    assert capsys.readouterr().err == ""  # nothing went to stderr
+    assert sys.displayhook is displayhook  # put back afterwards
