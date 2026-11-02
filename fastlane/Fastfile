@@ -75,6 +75,9 @@ platform :ios do
 
     UI.message("--- Step 3: Running BeeWare Briefcase ---")
     # Triggers your BeeWare packaging/build step (e.g. generating the Xcode project files)
+    # Start from a fresh Xcode project: Briefcase only writes Info.plist (permission
+    # usage descriptions, info.* keys) on create, and create skips an existing project
+    sh("rm", "-rf", File.join("..", "build", AppConfig::BRIEFCASE_SLUG, "iOS"))
     sh("uvx --python 3.15 --directory .. briefcase create ios --no-input")
     sh("uvx --python 3.15 --directory .. briefcase update ios --update-requirements --update-support --update-stub  --update-resources --no-input")
   end
