@@ -26,7 +26,7 @@ Each row previews what's inside. Tap a folder to open it, and `..` to go back up
 
 Swipe a row for more:
 
-- **Swipe left: Info.** A folder or category shows its README (`README.md`, `README.txt` or `README`) if it has one. A script or project shows its description and dependencies.
+- **Swipe left: Info.** A folder or category shows its README (`README.md`, `README.txt` or `README`) if it has one. A script shows its docstring, dependencies, inline metadata and highlighted source; long scripts fold after the first 300 lines. A project shows what its `pyproject.toml` declares: version, authors, dependencies, entry points, links, README, licence and changelog. Raw HTML in these files is shown as text, and web links open in your browser.
 - **Swipe right: Setup** sets the command-line arguments and environment variables for a script or project. Arguments keep the order you give them; select one and use ⤒ ↑ ↓ ⤓ to move it to the top, up, down or to the bottom. In both lists, + adds, ✎ edits and ⌫ deletes. Environment variables are listed A–Z, since their order doesn't matter. Their names can use only letters, digits and `_`, and can't start with a digit (like `MY_SETTING`), so a shell could use them too. Changes are saved as you make them; *Done* goes back. A plain tap runs with these settings.
 
 Rows with nothing to show or run say why.

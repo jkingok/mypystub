@@ -15,7 +15,15 @@ import httpx2
 import toga
 from toga.style import Pack
 
-from . import about, maintenance, permissions, row_info, runner, setup_pages
+from . import (
+    about,
+    info_pages,
+    maintenance,
+    permissions,
+    row_info,
+    runner,
+    setup_pages,
+)
 from . import hooks as h
 from . import piplike as pip
 from . import settings as s
@@ -947,7 +955,21 @@ class Prototype:
             )
             await self.info(message, title)
             return
-        await self.info(row_info.prototype_summary(row), title)
+        self.show_page(title, self.info_body(row))
+
+    def info_body(self, row: Any) -> str:
+        """The Info page for a script, project, package or entry point (#99)."""
+        title = str(getattr(row, "title", ""))
+        if row_info.row_type(row) == "script":
+            return info_pages.script_info_html(Path(row.entry_point), title)
+        entry = getattr(row, "entry", None)
+        is_entry = row_info.row_type(row) == "entry"
+        return info_pages.project_info_html(
+            Path(row.project_dir),
+            title,
+            entry=entry,
+            show_entries=not is_entry,
+        )
 
     def show_readme(self, title: str, readme: Path) -> None:
         """Show a README on its own screen, rendered like the Help page."""
@@ -955,8 +977,15 @@ class Prototype:
             text = readme.read_text(encoding="utf-8", errors="replace")
         except OSError as e:
             text = f"Couldn't read {readme.name}: {e}"
+        self.show_page(title, readme_html(text, readme.name))
+
+    def show_page(self, title: str, body: str) -> None:
+        """Show an HTML fragment on its own screen with a Back button.
+
+        Links to the web open in the system browser (see open_external).
+        """
         view = toga.WebView(flex=1, on_navigation_starting=self.open_external)
-        self.readme_page = html_page(readme_html(text, readme.name))
+        self.readme_page = html_page(body)
         view.content = self.readme_page
         self.readme_view = view
         self.push_screen(

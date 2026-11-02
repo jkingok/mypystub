@@ -87,13 +87,3 @@ def test_info_on_up_rows() -> None:
     assert row_info.up_info_message("the categories") == (
         "This row goes back to the categories, so there's nothing to describe."
     )
-
-
-def test_prototype_summary() -> None:
-    """Scripts and projects show their description and dependencies."""
-    row = SimpleNamespace(subtitle="Greets you.", dependencies=["humanize", "rich"])
-    assert row_info.prototype_summary(row) == (
-        "Greets you.\n\nDependencies: humanize, rich"
-    )
-    bare = SimpleNamespace(subtitle="Plain.", dependencies=[])
-    assert row_info.prototype_summary(bare) == "Plain.\n\nNo dependencies."

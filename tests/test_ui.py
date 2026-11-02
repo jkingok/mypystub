@@ -905,12 +905,20 @@ def test_folder_readme_is_shown_safely(
     assert app.main_window.content is tabs
 
 
-def test_script_info_shows_description_and_dependencies(
+def test_script_info_page(
     proto: ui.Prototype, app: toga.App, messages: list[tuple]
 ) -> None:
-    """Until the full Info view, scripts show a short summary."""
+    """Info on a script opens its page: docstring, dependencies, source."""
+    tabs = app.main_window.content
     run(app, proto.show_info(row(proto, "top")))
-    assert messages[-1] == ("top", "At the top.\n\nNo dependencies.")
+    assert messages == []
+    assert app.main_window.title == "top"
+    page = proto.readme_page
+    assert "<h1>top</h1>" in page and "<p>At the top.</p>" in page
+    assert "<h2>Source</h2>" in page and "top.py, 1 line." in page
+    assert str(proto.data_path) not in page  # no local paths
+    proto.pop_screen()
+    assert app.main_window.content is tabs
 
 
 def test_run_with_form_edits_arguments(
@@ -1257,12 +1265,17 @@ def test_package_info_lists_its_entry_points(
 ) -> None:
     """Info on a package lists entries; on an entry it names the package."""
     run(app, proto.show_info(row(proto, "tools")))
-    assert "• echo: Console · tools.cli:echo" in messages[-1][1]
+    assert "<h2>Entry points</h2>" in proto.readme_page
+    assert "<code>echo</code>: Console · <code>tools.cli:echo</code>" in (
+        proto.readme_page
+    )
+    proto.pop_screen()
     tap(proto, "tools", monkeypatch, app)
     run(app, proto.show_info(row(proto, "echo")))
-    assert messages[-1][1].startswith(
-        "Console · tools.cli:echo\n\nAn entry point of tools."
-    )
+    page = proto.readme_page
+    assert "An entry point of tools: <code>echo</code>: Console" in page
+    assert "<h2>Entry points</h2>" not in page
+    proto.pop_screen()
     run(app, proto.run_with(row(proto, "..")))
     assert (
         messages[-1][1] == "This row goes back to Documents, so there's nothing to run."

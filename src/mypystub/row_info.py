@@ -98,26 +98,3 @@ def no_readme_message(kind: RowType, title: str, summary: str) -> str:
 def up_info_message(where: str) -> str:
     """What Info says about a ".." row."""
     return f"This row goes back to {where}, so there's nothing to describe."
-
-
-def prototype_summary(row: Any) -> str:
-    """A short description of a script or project, until the full Info view.
-
-    Packages list their entry points; an entry point names its package.
-    """
-    lines = [str(getattr(row, "subtitle", "") or "")]
-    if package := getattr(row, "package_title", None):
-        lines.append(f"An entry point of {package}.")
-    if entries := getattr(row, "entries", None):
-        lines.append(
-            "Entry points:\n"
-            + "\n".join(f"• {e.name}: {e.label} · {e.reference}" for e in entries)
-        )
-    elif (entry := getattr(row, "entry", None)) and not package:
-        lines.append(f"Runs {entry.name}: {entry.label} · {entry.reference}")
-    dependencies = list(getattr(row, "dependencies", None) or [])
-    if dependencies:
-        lines.append("Dependencies: " + ", ".join(dependencies))
-    else:
-        lines.append("No dependencies.")
-    return "\n\n".join(line for line in lines if line)

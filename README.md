@@ -27,7 +27,7 @@ The launcher lists your scripts and project folders; tap one to run it. *This le
 | Entry points (`[project.scripts]`, `gui-scripts`, other groups) | as for a script; several open like a folder | `projects/two_tools/` |
 | Taking over the screen with Toga | when it hands the screen back | `takeover/back_button.py`, `takeover/nested_takeover.py` |
 
-Swipe left on a row for **Info** (a folder's README, or a script's description), and right for **Setup**, which sets its arguments and environment variables, saving as you go. Variables set on the Setup tab's **Environment** page are inherited by every run. The in-app Help page explains each one (see "How your script is run"), and the examples are in the app's **Examples** category. Your own modules are reloaded on each run, so edits take effect without restarting the app.
+Swipe left on a row for **Info** (a folder's README; a script's docstring, dependencies and source; a project's metadata, README, licence and changelog), and right for **Setup**, which sets its arguments and environment variables, saving as you go. Variables set on the Setup tab's **Environment** page are inherited by every run. The in-app Help page explains each one (see "How your script is run"), and the examples are in the app's **Examples** category. Your own modules are reloaded on each run, so edits take effect without restarting the app.
 
 If you use the special name of `patch_app.py` for your shim you will bypass the Launcher. This is intended if you want to have either a single app and save a tap, or if you need full control of the *Toga* startup.
 
