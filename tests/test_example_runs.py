@@ -191,3 +191,20 @@ def test_console_runs_blocks_like_a_terminal(
     assert out.splitlines() == ["42", "43"]  # results, and _ is the last one
     assert "Python console." in err and "Bye!" in err
     assert "ZeroDivisionError: division by zero" in err
+
+
+def test_console_prints_errors_even_when_an_app_hooks_them(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The launcher's sys.excepthook (an error dialog) isn't used by the console."""
+    lines = iter(["1 / 0", "exit()"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    hooked: list[BaseException] = []
+
+    def app_hook(typ: type, value: BaseException, tb: object) -> None:
+        hooked.append(value)
+
+    monkeypatch.setattr(sys, "excepthook", app_hook)
+    run_example("basics/console.py")
+    assert "ZeroDivisionError: division by zero" in capsys.readouterr().err
+    assert hooked == [] and sys.excepthook is app_hook

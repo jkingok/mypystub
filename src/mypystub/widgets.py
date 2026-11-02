@@ -13,24 +13,27 @@ from toga.style.applicator import TogaApplicator
 
 
 class _BoundsApplicator(TogaApplicator):
-    """Toga's applicator, also telling its widget the size it was given."""
+    """Toga's applicator, also telling its widget the size of the view it's in."""
 
     def set_bounds(self) -> None:
-        """Place the widget and its children, then report the widget's size."""
+        """Place the widget and its children, then report its view's size."""
         super().set_bounds()
-        widget = self.widget
-        widget.update_orientation(
-            widget.layout.content_width, widget.layout.content_height
+        root = self.widget.root
+        self.widget.update_orientation(
+            root.layout.content_width, root.layout.content_height
         )
 
 
 class OrientationBox(toga.Box):
-    """Two widgets sharing the space equally, arranged to suit the box's shape.
+    """Two widgets sharing the space equally, arranged to suit the view's shape.
 
-    When the box is portrait (width <= height) the widgets are one above the
-    other; when it is landscape they are side by side. The box goes by its own
-    size after each layout, not the screen's or the window's, so it also
-    adapts inside split views and resizable windows.
+    When the view the box is in (the root of its layout, such as a tab's
+    content) is portrait (width <= height), the widgets are one above the
+    other; when it is landscape they are side by side. The view's size is
+    checked after each layout, not the screen's or the window's, so the box
+    also adapts inside split views and resizable windows. The view, not the
+    box itself, decides, so a keyboard spacer or other sibling that squeezes
+    the box doesn't flip it.
 
     A child hidden with ``display="none"`` takes no space, and the other then
     fills the box.

@@ -57,10 +57,23 @@ def test_unknown_size_is_ignored() -> None:
     assert box.style.direction == "row"
 
 
-def test_layout_reports_the_boxes_own_size() -> None:
-    """After each layout the box checks its own size, not the window's."""
+def test_layout_reports_the_views_size() -> None:
+    """After each layout the box checks the size of the view it's in."""
     box, _, _ = pair()
     box.layout.content_width, box.layout.content_height = 900, 300
+    box.applicator.set_bounds()
+    assert box.style.direction == "row"
+
+
+def test_a_squeezed_box_follows_its_view_not_itself() -> None:
+    """A keyboard spacer making the box wide and short doesn't flip it."""
+    box, _, _ = pair()
+    view = toga.Box(children=[box, toga.Box()])
+    view.layout.content_width, view.layout.content_height = 375, 560
+    box.layout.content_width, box.layout.content_height = 375, 280
+    box.applicator.set_bounds()
+    assert box.style.direction == "column"
+    view.layout.content_width, view.layout.content_height = 667, 300
     box.applicator.set_bounds()
     assert box.style.direction == "row"
 

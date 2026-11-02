@@ -5,6 +5,9 @@ is served by an httpx2 MockTransport from wheels built in tmp_path.
 """
 
 import asyncio
+import importlib
+import importlib.util
+import sys
 import threading
 import time
 import zipfile
@@ -437,6 +440,33 @@ def test_resolve_and_install_async_installs_tree(
     asyncio.run(piplike.resolve_and_install_async(["app"], target, use_system=False))
 
     assert piplike.get_package_inventory(target) == {"app": "1.0", "lib": "2.0"}
+
+
+def test_installed_packages_import_straight_away(
+    patched_network: FakeIndex, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A target missing when first searched (new, or wiped) imports after install.
+
+    Any import that searches sys.path while the folder is missing, such as a
+    library's lazy import during the install, makes Python cache "nothing
+    here" for it, so without clearing import caches the new package isn't
+    found until the app restarts.
+    """
+    patched_network.add("freshly-installed", "1.0")
+    target = tmp_path / "site"
+    monkeypatch.syspath_prepend(str(target))
+    monkeypatch.delitem(sys.modules, "freshly_installed", raising=False)
+    assert importlib.util.find_spec("not_installed_anywhere") is None
+    assert sys.path_importer_cache[str(target)] is None
+
+    asyncio.run(
+        piplike.resolve_and_install_async(
+            ["freshly-installed"], target, use_system=False
+        )
+    )
+
+    module = importlib.import_module("freshly_installed")
+    assert module.VERSION == "1.0"
 
 
 def test_resolve_and_install_async_upgrades_and_skips(

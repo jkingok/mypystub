@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import importlib
 import importlib.metadata
 import platform
 import re
@@ -680,6 +681,10 @@ async def resolve_and_install_async(
                     raise DependencyError(
                         f"Failed to unpack {wheel_path.name}: {exc}"
                     ) from exc
+        if changed:
+            # Python may have cached "nothing here" for target_dir while it was
+            # missing or empty; forget that so the new packages can be imported
+            importlib.invalidate_caches()
         print("successfully met all requirements")
         progress("Dependencies ready" if changed else "Dependencies already satisfied")
     finally:

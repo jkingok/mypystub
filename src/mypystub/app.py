@@ -17,7 +17,7 @@ from typing import Any, cast
 
 import toga
 
-from . import ui
+from . import hooks, ui
 
 
 class LogRedirector:
@@ -105,8 +105,10 @@ class MyApp(toga.App):
             """
             Generic handler of uncaught exceptions into a Toga dialog via a threadsafe task.
             """
-            if exc_traceback:
-                traceback.print_tb(exc_traceback)
+            if exc_value is not None:
+                hooks.report_exception(
+                    exc_type or type(exc_value), exc_value, exc_traceback
+                )
             app.loop.call_soon_threadsafe(
                 cast(
                     Callable[[], None],
@@ -127,8 +129,12 @@ class MyApp(toga.App):
             """
             Trigger for uncaught exceptions via the asyncio event loop.
             """
+            exc = context.get("exception")
             global_generic_exception_handler(
-                None, context.get("exception"), context.get("source_traceback")
+                None,
+                exc,
+                exc.__traceback__ if exc is not None else None,
+                None if exc is not None else context.get("message"),
             )
 
         def global_sync_exception_handler(
@@ -149,9 +155,19 @@ class MyApp(toga.App):
                 args.exc_type, args.exc_value, args.exc_traceback
             )
 
+        def global_unraisable_handler(unraisable: Any) -> None:
+            """
+            Trigger for exceptions Python can't raise, such as one in a callback
+            Rubicon's run loop calls through ctypes (loop.call_soon).
+            """
+            global_generic_exception_handler(
+                unraisable.exc_type, unraisable.exc_value, unraisable.exc_traceback
+            )
+
         # Set up standard Python thread hooks
         sys.excepthook = global_sync_exception_handler
         threading.excepthook = global_thread_exception_handler
+        sys.unraisablehook = global_unraisable_handler
 
         # Attach custom handler to Toga's asyncio loop
         loop = asyncio.get_event_loop()

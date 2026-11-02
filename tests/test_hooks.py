@@ -8,7 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from mypystub.hooks import ScriptRunner
+from mypystub.hooks import (
+    RunStream,
+    ScriptRunner,
+    raised_by_prototype,
+    report_exception,
+)
 
 
 class FakeLoop:
@@ -210,3 +215,71 @@ def test_interactive_console_output_reaches_both_panes(runner: ScriptRunner) -> 
     )
     assert runner.print_field.value == "42\n"
     assert "ZeroDivisionError" in "".join(runner.errors)  # type: ignore[attr-defined]
+
+
+def caught_in_launcher(prototype_code: str) -> BaseException:
+    """An exception from `prototype_code` (run as __main__), caught by the launcher.
+
+    The traceback starts in a launcher frame, as one from Rubicon's run loop or
+    a thread does, and passes through the prototype's code if it raised there.
+    """
+    script: dict[str, object] = {"__name__": "__main__"}
+    exec(f"def work():\n    {prototype_code}\n", script)  # noqa: S102
+    launcher: dict[str, object] = {"__name__": "mypystub.app", "work": script["work"]}
+    # Test-only: constant code, run with the launcher's __name__
+    exec(  # noqa: S102
+        "try:\n    work()\nexcept Exception as e:\n    caught = e\n", launcher
+    )
+    caught = launcher["caught"]
+    assert isinstance(caught, BaseException)
+    return caught
+
+
+def test_prototype_errors_caught_by_the_launcher_are_shown(
+    runner: ScriptRunner, log: io.StringIO
+) -> None:
+    """A main-thread callback's error reaches the error pane, not just the log."""
+    runner.begin_run()
+    exc = caught_in_launcher("raise ValueError('not my values')")
+    report_exception(type(exc), exc, exc.__traceback__)
+    shown = "".join(runner.errors)  # type: ignore[attr-defined]
+    assert shown.startswith("Traceback (most recent call last):")
+    assert "ValueError: not my values" in shown
+    assert "ValueError: not my values" in log.getvalue()
+
+
+def test_launcher_errors_are_logged_only(
+    runner: ScriptRunner, log: io.StringIO
+) -> None:
+    """An error in the launcher's own code isn't shown as the prototype's."""
+    runner.begin_run()
+    launcher: dict[str, object] = {"__name__": "mypystub.ui"}
+    # Test-only: constant code, run with the launcher's __name__
+    exec(  # noqa: S102
+        "try:\n    1 / 0\nexcept Exception as e:\n    caught = e\n", launcher
+    )
+    exc = launcher["caught"]
+    assert isinstance(exc, BaseException)
+    assert not raised_by_prototype(exc.__traceback__)
+    report_exception(type(exc), exc, exc.__traceback__)
+    assert runner.errors == []  # type: ignore[attr-defined]
+    assert "ZeroDivisionError" in log.getvalue()
+
+
+def test_errors_outside_a_run_go_to_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no run, the traceback is simply written to sys.stderr."""
+    err = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", err)
+    exc = caught_in_launcher("raise KeyError('k')")
+    report_exception(type(exc), exc, exc.__traceback__)
+    assert "KeyError: 'k'" in err.getvalue()
+
+
+def test_the_logs_other_attributes_pass_through(
+    runner: ScriptRunner, log: io.StringIO
+) -> None:
+    """The Logs tab finds the log file's path during a run, too."""
+    log.path = "app_runtime.log"  # type: ignore[attr-defined]
+    runner.begin_run()
+    assert isinstance(sys.stdout, RunStream)
+    assert sys.stdout.path == "app_runtime.log"  # type: ignore[attr-defined]

@@ -12,7 +12,9 @@ import io
 import re
 import sys
 import threading
+import traceback
 from collections.abc import Callable
+from types import TracebackType
 from typing import Any
 
 import toga
@@ -31,22 +33,62 @@ def clean_ansi(text: str) -> str:
 LAUNCHER_PACKAGES = frozenset({"mypystub", "toga", "travertino", "rubicon"})
 
 
+def frame_owner(frame: Any) -> bool | None:
+    """Whether code in `frame` is the prototype's: None for the standard library.
+
+    The launcher's and Toga's own code is not the prototype's; anything else
+    outside the standard library is.
+    """
+    name = frame.f_globals.get("__name__") or ""
+    top = name.split(".", 1)[0]
+    if not top or top in sys.stdlib_module_names:
+        return None
+    return not (top in LAUNCHER_PACKAGES or top.startswith("toga_"))
+
+
 def written_by_prototype(frame: Any) -> bool:
     """Whether a write made from `frame` belongs to the running prototype.
 
     Standard library frames are skipped (print(), traceback, logging and
     warnings write on someone else's behalf), and the first other frame
-    decides: the launcher's and Toga's own code is not the prototype's;
-    anything else is. With only standard library frames, writes on the script
-    thread are the prototype's, and writes on the main thread aren't.
+    decides (see :func:`frame_owner`). With only standard library frames,
+    writes on the script thread are the prototype's, and writes on the main
+    thread aren't.
     """
     while frame is not None:
-        name = frame.f_globals.get("__name__") or ""
-        top = name.split(".", 1)[0]
-        if top and top not in sys.stdlib_module_names:
-            return not (top in LAUNCHER_PACKAGES or top.startswith("toga_"))
+        if (owner := frame_owner(frame)) is not None:
+            return owner
         frame = frame.f_back
     return threading.current_thread() is not threading.main_thread()
+
+
+def raised_by_prototype(tb: TracebackType | None) -> bool:
+    """Whether a traceback passes through the prototype's code."""
+    while tb is not None:
+        if frame_owner(tb.tb_frame):
+            return True
+        tb = tb.tb_next
+    return False
+
+
+def report_exception(
+    exc_type: type[BaseException], exc: BaseException, tb: TracebackType | None
+) -> None:
+    """Write an uncaught exception's full traceback to sys.stderr.
+
+    The launcher's exception hooks write it, so the write itself would be
+    the launcher's. During a run, a traceback through the prototype's code
+    is shown in the Script tab too, wherever it was caught: on the script
+    thread, in a main-thread callback, or in Rubicon's run loop.
+    """
+    text = "".join(traceback.format_exception(exc_type, exc, tb))
+    stream = sys.stderr
+    if isinstance(stream, RunStream):
+        stream.target.write(text)
+        if raised_by_prototype(tb):
+            stream.show(text)
+    else:
+        stream.write(text)
 
 
 class RunStream(io.TextIOBase):
@@ -89,6 +131,12 @@ class RunStream(io.TextIOBase):
     def fileno(self) -> int:
         """The log's file descriptor, if it has one."""
         return self.target.fileno()
+
+    def __getattr__(self, name: str) -> Any:
+        """Anything else is the log's, such as the log file's ``path``."""
+        if name == "target":
+            raise AttributeError(name)
+        return getattr(self.target, name)
 
 
 class ScriptRunner:

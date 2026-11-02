@@ -886,6 +886,9 @@ class Prototype:
         required_packages = getattr(selected_row, "dependencies", [])
 
         target_user_packages = self.cache_path / "site_packages"
+        # The folder must exist before it's on sys.path, or imports searching
+        # it cache "nothing here" (piplike also clears that after installing)
+        target_user_packages.mkdir(parents=True, exist_ok=True)
         if str(target_user_packages) not in sys.path:
             sys.path.insert(0, str(target_user_packages))
 

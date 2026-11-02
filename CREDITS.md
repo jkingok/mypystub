@@ -20,6 +20,10 @@ used under the Flaticon free licence, which requires this attribution.
 | `box.png` | `fi-rr-box` | Project-folder rows in the list (unless the project sets its own icon) |
 | `examples.png` | `fi-rr-person-chalkboard` | Examples folder |
 | `documents.png` | `fi-rr-portfolio` | Documents folder |
+| `boxes.png` | `fi-rr-boxes` | Project-folder with multiple entry points |
+| `terminal.png` | `fi-rr-square-terminal` | Console entry point |
+| `window.png` | `fi-rr-window-alt` | GUI entry point |
+| `plug.png` | `fi-rr-plug-connection` | Other or plug-in entry point |
 
 When you add an icon, add a row here. `tests/test_credits.py` fails for any
 icon that is not listed.
