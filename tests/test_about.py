@@ -4,6 +4,8 @@ import platform
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from mypystub import about
 
 
@@ -133,3 +135,47 @@ def test_aliases_section_describes_each_alias(tmp_path: Path) -> None:
         ("pyyaml", "pyyaml-pure (when no compatible wheel)"),
         ("toga", "toga-core (bundled with the app)"),
     ]
+
+
+REPO = "https://github.com/jkingok/mypystub"
+
+
+@pytest.mark.parametrize(
+    ("home", "version", "url"),
+    [
+        (REPO, "2026.11.2.3", f"{REPO}/tree/2026.11.2.3"),
+        (REPO + "/", "2026.11.2.3", f"{REPO}/tree/2026.11.2.3"),
+        (REPO, "0.0.2", REPO),  # a dev run: no release tag, so the repository
+        (REPO, None, REPO),
+        (None, "2026.11.2.3", None),
+        ("javascript:alert(1)", "2026.11.2.3", None),
+    ],
+)
+def test_source_url_points_at_the_release_tag(
+    home: str | None, version: str | None, url: str | None
+) -> None:
+    """Release builds link to their tag; other runs to the repository."""
+    assert about.source_url(home, version) == url
+
+
+def test_source_row_appears_with_a_home_page(tmp_path: Path) -> None:
+    """The App section links to the source when the app has a home page."""
+    sections = about.collect_environment(
+        "MyPyStub",
+        "2026.11.2.3",
+        {},
+        tmp_path / "site",
+        home_page=REPO,
+    )
+    assert ("Source", f"{REPO}/tree/2026.11.2.3") in section(sections, "App")
+    without = about.collect_environment("MyPyStub", "1", {}, tmp_path / "site")
+    assert [key for key, _ in section(without, "App")] == ["Name", "Version"]
+
+
+def test_html_links_web_addresses_only() -> None:
+    """https values become links; anything else stays text."""
+    html = about.to_html(
+        [("App", [("Source", f"{REPO}/tree/1.2.3.4"), ("Path", "/var/x")])]
+    )
+    assert f'<td><a href="{REPO}/tree/1.2.3.4">{REPO}/tree/1.2.3.4</a></td>' in html
+    assert "<td>/var/x</td>" in html

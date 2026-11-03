@@ -453,7 +453,8 @@ class Prototype:
             items=["Help", "What's New", "About"],
             on_change=self.show_help_page,
         )
-        self.help_view = toga.WebView(flex=1)
+        # Links (the About page's Source) open in the browser, not in place
+        self.help_view = toga.WebView(flex=1, on_navigation_starting=self.open_external)
         self.about_share = toga.Button(
             "Share", on_press=self.handle_about_share, visibility="hidden"
         )
@@ -1127,7 +1128,7 @@ class Prototype:
         )
 
     def open_external(self, widget: toga.WebView, url: str, **kwargs: Any) -> bool:
-        """Open web links in the system browser, not inside the README view."""
+        """Open web links in the system browser, not inside a web view (README, Info, About)."""
         if url.startswith(("http://", "https://", "mailto:")):
             import webbrowser
 
@@ -1467,6 +1468,7 @@ class Prototype:
             paths,
             Path(self.cache_path) / "site_packages",
             aliases=self.configured_aliases(),
+            home_page=self.app.home_page,
         )
 
     def show_help_page(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:

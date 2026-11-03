@@ -4,6 +4,7 @@ Kept free of Toga imports so it can be unit tested on desktop.
 """
 
 import platform
+import re
 import sys
 from collections.abc import Mapping
 from html import escape
@@ -13,6 +14,24 @@ from .piplike import ALIASES, Alias, get_package_inventory
 
 Row = tuple[str, str]
 Section = tuple[str, list[Row]]
+
+# A release build's version, YYYY.M.D.N, which is also its Git tag (#110)
+RELEASE_VERSION = re.compile(r"\d{4}\.[1-9]\d?\.[1-9]\d?\.[1-9]\d*")
+
+
+def source_url(home_page: str | None, version: str | None) -> str | None:
+    """Where this build's source code is published.
+
+    Release builds are tagged with their version, and the tag is mirrored to
+    the public repository with ``main``, so they link to that tag. Other runs
+    (``briefcase dev``, the placeholder version) link to the repository.
+    """
+    if not home_page or not home_page.startswith("https://"):
+        return None
+    home = home_page.rstrip("/")
+    if version and RELEASE_VERSION.fullmatch(version):
+        return f"{home}/tree/{version}"
+    return home
 
 
 def python_rows() -> list[Row]:
@@ -67,10 +86,14 @@ def collect_environment(
     paths: Mapping[str, Path],
     user_site: Path,
     aliases: Mapping[str, Alias] | None = None,
+    home_page: str | None = None,
 ) -> list[Section]:
     """Gather every section shown on the About page."""
+    app: list[Row] = [("Name", app_name), ("Version", app_version or "unknown")]
+    if source := source_url(home_page, app_version):
+        app.append(("Source", source))
     return [
-        ("App", [("Name", app_name), ("Version", app_version or "unknown")]),
+        ("App", app),
         ("Python", python_rows()),
         ("Paths", [(name, str(path)) for name, path in paths.items()]),
         *package_sections(user_site),
@@ -88,6 +111,14 @@ def to_text(sections: list[Section]) -> str:
     return "\n".join(lines)
 
 
+def cell(value: str) -> str:
+    """A table value: web addresses become links, everything else text."""
+    if value.startswith("https://") and " " not in value:
+        url = escape(value)
+        return f'<a href="{url}">{url}</a>'
+    return escape(value)
+
+
 def to_html(sections: list[Section]) -> str:
     """Render sections as HTML tables for the About web view."""
     parts: list[str] = []
@@ -98,7 +129,7 @@ def to_html(sections: list[Section]) -> str:
             continue
         parts.append("<table>")
         parts += [
-            f"<tr><th>{escape(key)}</th><td>{escape(value)}</td></tr>"
+            f"<tr><th>{escape(key)}</th><td>{cell(value)}</td></tr>"
             for key, value in rows
         ]
         parts.append("</table>")

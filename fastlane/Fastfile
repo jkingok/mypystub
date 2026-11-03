@@ -103,7 +103,15 @@ platform :ios do
       app_identifier: bundle_id,
       initial_build_number: 0
     )
-    build_number = latest_build + 1
+
+    # Release tags (YYYY.M.D.N, added by the share lane) count too, so a build
+    # is never numbered at or below one that was already tagged
+    sh("git -C .. fetch --tags --quiet origin", error_callback: lambda { |_|
+      UI.important("Couldn't fetch tags; numbering from TestFlight alone")
+    })
+    tagged = sh("git -C .. tag --list '#{date_version}.*'", log: false)
+      .lines.map { |tag| tag.strip.split(".")[3].to_i }
+    build_number = ([latest_build] + tagged).max + 1
 
     # Python sees <calver>.<build>, e.g. 2026.11.2.3: four numbers, no words
     output = sh("uv --directory .. run scripts/set_version.py #{date_version} #{build_number}")
@@ -227,6 +235,21 @@ platform :ios do
     )
   end
 
+  private_lane :tag_release do
+    tag = lane_context[:PYTHON_VERSION]
+    add_git_tag(tag: tag, message: "TestFlight build #{tag}")
+    push_git_tags(tag: tag)
+    sh("git -C .. fetch --quiet origin main")
+    unless system("git -C .. merge-base --is-ancestor HEAD origin/main")
+      UI.important(
+        "#{tag} tags a commit that isn't on main. The public repository only " \
+        "gets tags on main, so the About page's Source link won't work until " \
+        "this commit is merged into main as is (not squashed). Share from main " \
+        "to avoid this."
+      )
+    end
+  end
+
   desc "Build Briefcase iOS app (.xcodeproj) and upload to TestFlight (pilot)"
   lane :share do
     # 1. Unlock Keychain on CI / Self-Hosted Runner
@@ -247,6 +270,11 @@ platform :ios do
       #username: ENV["APP_STORE_APPLE_ID"],
       #app_identifier: bundle_id
     )
+
+    # 6. Tag the release with its version, e.g. 2026.11.2.3, so the About
+    # page's Source link finds the exact code. mirror-main.yml copies tags on
+    # main to the public repository.
+    tag_release
     #pilot(
     #  api_key: api_key,
     #  ipa: ipa_path,

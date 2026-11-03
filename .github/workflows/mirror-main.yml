@@ -1,9 +1,16 @@
 name: Mirror Main to Public Repo
 
+# Copies main, and the release tags on main, to the public repository. Release
+# tags (YYYY.M.D.N) are added by the Fastlane share lane; the About page links
+# to the tag of the running build. Tags on commits that aren't on main are
+# never copied, so unmerged work stays private.
+
 on:
   push:
     branches:
       - main
+    tags:
+      - "[0-9][0-9][0-9][0-9].*.*.*"
   workflow_dispatch:
 
 jobs:
@@ -15,10 +22,22 @@ jobs:
         with:
           fetch-depth: 0 # Fetch all history for smooth branch pushing
 
-      - name: Push Main Branch to Public Remote
+      - name: Push Main Branch and Release Tags to Public Remote
         run: |
+          set -euo pipefail
+
           # 1. Add public remote if not already set up
           git remote add public git@github.com:jkingok/mypystub.git || true
 
-          # 2. Push local main directly to public main
-          git push public main:main --force
+          # 2. Push main directly to public main. A tag push checks out the tag,
+          #    not main, so push the remote-tracking ref.
+          git fetch --tags --force origin
+          git push public refs/remotes/origin/main:refs/heads/main --force
+
+          # 3. Push release tags that are on main. Tags never move, so this
+          #    isn't forced; existing identical tags are left alone.
+          tags=$(git tag --merged origin/main --list '[0-9][0-9][0-9][0-9].*.*.*' \
+            | grep -E '^[0-9]{4}\.[1-9][0-9]?\.[1-9][0-9]?\.[1-9][0-9]*$' || true)
+          if [ -n "$tags" ]; then
+            git push public $(printf 'refs/tags/%s ' $tags)
+          fi

@@ -87,3 +87,5 @@ Fastlane sets the version, so do not edit it by hand. Before Briefcase runs, it 
 | Xcode `CFBundleVersion` | `3` |
 
 Runs straight from the source tree (`briefcase dev`, tests) show the placeholder version in `pyproject.toml`.
+
+After a successful upload, `share` tags the commit with the Python version (for example `2026.11.2.3`) and pushes the tag. `mirror-main.yml` copies `main` and the release tags on `main` to the public repository, and the About page links to the tag of the running build ("Source"). Tags on commits that aren't on `main` stay private, so share from `main`; a build from a branch that is later squash-merged keeps a private tag, and the lane warns about it. Build numbers count both TestFlight and these tags, so a number is never reused.
