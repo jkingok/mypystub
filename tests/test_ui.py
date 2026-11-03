@@ -21,81 +21,19 @@ os.environ["TOGA_BACKEND"] = "toga_dummy"
 import toga
 
 from mypystub import piplike, setup_pages, ui
+from tests.support_ui import (
+    fresh_stack,
+    press,
+    row,
+    run,
+    run_to_end,
+    select,
+    tap,
+    titles,
+    wait_for,
+)
 
 ICONS = Path(ui.__file__).parent / "resources" / "icons"
-
-
-def fresh_stack(proto: ui.Prototype) -> None:
-    """Empty the shared window's content stack before a test.
-
-    The window is shared by the module, so pages or takeovers an earlier test
-    left open would otherwise change the depths later tests wait for.
-    """
-    stack = proto.content_stack()
-    list.clear(stack)
-    stack.floor = 0
-
-
-@pytest.fixture(scope="module")
-def app() -> toga.App:
-    """One dummy app for the module; Toga expects a single App per process."""
-    app = toga.App("UI test", "org.example.uitest", startup=lambda app: toga.Box())
-    app.main_window = toga.MainWindow()
-    return app
-
-
-@pytest.fixture
-def docs(tmp_path: Path) -> Path:
-    """A User documents folder with nested scripts."""
-    (tmp_path / "a" / "b").mkdir(parents=True)
-    (tmp_path / "a" / "b" / "deep.py").write_text('"""Deep down."""\n')
-    (tmp_path / "top.py").write_text('"""At the top."""\n')
-    return tmp_path
-
-
-@pytest.fixture
-def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prototype:
-    """A launcher opened on Documents, with dialogs recorded instead of shown."""
-    monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
-    p = ui.Prototype(host_app=app, on_done=lambda _: None)
-    fresh_stack(p)
-    app.main_window.content = p.get_content()
-    p.dialogs = []  # type: ignore[attr-defined]
-
-    async def record(text: str, title: str | None = None) -> None:
-        p.dialogs.append(  # type: ignore[attr-defined]
-            (title, text, p.tabs.current_tab.text, p.script_activity.text.text)
-        )
-
-    monkeypatch.setattr(p, "error", record)
-    # On iOS, clear_selection deselects the row once it has been read; do the
-    # same on the dummy backend, or every list reload re-fires on_select.
-    monkeypatch.setattr(
-        p, "clear_selection", lambda widget: widget._impl._set_value("selection", None)
-    )
-    p.reload_menu(p.script_list)
-    tap(p, "Documents", monkeypatch, app)
-    return p
-
-
-def titles(p: ui.Prototype) -> list[str]:
-    """Row titles currently in the list."""
-    return [row.title for row in p.script_list.data]
-
-
-def tap(
-    p: ui.Prototype, title: str, monkeypatch: pytest.MonkeyPatch, app: toga.App
-) -> None:
-    """Select the row titled `title` on this list only, and run the handler."""
-    # The dummy backend's selection is per widget, so lists from other tests
-    # can't pick it up; the handler clears it once read (see the fixture).
-    p.script_list._impl._set_value("selection", titles(p).index(title))
-    run(app, p.handle_row_selection(p.script_list))
-
-
-def run(app: toga.App, coro: Coroutine[Any, Any, Any]) -> Any:
-    """Run `coro` on the app's loop."""
-    return app.loop.run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -524,35 +462,6 @@ def test_open_settings_button(
 # ---------------------------------------------------------------------------
 
 
-def wait_for(
-    app: toga.App, condition: Callable[[], bool], timeout: float = 5.0
-) -> None:
-    """Run the app loop until `condition()` holds."""
-
-    async def poll() -> None:
-        for _ in range(int(timeout / 0.01)):
-            if condition():
-                return
-            await asyncio.sleep(0.01)
-        raise AssertionError("timed out waiting for the run to end")
-
-    run(app, poll())
-
-
-def run_to_end(
-    proto: ui.Prototype,
-    app: toga.App,
-    docs: Path,
-    source: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Write `source` as a script, tap it, and wait until its run has ended."""
-    (docs / "case.py").write_text(source)
-    proto.reload_menu(proto.script_list)
-    tap(proto, "case", monkeypatch, app)
-    wait_for(app, lambda: proto.ended_run == proto.run_id)
-
-
 def test_silent_script_returns_to_list(
     proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -838,23 +747,6 @@ def messages(proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch) -> list[tuple
 
     monkeypatch.setattr(proto, "info", info)
     return shown
-
-
-def row(p: ui.Prototype, title: str) -> Any:
-    """The list row titled `title`."""
-    return next(r for r in p.script_list.data if r.title == title)
-
-
-def press(app: toga.App, button: toga.Button) -> None:
-    """Press a button and let any async handler finish."""
-    button._impl.simulate_press()
-    run(app, asyncio.sleep(0.01))
-
-
-def select(form_list: toga.DetailedList, handler: Callable, index: int) -> None:
-    """Tap row `index` of one of the form's lists."""
-    form_list._impl._set_value("selection", index)
-    handler(form_list)
 
 
 def editor_fields(app: toga.App) -> list[toga.TextInput]:
