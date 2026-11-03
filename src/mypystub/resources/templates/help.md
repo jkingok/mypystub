@@ -31,6 +31,8 @@ Swipe a row for more:
 
 Rows with nothing to show or run say why.
 
+**Paste** (on iPhone and iPad) adds what you copied to the folder you're looking at in **Documents**. Copy a file in the Files app and it is added as it is; an archive (`.zip`, `.tar`, `.tar.gz`) can be extracted into one folder. Copy Python code as text and you'll be asked for a file name. Nothing is replaced unless you say so: otherwise the new one is called `name_2`, `name_3` and so on.
+
 Environment variables are inherited. Those set on the Setup tab's **Environment** page reach every run, and a script or project can override them, or add its own, with its own *Setup* (swipe right). A project with several entry points has its own Setup too, with variables but no arguments, which its entry points inherit and can override in turn. Inherited variables show where they come from, such as "from Setup"; editing one sets an override here, and deleting the override uses the inherited value again.
 
 ## Script

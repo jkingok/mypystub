@@ -36,7 +36,34 @@ if sys.platform == "ios":
         shared = UIApplication.sharedApplication
         return shared() if callable(shared) else shared
 
+    # UIKit's pasteboard (the clipboard); toga_iOS doesn't declare it
+    UIPasteboard = ObjCClass("UIPasteboard")
+
     # Photos: Toga doesn't load this framework, so it's loaded here
     photos = load_library("Photos")
     PHPhotoLibrary = ObjCClass("PHPhotoLibrary")
     PHAccessLevelAddOnly = 1  # PHAccessLevel.addOnly
+
+
+def read_pasteboard() -> tuple[str, str] | None:
+    """What the system pasteboard (clipboard) holds, or None if nothing useful.
+
+    Returns ``("file", path)`` for a copied file, which is preferred, or
+    ``("text", string)`` for copied text. Pasteboards only exist on iOS: on
+    other platforms this returns None. A copied file lives outside the app, so
+    its security-scoped access is started here and left open for the copy that
+    follows; the system reclaims it when the app quits.
+    """
+    if sys.platform != "ios":
+        return None
+    pasteboard = UIPasteboard.generalPasteboard
+    if pasteboard.hasURLs:
+        url = pasteboard.URL
+        if url is not None and url.isFileURL:
+            url.startAccessingSecurityScopedResource()
+            return ("file", str(url.path))
+    if pasteboard.hasStrings:
+        text = pasteboard.string
+        if text is not None and str(text):
+            return ("text", str(text))
+    return None
