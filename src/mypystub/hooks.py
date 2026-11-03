@@ -1,13 +1,16 @@
 """
 Module of functions for hooking/monkey-patching APIs for our purposes.
 
-During a run, ``input`` reads from the Script tab, and ``sys.stdout`` and
+During a run, ``input`` and ``getpass.getpass`` read from the Script tab
+(what was asked and answered is echoed there and in the log, except a
+password), and ``sys.stdout`` and
 ``sys.stderr`` are teed: everything still goes to the app's log, unchanged,
 and what the prototype writes is also shown in the Script tab, with stderr
 shown separately (#119).
 """
 
 import builtins
+import getpass
 import io
 import re
 import sys
@@ -155,6 +158,9 @@ class ScriptRunner:
         toggle_input: Callable[[bool], None],
         toggle_print: Callable[[bool], None],
         on_error_output: Callable[[str], None] | None = None,
+        password_label: toga.Label | None = None,
+        password_field: toga.PasswordInput | None = None,
+        toggle_password: Callable[[bool], None] | None = None,
     ) -> None:
         """
         Creates the script bridge that combines hooks with access to Toga widgets
@@ -162,6 +168,10 @@ class ScriptRunner:
 
         `on_error_output` shows the prototype's stderr text; it's called on the
         main thread. Without it, stderr goes to the log only.
+
+        `password_label`, `password_field` and `toggle_password` are the widgets
+        ``getpass.getpass`` uses, so a password isn't shown as it is typed.
+        Without them, getpass uses the text field but never echoes the answer.
         """
         self.app = app
         self.input_label = input_label
@@ -172,6 +182,15 @@ class ScriptRunner:
         self.toggle_print = toggle_print
         self.on_error_output = on_error_output
         self.input_field.on_confirm = self.handle_ui_submit
+        self.password_label = password_label
+        self.password_field = password_field
+        self.toggle_password = toggle_password
+        if password_field is not None:
+            password_field.on_confirm = self.handle_ui_submit
+        # What the question in progress is, for the echo
+        self._prompt = ""
+        self._secret = False
+        self._toggle_current: Callable[[bool], None] | None = None
         # Sync primitives
         self._input_event = threading.Event()
         self._input_value = ""
@@ -179,6 +198,7 @@ class ScriptRunner:
         # Keep track of the originals, put back when a run ends
         self._original_print = builtins.print
         self._original_input = builtins.input
+        self._original_getpass = getpass.getpass
         self._original_streams: tuple[Any, Any] | None = None
         # Whether the current run has shown any output in the Script tab
         self.printed = False
@@ -200,6 +220,7 @@ class ScriptRunner:
     def hook_builtins(self) -> None:
         """Intercept input, and tee sys.stdout and sys.stderr."""
         builtins.input = self._custom_input
+        getpass.getpass = self._custom_getpass
         if self._original_streams is None:
             self._original_streams = (sys.stdout, sys.stderr)
             sys.stdout = RunStream(sys.stdout, self.append_to_log)
@@ -208,6 +229,7 @@ class ScriptRunner:
     def unhook_builtins(self) -> None:
         """Restore default terminal behavior."""
         builtins.input = self._original_input
+        getpass.getpass = self._original_getpass
         if self._original_streams is not None:
             sys.stdout, sys.stderr = self._original_streams
             self._original_streams = None
@@ -254,31 +276,54 @@ class ScriptRunner:
             self.app.loop.call_soon_threadsafe(callback, message)
 
     def _custom_input(self, prompt: object = "") -> str:
-        """
-        Alternative version of input that sends the prompt to the user and
-        accesses a value via a Toga Label and TextInput. Threading locking
+        """Alternative version of input: the prompt and answer are echoed.
+
+        The prompt is shown in a label above a text field. Threading locking
         is used to meet the usual guarantee that input is blocking, and "enter"
         or confirmation (rather than incremental changes) are used as the
-        trigger that the user is done.
+        trigger that the user is done. As a terminal would, the prompt and the
+        typed answer are then written to the output and the log.
         """
+        return self._ask(str(prompt), secret=False)
+
+    def _custom_getpass(self, prompt: str = "Password: ", stream: Any = None) -> str:
+        """Alternative version of getpass.getpass: a password field, no echo.
+
+        Only the prompt (and a newline) reaches the output and the log. `stream`
+        is accepted for compatibility and ignored.
+        """
+        return self._ask(str(prompt), secret=True)
+
+    def _ask(self, prompt: str, secret: bool) -> str:
+        """Ask the user a question and wait on the script thread for the answer."""
+        use_password = secret and self.password_field is not None
+        label = self.password_label if use_password else self.input_label
+        field = self.password_field if use_password else self.input_field
+        toggle = self.toggle_password if use_password else self.toggle_input
+
         # 1. Clear any old event state
         self._input_event.clear()
         self._input_value = ""
+        self._prompt = prompt
+        self._secret = secret
+        self._toggle_current = toggle
 
         # 2. Update and show UI on the main thread
         def setup_ui() -> None:
             """
             Modifies the onscreen UI to show the input field and prompt
             """
-            self.toggle_input(True)
-            if prompt:
-                self.input_label.text = str(prompt)
+            if toggle is not None:
+                toggle(True)
+            if prompt and label is not None:
+                label.text = prompt
 
-            self.input_field.value = ""
-            self.input_field.focus()
+            if field is not None:
+                field.value = ""
+                field.focus()
 
-        if app := toga.App.app:
-            app.loop.call_soon_threadsafe(setup_ui)
+        if self.app is not None and getattr(self.app, "loop", None) is not None:
+            self.app.loop.call_soon_threadsafe(setup_ui)
 
             # 3. Block the student's background thread until the event is set
             self._input_event.wait()
@@ -286,12 +331,28 @@ class ScriptRunner:
         # 4. Return the captured value back to the student's script
         return self._input_value
 
-    def handle_ui_submit(self, widget: toga.Widget, **kwargs: Any) -> None:
-        """Triggered by the Toga TextInput's on_confirm handler."""
-        # Capture the text
-        self._input_value = self.input_field.value
+    def echo_answer(self) -> None:
+        """Write the question and answer, as a terminal would, to screen and log.
 
-        self.toggle_input(False)
+        A password's value is never written: only the prompt and a newline.
+        """
+        text = self._prompt + ("" if self._secret else self._input_value) + "\n"
+        # The log gets it directly: writing to sys.stdout from here would be
+        # the launcher's own, which is log-only anyway
+        log = (self._original_streams or (sys.stdout,))[0]
+        log.write(text)
+        self.mainthread_append_to_log(clean_ansi(text))
+
+    def handle_ui_submit(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Triggered by the Toga TextInput's or PasswordInput's on_confirm handler."""
+        # Capture the text
+        self._input_value = str(getattr(widget, "value", ""))
+
+        self.echo_answer()
+        if self._toggle_current is not None:
+            self._toggle_current(False)
+        if self._secret and self.password_field is not None:
+            self.password_field.value = ""  # don't leave the password in the widget
 
         # Release the background thread's lock
         self._input_event.set()

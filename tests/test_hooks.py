@@ -283,3 +283,162 @@ def test_the_logs_other_attributes_pass_through(
     runner.begin_run()
     assert isinstance(sys.stdout, RunStream)
     assert sys.stdout.path == "app_runtime.log"  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# input() and getpass() (#121)
+# ---------------------------------------------------------------------------
+
+
+class Fields:
+    """Fake input widgets and what the launcher was asked to show."""
+
+    def __init__(self) -> None:
+        self.label = SimpleNamespace(text="")
+        self.field = SimpleNamespace(value="", on_confirm=None, focus=lambda: None)
+        self.password_label = SimpleNamespace(text="")
+        self.password_field = SimpleNamespace(
+            value="", on_confirm=None, focus=lambda: None
+        )
+        self.shown: list[str] = []
+
+
+@pytest.fixture
+def io_runner(log: io.StringIO, monkeypatch: pytest.MonkeyPatch) -> ScriptRunner:
+    """A runner with separate text and password fields, and a log."""
+    fields = Fields()
+    loop = FakeLoop()
+    runner = ScriptRunner(
+        SimpleNamespace(loop=loop),  # type: ignore[arg-type]
+        fields.label,  # type: ignore[arg-type]
+        fields.field,  # type: ignore[arg-type]
+        SimpleNamespace(value=""),  # type: ignore[arg-type]
+        lambda on: fields.shown.append("text" if on else "-text"),
+        lambda on: None,
+        password_label=fields.password_label,  # type: ignore[arg-type]
+        password_field=fields.password_field,  # type: ignore[arg-type]
+        toggle_password=lambda on: fields.shown.append(
+            "password" if on else "-password"
+        ),
+    )
+    runner.fields = fields  # type: ignore[attr-defined]
+
+    def start() -> None:
+        # pytest swaps sys.stdout in for each test phase, so point the streams
+        # at the log only now, when the test body starts the run
+        monkeypatch.setattr(sys, "stdout", log)
+        monkeypatch.setattr(sys, "stderr", log)
+        runner.begin_run()
+
+    runner.start = start  # type: ignore[attr-defined]
+    yield runner
+    runner.end_run()
+
+
+def ask_from_script(
+    runner: ScriptRunner, call: Callable[[], str], answer: str, secret: bool = False
+) -> str:
+    """Run `call` on a script thread, answer it from the 'main thread'."""
+    import threading
+
+    fields = runner.fields  # type: ignore[attr-defined]
+    result: list[str] = []
+    worker = threading.Thread(target=lambda: result.append(call()))
+    worker.start()
+    loop = runner.app.loop
+    for _ in range(500):  # wait for the prompt to be queued
+        if loop.ready:
+            break
+        threading.Event().wait(0.01)
+    loop.run_ready()  # shows the field
+    field = fields.password_field if secret else fields.field
+    field.value = answer
+    runner.handle_ui_submit(field)
+    worker.join(timeout=5)
+    return result[0]
+
+
+def test_input_returns_the_answer_and_echoes_it(
+    io_runner: ScriptRunner, log: io.StringIO
+) -> None:
+    """The prompt and the typed answer land in the output and the log, once."""
+    io_runner.start()  # type: ignore[attr-defined]
+    answer = ask_from_script(io_runner, lambda: input("Name? "), "Ada")
+    assert answer == "Ada"
+    assert io_runner.print_field.value == "Name? Ada\n"
+    assert log.getvalue() == "Name? Ada\n"
+    assert io_runner.printed
+
+
+def test_echo_keeps_order_with_surrounding_output(
+    io_runner: ScriptRunner, log: io.StringIO
+) -> None:
+    """Output before and after the question stays in order around the echo."""
+    io_runner.start()  # type: ignore[attr-defined]
+    print_from("__main__", "before")
+    ask_from_script(io_runner, lambda: input(">>> "), "x * 7")
+    print_from("__main__", "42")
+    io_runner.app.loop.run_ready()
+    assert io_runner.print_field.value == "before\n>>> x * 7\n42\n"
+    assert log.getvalue() == "before\n>>> x * 7\n42\n"
+
+
+def test_input_without_a_prompt_echoes_the_answer(io_runner: ScriptRunner) -> None:
+    """A bare input() still shows what was typed."""
+    io_runner.start()  # type: ignore[attr-defined]
+    ask_from_script(io_runner, lambda: input(), "hi")
+    assert io_runner.print_field.value == "hi\n"
+
+
+def test_getpass_uses_the_password_field_and_hides_the_value(
+    io_runner: ScriptRunner, log: io.StringIO
+) -> None:
+    """getpass shows the prompt and a newline, never the password."""
+    io_runner.start()  # type: ignore[attr-defined]
+    import getpass
+
+    answer = ask_from_script(
+        io_runner, lambda: getpass.getpass("Password: "), "s3cret", secret=True
+    )
+    assert answer == "s3cret"
+    assert io_runner.print_field.value == "Password: \n"
+    assert "s3cret" not in log.getvalue()
+    fields = io_runner.fields  # type: ignore[attr-defined]
+    assert fields.shown == ["password", "-password"]  # not the text field
+    assert fields.password_field.value == ""  # cleared after submit
+    assert fields.password_label.text == "Password: "
+
+
+def test_getpass_default_prompt_and_stream_argument(io_runner: ScriptRunner) -> None:
+    """getpass() keeps its signature: default prompt, and a stream that's ignored."""
+    io_runner.start()  # type: ignore[attr-defined]
+    import getpass
+
+    ask_from_script(
+        io_runner,
+        lambda: getpass.getpass(stream=io.StringIO()),
+        "pw",
+        secret=True,
+    )
+    assert io_runner.fields.password_label.text == "Password: "  # type: ignore[attr-defined]
+
+
+def test_hooks_are_restored_after_the_run() -> None:
+    """input and getpass are the originals again once the run ends."""
+    import getpass
+
+    original_input, original_getpass = builtins.input, getpass.getpass
+    runner = ScriptRunner(
+        SimpleNamespace(loop=FakeLoop()),  # type: ignore[arg-type]
+        SimpleNamespace(text=""),  # type: ignore[arg-type]
+        SimpleNamespace(value="", on_confirm=None),  # type: ignore[arg-type]
+        SimpleNamespace(value=""),  # type: ignore[arg-type]
+        lambda on: None,
+        lambda on: None,
+    )
+    runner.begin_run()
+    assert builtins.input is not original_input
+    assert getpass.getpass is not original_getpass
+    runner.end_run()
+    assert builtins.input is original_input
+    assert getpass.getpass is original_getpass

@@ -393,6 +393,16 @@ class Prototype:
         self.input_box = toga.Column(
             children=[self.input_prompt, self.input_text], text_align="center"
         )
+        # getpass() asks here instead, so the password isn't shown (#121)
+        self.password_prompt = toga.Label("Password")
+        self.password_text = toga.PasswordInput(
+            style=Pack(flex=1),
+            on_gain_focus=self.gain_focus,
+            on_lose_focus=self.lose_focus,
+        )
+        self.password_box = toga.Column(
+            children=[self.password_prompt, self.password_text], text_align="center"
+        )
         self.print_text = toga.MultilineTextInput(readonly=True)
         # The run's stderr, shown beside or below its output (#119). It's
         # hidden until something is written to it, and Hide hides it again
@@ -422,6 +432,9 @@ class Prototype:
             self.toggle_input,
             self.toggle_print,
             on_error_output=self.show_error_output,
+            password_label=self.password_prompt,
+            password_field=self.password_text,
+            toggle_password=self.toggle_password,
         )
         self.script_scroll = toga.ScrollContainer(
             horizontal=False, content=self.print_text, style=Pack(flex=1)
@@ -1228,10 +1241,20 @@ class Prototype:
         self.pad_keyboard(False)
 
     def toggle_input(self, on: bool) -> None:
+        self.toggle_box(self.input_box, on)
+
+    def toggle_password(self, on: bool) -> None:
+        """Show or hide the password field that getpass() asks with."""
+        self.toggle_box(self.password_box, on)
+
+    def toggle_box(self, box: toga.Box, on: bool) -> None:
+        """Show `box` at the top of the Script tab, or take it away."""
+        script_box = self.app.widgets["script_box"]
         if on:
-            self.app.widgets["script_box"].insert(0, self.input_box)
-        elif self.input_box:
-            self.app.widgets["script_box"].remove(self.input_box)
+            if box.parent is None:
+                script_box.insert(0, box)
+        elif box.parent is not None:
+            script_box.remove(box)
         self.pad_keyboard(on)
 
     def toggle_print(self, on: bool) -> None:

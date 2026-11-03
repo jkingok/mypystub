@@ -1459,6 +1459,49 @@ def test_streams_are_restored_after_a_run(
 
 
 # ---------------------------------------------------------------------------
+# input() is echoed; getpass() asks without showing the password (#121)
+# ---------------------------------------------------------------------------
+
+
+def answer_when_asked(
+    proto: ui.Prototype, app: toga.App, box: toga.Widget, field: toga.Widget, text: str
+) -> None:
+    """Wait for the script to ask with `box`, then type `text` and press Return."""
+    wait_for(app, lambda: box.parent is not None)
+    field.value = text  # type: ignore[attr-defined]
+    proto.script_runner.handle_ui_submit(field)
+
+
+def test_input_is_echoed_in_the_script_tab(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The prompt and answer appear in the output, then the script's own print."""
+    (docs / "case.py").write_text("name = input('Name? ')\nprint('Hello', name)\n")
+    proto.reload_menu(proto.script_list)
+    tap(proto, "case", monkeypatch, app)
+    answer_when_asked(proto, app, proto.input_box, proto.input_text, "Ada")
+    wait_for(app, lambda: proto.ended_run == proto.run_id)
+    assert proto.print_text.value == "Name? Ada\nHello Ada\n"
+    assert proto.input_box.parent is None  # the field is put away again
+
+
+def test_getpass_uses_the_password_field_and_hides_the_answer(
+    proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """getpass shows only its prompt, in the password field's box."""
+    (docs / "case.py").write_text(
+        "import getpass\npw = getpass.getpass('Secret: ')\nprint(len(pw))\n"
+    )
+    proto.reload_menu(proto.script_list)
+    tap(proto, "case", monkeypatch, app)
+    answer_when_asked(proto, app, proto.password_box, proto.password_text, "hunter2")
+    wait_for(app, lambda: proto.ended_run == proto.run_id)
+    assert proto.print_text.value == "Secret: \n7\n"
+    assert "hunter2" not in proto.print_text.value
+    assert proto.password_box.parent is None and proto.input_box.parent is None
+    assert proto.password_text.value == ""
+
+
 # New users open on Help (#125)
 # ---------------------------------------------------------------------------
 
