@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from mypystub import info_pages, piplike
+from mypystub import info_pages, scan
 from mypystub.runner import RunContext, entry_target, target_for
 
 MAIN = "print('hello from', __name__, sys.argv[1:])\n"
@@ -67,7 +67,7 @@ def make_zipapp(
 def test_a_pyz_is_a_zipapp_row(tmp_path: Path) -> None:
     """Even a bare archive is listed, titled by its file name."""
     make_zipapp(tmp_path / "bare.pyz", main="import sys\n" + MAIN)
-    (row,) = piplike.scan_all_prototypes(tmp_path)
+    (row,) = scan.scan_all_prototypes(tmp_path)
     assert row["kind"] == "zipapp"
     assert row["title"] == "bare"
     assert row["entry_point"] == tmp_path / "bare.pyz"
@@ -78,11 +78,11 @@ def test_a_pyz_is_a_zipapp_row(tmp_path: Path) -> None:
 def test_metadata_gives_title_subtitle_and_entry_points(tmp_path: Path) -> None:
     """dist-info fills in the description; several entry points make a package."""
     make_zipapp(tmp_path / "tools.pyz", main="", metadata=True, entry=True)
-    (row,) = piplike.scan_all_prototypes(tmp_path)
+    (row,) = scan.scan_all_prototypes(tmp_path)
     assert row["kind"] == "package"
     assert row["subtitle"] == "Some zipped tools"
     assert row["project_dir"] == tmp_path / "tools.pyz"
-    rows = piplike.entry_rows(row)
+    rows = scan.entry_rows(row)
     assert [(r["title"], r["subtitle"]) for r in rows] == [
         ("greet", "Console · tools.cli:greet"),
         ("plug", "tools.plugins · tools.cli:PLUG"),
@@ -99,7 +99,7 @@ def test_one_entry_point_is_the_implied_entry(tmp_path: Path) -> None:
             "tools-1.2.3.dist-info/entry_points.txt",
             "[console_scripts]\ngreet = tools.cli:greet\n",
         )
-    (row,) = piplike.scan_all_prototypes(tmp_path)
+    (row,) = scan.scan_all_prototypes(tmp_path)
     assert row["kind"] == "zipapp"
     assert row["entry"].name == "greet"
 
@@ -107,7 +107,7 @@ def test_one_entry_point_is_the_implied_entry(tmp_path: Path) -> None:
 def test_unreadable_archive_is_still_listed(tmp_path: Path) -> None:
     """No scanning for problems: a bad file is a row, and fails when run."""
     (tmp_path / "broken.pyz").write_bytes(b"not a zip")
-    (row,) = piplike.scan_all_prototypes(tmp_path)
+    (row,) = scan.scan_all_prototypes(tmp_path)
     assert row["kind"] == "zipapp" and row["title"] == "broken"
 
 

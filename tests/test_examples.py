@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import mypystub
-from mypystub import piplike
+from mypystub import scan
 
 # Same folder as Prototype.get_category_dir() uses for "Examples"
 BUNDLED = Path(mypystub.__file__).parent / "resources" / "examples"
@@ -17,7 +17,7 @@ REPO_EXAMPLES = Path(__file__).parent.parent / "examples"
 def walk(folder: Path) -> dict[str, list[str]]:
     """Follow folder entries like the launcher does; map folder to its titles."""
     found: dict[str, list[str]] = {}
-    entries = list(piplike.scan_all_prototypes(folder))
+    entries = list(scan.scan_all_prototypes(folder))
     found[folder.relative_to(BUNDLED).as_posix()] = [e["title"] for e in entries]
     for entry in entries:
         if "folder" in entry:
@@ -56,7 +56,7 @@ def test_examples_are_grouped_in_folders() -> None:
 
 def test_project_example_is_one_runnable_entry() -> None:
     """The project folder shows as a single project, not a folder to open."""
-    entries = piplike.scan_all_prototypes(BUNDLED / "basics")
+    entries = scan.scan_all_prototypes(BUNDLED / "basics")
     (project,) = [e for e in entries if e["kind"] == "project"]
     assert project["title"] == "Hello Project"
     assert project["dependencies"] == ["humanize"]

@@ -51,8 +51,8 @@ def test_launcher_output_during_a_run_does_not_count(
     """Launcher prints (here, its folder scan) don't keep the Script tab open."""
     source = (
         "from pathlib import Path\n"
-        "from mypystub import piplike\n"
-        "piplike.scan_all_prototypes(Path('.'))  # prints 'Scanning...'\n"
+        "from mypystub import scan\n"
+        "scan.scan_all_prototypes(Path('.'))  # prints 'Scanning...'\n"
     )
     run_to_end(proto, app, docs, source, monkeypatch)
     assert proto.print_text.value == ""

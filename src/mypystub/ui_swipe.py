@@ -12,8 +12,8 @@ import toga
 from . import (
     info_pages,
     row_info,
+    scan,
 )
-from . import piplike as pip
 from .pages import html_page, readme_html
 from .run_settings import RunSettings
 from .run_with import RunWithForm
@@ -50,7 +50,7 @@ class SwipeMixin(RowSettingsMixin):
                 self.show_readme(title, readme)
                 return
             message = row_info.no_readme_message(
-                kind, title, pip.folder_summary(folder)
+                kind, title, scan.folder_summary(folder)
             )
             await self.info(message, title)
             return

@@ -15,6 +15,7 @@ from . import piplike as pip
 from . import (
     row_info,
     runner,
+    scan,
 )
 from .ui_rowsettings import RowSettingsMixin
 
@@ -149,7 +150,7 @@ class RunMixin(RowSettingsMixin):
 
         # Folder rows (including "..") navigate instead of running anything
         if folder := getattr(selected_row, "folder", None):
-            self.subfolder = pip.relative_folder(self.get_category_dir(), folder)
+            self.subfolder = scan.relative_folder(self.get_category_dir(), folder)
             self.reload_menu(widget)
             return
 

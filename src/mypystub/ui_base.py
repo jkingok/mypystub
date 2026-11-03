@@ -14,6 +14,7 @@ from . import hooks as h
 from . import piplike as pip
 from . import (
     runner,
+    scan,
 )
 from . import settings as s
 from .pages import html_page
@@ -256,7 +257,7 @@ class PrototypeBase:
             self.script_list.data = [
                 {
                     "title": name,
-                    "subtitle": pip.folder_summary_compact(path),
+                    "subtitle": scan.folder_summary_compact(path),
                     "icon": self.bundled_icon(CATEGORY_ICONS[name]),
                     "category": name,
                 }
@@ -269,7 +270,7 @@ class PrototypeBase:
             return
 
         # 1. Gather all of our TOML configuration profiles
-        self.prototypes_data = pip.scan_all_prototypes(self.get_current_dir())
+        self.prototypes_data = scan.scan_all_prototypes(self.get_current_dir())
 
         # 2. Format the records specifically for Toga's DetailedList expectations
         up = self.bundled_icon("arrow-small-left.png")
@@ -324,9 +325,9 @@ class PrototypeBase:
     def package_rows(self, package_dir: Path) -> list[dict[str, Any]]:
         """The rows inside an open package: ".." and its entry points."""
         package = (
-            pip.scan_zipapp(package_dir)
+            scan.scan_zipapp(package_dir)
             if package_dir.is_file()
-            else pip.scan_project(package_dir)
+            else scan.scan_project(package_dir)
         )
         rows: list[dict[str, Any]] = [
             {
@@ -336,7 +337,7 @@ class PrototypeBase:
                 "package_up": True,
             }
         ]
-        for row in pip.entry_rows(package) if package["kind"] == "package" else []:
+        for row in scan.entry_rows(package) if package["kind"] == "package" else []:
             row.pop("icon_path")
             row["icon"] = self.bundled_icon(ENTRY_ICONS[row["entry"].kind])
             row["splash"] = None

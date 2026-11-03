@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 import mypystub
-from mypystub import piplike
+from mypystub import scan
 from mypystub.runner import RunContext, target_for
 
 EXAMPLES = Path(mypystub.__file__).parent / "resources" / "examples"
@@ -57,7 +57,7 @@ def test_dependency_example_declares_its_dependency() -> None:
     """The dependency example's PEP 723 block is what the launcher installs from."""
     (entry,) = [
         e
-        for e in piplike.scan_all_prototypes(EXAMPLES / "basics")
+        for e in scan.scan_all_prototypes(EXAMPLES / "basics")
         if e["title"] == "with_dependency"
     ]
     assert entry["dependencies"] == ["humanize"]
@@ -108,7 +108,7 @@ def run_two_tools(name: str, argv: list[str] = (), env: dict | None = None) -> d
     """Run one of Two Tools' entry points the way the launcher does."""
     from mypystub.runner import entry_target
 
-    package = piplike.scan_project(TWO_TOOLS)  # scan_project doesn't print
+    package = scan.scan_project(TWO_TOOLS)  # scan_project doesn't print
     (entry,) = [e for e in package["entries"] if e.name == name]
     target = entry_target(
         entry.name, entry.reference, entry.kind, TWO_TOOLS, TWO_TOOLS / "src"
@@ -119,7 +119,7 @@ def run_two_tools(name: str, argv: list[str] = (), env: dict | None = None) -> d
 
 def test_two_tools_lists_every_kind_of_entry_point() -> None:
     """The project opens like a folder of its entry points."""
-    (package,) = piplike.scan_all_prototypes(EXAMPLES / "projects")
+    (package,) = scan.scan_all_prototypes(EXAMPLES / "projects")
     assert package["kind"] == "package" and package["title"] == "Two Tools"
     assert [(e.name, e.label) for e in package["entries"]] == [
         ("greet", "Console"),

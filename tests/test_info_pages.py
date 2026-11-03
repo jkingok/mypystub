@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from mypystub import info_pages
-from mypystub.piplike import EntryPoint
+from mypystub.scan import EntryPoint
 
 
 def write(path: Path, text: str) -> Path:

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from mypystub.pages import readme_html, safe_url
-from mypystub.piplike import (
+from mypystub.scan import (
     EntryPoint,
     iter_script_metadata,
     project_entry_points,
