@@ -114,7 +114,7 @@ def test_list_starts_with_the_categories(
     p.reload_menu(p.script_list)
     assert titles(p) == ["Examples", "Documents"]
     documents = p.script_list.data[1]
-    assert documents.subtitle == "1 subfolder, 1 script"  # a/ and top.py
+    assert documents.subtitle == "📁 1 · 🐍 1"  # a/ and top.py
     assert not hasattr(p, "dir_selection")
 
 
@@ -142,7 +142,7 @@ def test_folders_drill_down_and_back_up(
 def test_folder_rows_preview_their_contents(proto: ui.Prototype) -> None:
     """Folders show what's inside rather than just "Folder"."""
     row = next(r for r in proto.script_list.data if r.title == "a")
-    assert row.subtitle == "1 subfolder"
+    assert row.subtitle == "📁 1"
 
 
 def test_category_icons_appear_once_downloaded(

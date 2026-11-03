@@ -893,6 +893,15 @@ def entry_rows(package: Mapping[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+# What a folder row counts, in the order shown, with a word and a compact symbol
+SUMMARY_KINDS = {
+    "subfolder": "📁",
+    "package": "📦",  # projects and zipapps, which run as one entry
+    "script": "🐍",
+    "other file": "📄",
+}
+
+
 def read_zipapp_metadata(archive: Path) -> dict[str, Any]:
     """What a zipapp's ``*.dist-info`` says about it, as a PEP 621-like table.
 
@@ -985,18 +994,19 @@ def scan_zipapp(item: Path) -> dict[str, Any]:
     return row
 
 
-def folder_summary(folder: Path) -> str:
-    """Summarise what the list would show inside `folder`, without parsing files.
+def folder_counts(folder: Path) -> dict[str, int] | None:
+    """Count what the list would show inside `folder`, without parsing files.
 
-    For example "2 subfolders, 1 package, 3 scripts, 1 other file", or
-    "Empty folder". Hidden entries, caches and launcher files are not counted.
-    This lists one directory per folder row, so it is cheap but not free.
+    Hidden entries, caches and launcher files aren't counted. A ``.pyz``
+    zipapp counts as a package, like a project folder. None if the folder
+    can't be read. This lists one directory per folder row, so it is cheap but
+    not free.
     """
-    counts = {"subfolder": 0, "package": 0, "script": 0, "other file": 0}
+    counts = dict.fromkeys(SUMMARY_KINDS, 0)
     try:
         children = list(folder.iterdir())
     except OSError:
-        return "Folder"
+        return None
     for child in children:
         if child.name.startswith("."):
             continue
@@ -1008,17 +1018,43 @@ def folder_summary(folder: Path) -> str:
         elif child.suffix == ".py":
             if child.name not in RESERVED_SCRIPTS:
                 counts["script"] += 1
+        elif child.suffix == ".pyz":
+            counts["package"] += 1
         else:
             counts["other file"] += 1
+    return counts
+
+
+def folder_summary(folder: Path) -> str:
+    """Summarise a folder in words, such as "2 subfolders, 1 package, 3 scripts".
+
+    "Empty folder" if there is nothing to show, "Folder" if it can't be read.
+    """
+    counts = folder_counts(folder)
+    if counts is None:
+        return "Folder"
     parts = [f"{n} {kind}{'' if n == 1 else 's'}" for kind, n in counts.items() if n]
     return ", ".join(parts) if parts else "Empty folder"
+
+
+def folder_summary_compact(folder: Path) -> str:
+    """Summarise a folder in a short line for a narrow row: "📁 2 · 📦 1 · 🐍 3".
+
+    The same counts as :func:`folder_summary`, a symbol each, so the line isn't
+    truncated on a phone. Kinds that aren't there are left out.
+    """
+    counts = folder_counts(folder)
+    if counts is None:
+        return "Folder"
+    parts = [f"{SUMMARY_KINDS[kind]} {n}" for kind, n in counts.items() if n]
+    return " · ".join(parts) if parts else "Empty folder"
 
 
 def scan_folder(item: Path) -> dict[str, Any]:
     """Describe a plain folder that the launcher can navigate into."""
     return {
         "title": item.name,
-        "subtitle": folder_summary(item),
+        "subtitle": folder_summary_compact(item),
         "icon_path": None,
         "folder": item,
         "dependencies": [],

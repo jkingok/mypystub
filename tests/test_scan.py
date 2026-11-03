@@ -264,6 +264,41 @@ def test_folder_summary_counts_each_kind(tmp_path: Path) -> None:
     )
 
 
+def test_zipapps_count_as_packages_in_the_summary(tmp_path: Path) -> None:
+    """A .pyz is a runnable package, not an "other file" (#124)."""
+    write(tmp_path / "tool.pyz")
+    write(tmp_path / "proj" / "pyproject.toml", "[project]\nname='p'\n")
+    write(tmp_path / "notes.txt")
+    assert piplike.folder_summary(tmp_path) == "2 packages, 1 other file"
+    assert piplike.folder_summary_compact(tmp_path) == "📦 2 · 📄 1"
+
+
+def test_compact_summary_uses_one_symbol_for_each_kind(tmp_path: Path) -> None:
+    """Short enough for a narrow row: a symbol and a count, in a fixed order."""
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+    write(tmp_path / "proj" / "pyproject.toml", "[project]\nname='p'\n")
+    write(tmp_path / "one.py")
+    write(tmp_path / "two.py")
+    write(tmp_path / "notes.txt")
+    assert piplike.folder_summary_compact(tmp_path) == "📁 2 · 📦 1 · 🐍 2 · 📄 1"
+    assert len(piplike.folder_summary_compact(tmp_path)) < len(
+        piplike.folder_summary(tmp_path)
+    )
+
+
+def test_compact_summary_leaves_out_empty_kinds_and_handles_no_folder(
+    tmp_path: Path,
+) -> None:
+    """Only kinds present are shown; empty and unreadable folders still say so."""
+    write(tmp_path / "only.py")
+    assert piplike.folder_summary_compact(tmp_path) == "🐍 1"
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert piplike.folder_summary_compact(empty) == "Empty folder"
+    assert piplike.folder_summary_compact(tmp_path / "missing") == "Folder"
+
+
 def test_folder_summary_skips_hidden_cache_and_launcher_files(tmp_path: Path) -> None:
     """Things the list never shows aren't counted either."""
     write(tmp_path / ".DS_Store")
@@ -286,7 +321,7 @@ def test_folder_rows_preview_their_contents(tmp_path: Path) -> None:
     write(tmp_path / "games" / "pong.py")
     write(tmp_path / "games" / "snake.py")
     (entry,) = piplike.scan_all_prototypes(tmp_path)
-    assert entry["subtitle"] == "2 scripts"
+    assert entry["subtitle"] == "🐍 2"
 
 
 def test_script_and_project_aliases_are_read(tmp_path: Path) -> None:

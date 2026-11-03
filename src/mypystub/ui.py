@@ -610,7 +610,7 @@ class Prototype:
             self.script_list.data = [
                 {
                     "title": name,
-                    "subtitle": pip.folder_summary(path),
+                    "subtitle": pip.folder_summary_compact(path),
                     "icon": self.bundled_icon(CATEGORY_ICONS[name]),
                     "category": name,
                 }
