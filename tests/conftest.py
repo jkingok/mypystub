@@ -10,6 +10,7 @@ such as on device, only the tests that ask for these fixtures are skipped.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -68,3 +69,28 @@ def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prot
     p.reload_menu(p.script_list)
     tap(p, "Documents", monkeypatch, app)
     return p
+
+
+@pytest.fixture
+def config(
+    proto: ui.Prototype, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Point the launcher's settings at a fresh launcher.toml for this test."""
+    settings = proto.settings
+    path = tmp_path / "launcher.toml"
+    shutil.copy(settings.config_defaults, path)
+    monkeypatch.setattr(settings, "config_file", path)
+    settings.config_doc = settings._load()
+    return path
+
+
+@pytest.fixture
+def messages(proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
+    """Info dialogs and yes/no questions, recorded instead of shown."""
+    shown: list[tuple] = []
+
+    async def info(text: str, title: str | None = None) -> None:
+        shown.append((title, text))
+
+    monkeypatch.setattr(proto, "info", info)
+    return shown

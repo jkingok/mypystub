@@ -41,6 +41,7 @@ Two tiers. Desktop and CI use industry-standard tools. The on-device pipeline is
 - Line length 88.
 - Tests: pytest. Add tests for logic before changing it.
 - **Tests for a new, distinct feature go in a new file**, named `tests/test_<area>_<feature>.py` (for example `tests/test_ui_zipapps.py`; pytest only finds `test_*.py`), not appended to a busy file such as `tests/test_ui.py`. Tests added at the end of a shared file are where branches conflict. Edit an existing test file only to change the behaviour it already covers.
+- **File length.** Aim to keep an example around 300 lines (the Info view folds source after 300, and the examples are read on a phone). Everywhere else, keep a file under 1,000 lines. As a file approaches its limit, try to separate it along logical lines. A single-file example is the exception: it stays whole, because one file is easy to share. A project-based example is not exempt, and splits like any other project. `piplike.py` is over the limit and is being split; tests follow the source (`ui_setup.py` pairs with `tests/test_ui_setup.py`).
 - **Keep fixtures where they won't collect churn.** `tests/conftest.py` is for the few fixtures nearly every test needs (the dummy app and launcher). A fixture only one feature uses stays in that feature's test file. One shared by a few files goes in its own small module, `tests/support_<area>.py`, which they import. UI test files use the `app`, `docs` and `proto` fixtures from `conftest.py` and the helpers (`tap`, `run`, `wait_for`, `row`, …) from `tests/support_ui.py`.
 
 ## Commands

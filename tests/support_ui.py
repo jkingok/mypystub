@@ -19,6 +19,8 @@ import toga
 
 from mypystub import ui
 
+ICONS = Path(ui.__file__).parent / "resources" / "icons"
+
 
 def fresh_stack(proto: ui.Prototype) -> None:
     """Empty the shared window's content stack before a test.
