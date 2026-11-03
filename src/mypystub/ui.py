@@ -480,6 +480,8 @@ class Prototype:
         self.subfolder = Path()
         # A package with several entry points that's open, listing them
         self.package_dir: Path | None = None
+        # The page each web view shows now (by id), so it isn't loaded twice
+        self.loaded_pages: dict[int, str] = {}
         # Content-stack depths under each screen pushed by push_screen()
         self.screen_bases: list[int] = []
         # Toga's swipe actions are the same for every row (#59): swipe left
@@ -1471,6 +1473,19 @@ class Prototype:
             home_page=self.app.home_page,
         )
 
+    def load_page(self, view: toga.WebView, body: str) -> None:
+        """Show an HTML fragment in a web view, unless it already shows that page.
+
+        Building the tabs shows Help, selecting its tab asks again, and Setup
+        pages are redrawn after each change, so the same page was being loaded
+        two or three times; each load blanks and redraws the view.
+        """
+        page = html_page(body)
+        if self.loaded_pages.get(id(view)) == page:
+            return
+        self.loaded_pages[id(view)] = page
+        view.content = page
+
     def show_help_page(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         if str(self.help_selection.value) == "About":
             body = about.to_html(self.about_sections())
@@ -1490,7 +1505,7 @@ class Prototype:
             help_md = self.template_path / "help.md"
             body = help_html(help_md.read_text()) if help_md.exists() else ""
             self.about_share.style.visibility = "hidden"
-        self.help_view.content = html_page(body)
+        self.load_page(self.help_view, body)
 
     def handle_about_share(self, widget: toga.Button, **kwargs: Any) -> None:
         try:
@@ -1555,7 +1570,7 @@ class Prototype:
         if self.setup_page is None:
             return
         self.setup_html = self.setup_page_html(self.setup_page)
-        self.setup_view.content = html_page(self.setup_html)
+        self.load_page(self.setup_view, self.setup_html)
 
     def setup_actions(self, page: str) -> list[toga.Widget]:
         """Native buttons for one Setup page's actions."""

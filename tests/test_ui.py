@@ -1459,6 +1459,48 @@ def test_streams_are_restored_after_a_run(
 
 
 # ---------------------------------------------------------------------------
+# A WebView isn't reloaded with the page it already shows
+# ---------------------------------------------------------------------------
+
+
+def test_help_page_is_not_loaded_twice(
+    proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Building the tabs shows Help, and selecting the tab asks again: one load."""
+    loads: list[str] = []
+    monkeypatch.setattr(
+        proto.help_view._impl, "set_content", lambda root, html: loads.append(html)
+    )
+    proto.help_selection.selection.value = "Help"
+    proto.show_help_page()
+    proto.show_help_page()  # as tab_changed does when the tab is selected
+    proto.show_help_page()
+    assert len(loads) <= 1
+    proto.help_selection.selection.value = "About"
+    proto.show_help_page()
+    proto.show_help_page()
+    assert len(loads) <= 2 and "Bundled packages" in loads[-1]
+    proto.help_selection.selection.value = "Help"
+    proto.show_help_page()
+    assert "Bundled packages" not in loads[-1]  # a different page does load
+
+
+def test_setup_page_is_not_loaded_twice(
+    proto: ui.Prototype, site: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rendering an unchanged Setup page again doesn't reload it."""
+    loads: list[str] = []
+    monkeypatch.setattr(
+        proto.setup_view._impl, "set_content", lambda root, html: loads.append(html)
+    )
+    proto.open_setup_page("health")
+    first = len(loads)
+    proto.render_setup_page()
+    proto.render_setup_page()
+    assert len(loads) == first
+    proto.close_setup_page()
+
+
 # Paste (#36)
 # ---------------------------------------------------------------------------
 
