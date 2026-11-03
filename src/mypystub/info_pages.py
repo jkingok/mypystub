@@ -13,12 +13,18 @@ from __future__ import annotations
 import ast
 import html
 import tomllib
+import zipfile
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from mypystub.pages import readme_html, safe_url
-from mypystub.piplike import EntryPoint, iter_script_metadata, project_entry_points
+from mypystub.piplike import (
+    EntryPoint,
+    iter_script_metadata,
+    project_entry_points,
+    read_zipapp_metadata,
+)
 
 # Source longer than this shows its first lines, with the rest folded away
 SOURCE_PREVIEW_LINES = 300
@@ -328,4 +334,83 @@ def project_info_html(
     parts.append(section("Licence", license_section(folder, meta)))
     if changelog := find_file(folder, CHANGELOG_STEMS):
         parts.append(section("Changelog", text_file_html(changelog)))
+    return "\n".join(p for p in parts if p)
+
+
+# -- Zipapps ---------------------------------------------------------------------
+
+
+def zipapp_info_html(
+    path: Path,
+    title: str,
+    *,
+    entry: EntryPoint | None = None,
+    show_entries: bool = True,
+) -> str:
+    """The Info page for a ``.pyz`` zipapp: its dist-info, and its ``__main__.py``.
+
+    Nothing is extracted. Whatever metadata the archive has is shown, and an
+    archive that can't be read says so.
+    """
+    try:
+        with zipfile.ZipFile(path) as archive:
+            main = archive.read("__main__.py").decode("utf-8", errors="replace")
+    except KeyError:
+        main = ""
+    except (OSError, zipfile.BadZipFile) as error:
+        return (
+            f"<h1>{escape(title)}</h1>\n"
+            f"<p>Couldn't read {escape(path.name)}: {escape(error)}</p>"
+        )
+    meta = read_zipapp_metadata(path)
+    parts = [f"<h1>{escape(title)}</h1>"]
+    if description := meta.get("description"):
+        parts.append(f"<p>{escape(description)}</p>")
+    if entry is not None:
+        parts.append(
+            f"<p>An entry point of {escape(meta.get('name', path.stem))}: "
+            f"{entry_html(entry)}</p>"
+        )
+    details = [f"File: <code>{escape(path.name)}</code>"]
+    if name := meta.get("name"):
+        details.append(f"Name: <code>{escape(name)}</code>")
+    if version := meta.get("version"):
+        details.append(f"Version: {escape(version)}")
+    parts.append(section("Details", bullet_list(details)))
+    parts.append(
+        section("Dependencies", dependencies_html(meta.get("dependencies", [])))
+    )
+    if show_entries:
+        parts.append(
+            section(
+                "Entry points",
+                bullet_list(map(entry_html, project_entry_points(meta))),
+            )
+        )
+    urls = meta.get("urls", {})
+    parts.append(
+        section(
+            "Links",
+            bullet_list(
+                f"{escape(label)}: {link(str(url))}" for label, url in urls.items()
+            ),
+        )
+    )
+    if readme := meta.get("readme"):
+        markdown = "markdown" in str(readme.get("content-type", ""))
+        parts.append(
+            section(
+                "README",
+                readme_html(str(readme["text"]), "README.md" if markdown else ""),
+            )
+        )
+    if main.strip():
+        lines = main.count("\n") + (0 if main.endswith("\n") else 1)
+        parts.append(
+            section(
+                "Source",
+                f"<p>__main__.py, {lines} line{'s' if lines != 1 else ''}.</p>\n"
+                + source_html(main),
+            )
+        )
     return "\n".join(p for p in parts if p)

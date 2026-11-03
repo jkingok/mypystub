@@ -195,14 +195,18 @@ def entry_target(
 ) -> RunTarget:
     """Build a :class:`RunTarget` for a project's entry point.
 
-    It runs from the project folder with ``import_root`` importable, and
+    It runs from the project folder (or, for a zipapp, the folder holding it)
+    with ``import_root`` importable, and
     ``sys.argv[0]`` is the entry point's name, as for an installed script.
     """
     Reference.parse(reference)  # fail early on a malformed reference
+    project_dir = Path(project_dir)
+    # A zipapp is a file: it runs from the folder it's in
+    in_archive = project_dir.is_file() or project_dir.suffix == ".pyz"
     return RunTarget(
-        path=Path(project_dir) / "pyproject.toml",
+        path=project_dir if in_archive else project_dir / "pyproject.toml",
         import_root=Path(import_root),
-        workdir=Path(project_dir),
+        workdir=project_dir.parent if in_archive else project_dir,
         kind=kind,
         reference=reference,
         argv0=name,

@@ -13,7 +13,15 @@ from pathlib import Path
 from typing import Any, Literal
 
 RowType = Literal[
-    "category", "up", "folder", "script", "project", "package", "entry", "other"
+    "category",
+    "up",
+    "folder",
+    "script",
+    "project",
+    "zipapp",
+    "package",
+    "entry",
+    "other",
 ]
 
 # Checked in this order; the first that exists (in any letter case) is shown
@@ -32,7 +40,7 @@ def row_type(row: Any) -> RowType:
     if getattr(row, "category", None):
         return "category"
     kind = getattr(row, "kind", None)
-    if kind in ("folder", "script", "project", "package", "entry"):
+    if kind in ("folder", "script", "project", "zipapp", "package", "entry"):
         return kind
     return "other"
 
@@ -43,7 +51,7 @@ def runnable(kind: RowType) -> bool:
     A package with several entry points opens like a folder instead; it has
     environment variables that its entry points inherit, but no arguments.
     """
-    return kind in ("script", "project", "entry")
+    return kind in ("script", "project", "zipapp", "entry")
 
 
 def find_readme(folder: Path) -> Path | None:

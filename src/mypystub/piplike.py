@@ -1,5 +1,7 @@
 import ast
 import asyncio
+import configparser
+import email
 import importlib
 import importlib.metadata
 import platform
@@ -891,6 +893,98 @@ def entry_rows(package: Mapping[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def read_zipapp_metadata(archive: Path) -> dict[str, Any]:
+    """What a zipapp's ``*.dist-info`` says about it, as a PEP 621-like table.
+
+    Read with :mod:`zipfile` only; nothing is extracted. Whatever is missing
+    or unreadable is simply left out, so an archive with no metadata gives
+    ``{}``. The result has the keys of a ``[project]`` table (``name``,
+    ``version``, ``description``, ``dependencies``, ``urls``, ``scripts``,
+    ``gui-scripts``, ``entry-points``), plus ``readme`` (text and content type)
+    when the metadata has a long description.
+    """
+    meta: dict[str, Any] = {}
+    try:
+        with zipfile.ZipFile(archive) as zf:
+            names = zf.namelist()
+            info = next((n for n in names if n.endswith(".dist-info/METADATA")), None)
+            points = next(
+                (n for n in names if n.endswith(".dist-info/entry_points.txt")), None
+            )
+            if info:
+                message = email.message_from_bytes(zf.read(info))
+                if name := message.get("Name"):
+                    meta["name"] = name
+                if version := message.get("Version"):
+                    meta["version"] = version
+                if summary := message.get("Summary"):
+                    meta["description"] = summary
+                requires = [
+                    r
+                    for r in message.get_all("Requires-Dist") or []
+                    if "extra ==" not in r
+                ]
+                if requires:
+                    meta["dependencies"] = requires
+                urls = {}
+                for item in message.get_all("Project-URL") or []:
+                    label, _, url = item.partition(",")
+                    urls[label.strip()] = url.strip()
+                if urls:
+                    meta["urls"] = urls
+                body = message.get_payload(decode=True)
+                if isinstance(body, bytes) and body.strip():
+                    meta["readme"] = {
+                        "text": body.decode("utf-8", errors="replace"),
+                        "content-type": message.get("Description-Content-Type", ""),
+                    }
+            if points:
+                parser = configparser.ConfigParser(
+                    delimiters=("=",), interpolation=None
+                )
+                parser.optionxform = str  # type: ignore[assignment,method-assign]
+                parser.read_string(zf.read(points).decode("utf-8", errors="replace"))
+                groups = {g: dict(parser[g]) for g in parser.sections()}
+                if scripts := groups.pop("console_scripts", None):
+                    meta["scripts"] = scripts
+                if gui := groups.pop("gui_scripts", None):
+                    meta["gui-scripts"] = gui
+                if groups:
+                    meta["entry-points"] = groups
+    except (OSError, zipfile.BadZipFile, KeyError, configparser.Error):
+        pass  # not scanning for problems: they show up when it runs
+    return meta
+
+
+def scan_zipapp(item: Path) -> dict[str, Any]:
+    """Describe a ``.pyz`` zipapp the way :func:`scan_project` describes a project.
+
+    A zipapp with several entry points is a ``"package"``, one with a single
+    entry point runs it, and any other runs its ``__main__.py``. It is trusted
+    as it is: nothing is validated, so a broken archive is a run-time error.
+    """
+    meta = read_zipapp_metadata(item)
+    row: dict[str, Any] = {
+        "title": item.stem,
+        "subtitle": meta.get("description") or "Zipapp",
+        "icon_path": None,
+        "entry_point": item,
+        "folder_root": item,
+        "dependencies": [],
+        "aliases": {},
+        "project_dir": item,
+        "kind": "zipapp",
+    }
+    entries = project_entry_points(meta)
+    if len(entries) == 1:
+        row["entry"] = entries[0]
+    elif entries:
+        del row["entry_point"]
+        row["kind"] = "package"
+        row["entries"] = entries
+    return row
+
+
 def folder_summary(folder: Path) -> str:
     """Summarise what the list would show inside `folder`, without parsing files.
 
@@ -957,6 +1051,10 @@ def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
                 # Don't accidentally auto-load your main launcher scripts
                 if item.name not in RESERVED_SCRIPTS and (entry := scan_script(item)):
                     prototypes.append(entry)
+
+            # --- CASE A2: A zipapp (.pyz), trusted as it is ---
+            elif item.is_file() and item.suffix == ".pyz":
+                prototypes.append(scan_zipapp(item))
 
             # --- CASE B: The "Full Project" (Folder with pyproject.toml) ---
             elif item.is_dir() and (item / "pyproject.toml").exists():

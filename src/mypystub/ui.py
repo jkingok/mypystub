@@ -53,6 +53,7 @@ KIND_ICONS = {
     "project": "box.png",
     "package": "boxes.png",  # a project with several entry points
     "script": "file-code.png",
+    "zipapp": "zipapp.png",  # placeholder until the icon is added
 }
 
 # Entry points inside a package, by kind. Placeholders until the icons are
@@ -673,7 +674,11 @@ class Prototype:
 
     def package_rows(self, package_dir: Path) -> list[dict[str, Any]]:
         """The rows inside an open package: ".." and its entry points."""
-        package = pip.scan_project(package_dir)
+        package = (
+            pip.scan_zipapp(package_dir)
+            if package_dir.is_file()
+            else pip.scan_project(package_dir)
+        )
         rows: list[dict[str, Any]] = [
             {
                 "title": "..",
@@ -986,7 +991,7 @@ class Prototype:
                 return Path(row.folder)
             case "script":
                 return Path(row.entry_point)
-            case "project" | "package" | "entry":
+            case "project" | "zipapp" | "package" | "entry":
                 return Path(row.project_dir)
             case _:
                 return None
@@ -1077,6 +1082,10 @@ class Prototype:
             return info_pages.script_info_html(Path(row.entry_point), title)
         entry = getattr(row, "entry", None)
         is_entry = row_info.row_type(row) == "entry"
+        if Path(row.project_dir).is_file():  # a zipapp is a file, not a folder
+            return info_pages.zipapp_info_html(
+                Path(row.project_dir), title, entry=entry, show_entries=not is_entry
+            )
         return info_pages.project_info_html(
             Path(row.project_dir),
             title,
