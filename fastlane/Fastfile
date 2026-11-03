@@ -107,14 +107,38 @@ platform :ios do
 
     # Python sees <calver>.<build>, e.g. 2026.11.2.3: four numbers, no words
     output = sh("uv --directory .. run scripts/set_version.py #{date_version} #{build_number}")
-    UI.success("Python version #{output.lines.last.strip}; Xcode #{date_version} (#{build_number})")
+    python_version = output.lines.last.strip
+    UI.success("Python version #{python_version}; Xcode #{date_version} (#{build_number})")
 
     lane_context[:DATE_VERSION] = date_version
     lane_context[:BUILD_NUMBER] = build_number
+    lane_context[:PYTHON_VERSION] = python_version
   end
 
-  private_lane :update_xcode do
+  # Turn the change fragments in changes/ into this release's "What's New"
+  # section, and commit them, so the build (and its tag) contains its own notes.
+  # Only the notes are committed: the stamped pyproject.toml is restored later.
+  private_lane :collect_changes do
+    python_version = lane_context[:PYTHON_VERSION]
+    sh("uv --directory .. run scripts/collect_changes.py #{python_version}")
+    paths = ["changes", "src/mypystub/resources/templates/changes.md"]
+    # git add fails on a path that doesn't exist, and the archive appears only
+    # once something is old enough to go in it
+    paths << "changes-archive.md" if File.exist?("../changes-archive.md")
+    sh("git -C .. add -A #{paths.join(' ')}")
+    if system("git -C .. diff --cached --quiet")
+      UI.message("No user-facing changes to record for #{python_version}")
+    else
+      sh("git -C .. commit -m 'Release notes for #{python_version}'")
+      sh("git -C .. push origin HEAD", error_callback: lambda { |_|
+        UI.important("Couldn't push the release notes commit; push it before the next build")
+      })
+    end
+  end
+
+  private_lane :update_xcode do |options|
     decide_version
+    collect_changes if options[:release]
 
     begin
       # Briefcase copies the stamped version into the app's metadata here
@@ -164,8 +188,8 @@ platform :ios do
     update_xcode
   end
 
-  private_lane :build_xcode do
-    update_xcode
+  private_lane :build_xcode do |options|
+    update_xcode(release: options[:release])
 
     xcode_project = lane_context[:XCODE_PROJECT]
     xcode_scheme = lane_context[:XCODE_SCHEME]
@@ -211,7 +235,7 @@ platform :ios do
     #get_certificates
     #get_provisioning_profile
 
-    build_xcode
+    build_xcode(release: true)
 
     api_key = lane_context[:API_KEY]
 

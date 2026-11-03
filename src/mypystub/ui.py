@@ -434,7 +434,7 @@ class Prototype:
         self.splash = toga.ImageView(style=Pack(flex=0))
         self.help_selection = LabelledSelection(
             "Show",
-            items=["Help", "About"],
+            items=["Help", "What's New", "About"],
             on_change=self.show_help_page,
         )
         self.help_view = toga.WebView(flex=1)
@@ -1194,16 +1194,26 @@ class Prototype:
                     self.show_help_page()
 
     def choose_start_tab(self) -> str:
-        """Open on Help for a user who has never run the app (#125).
+        """Choose the tab to open on from the version last run (#125, #126).
 
-        Anyone else opens on the List, as before, and so does everyone if the
-        version can't be recorded. The version run is recorded for next time. Returns the name of the tab that is showing.
+        - A user who has never run the app opens on Help.
+        - The first time a new version is opened, Help shows "What's New".
+        - Otherwise, and if the version can't be recorded (every start would
+          then look new), the List, as before.
+
+        The running version is recorded for next time. Returns the name of the
+        tab that is showing.
         """
         version = self.app.version
         state = first_run.start_state(Path(self.cache_path), version)
         recorded = first_run.record_version(Path(self.cache_path), version)
         # If the version can't be recorded, every start would look like a first
         if recorded and state is first_run.StartState.NEW:
+            self.help_selection.selection.value = "Help"
+            self.tabs.current_tab = "Help"
+        elif recorded and state is first_run.StartState.UPDATED:
+            # The first time a new version is opened, show what changed in it
+            self.help_selection.selection.value = "What's New"
             self.tabs.current_tab = "Help"
         return str(self.tabs.current_tab.text)
 
@@ -1287,6 +1297,14 @@ class Prototype:
             self.about_share.style.visibility = (
                 "visible" if sys.platform == "ios" else "hidden"
             )
+        elif str(self.help_selection.value) == "What's New":
+            changes = self.template_path / "changes.md"
+            text = changes.read_text(encoding="utf-8") if changes.exists() else ""
+            if any(line.startswith("## ") for line in text.splitlines()):
+                body = help_html(text)
+            else:
+                body = "<h1>What's New</h1>\n<p>Nothing new to report yet.</p>"
+            self.about_share.style.visibility = "hidden"
         else:
             help_md = self.template_path / "help.md"
             body = help_html(help_md.read_text()) if help_md.exists() else ""

@@ -58,6 +58,7 @@ Manage dependencies with `uv`. Prefer, in order: pure Python, binary wheels, the
 
 ## Commits and PRs
 
+- A change a user would notice adds a fragment, `changes/<PR number>.feature.md` or `.bugfix.md` (see `changes/README.md`). Internal changes may add `.misc.md`, which isn't shown.
 - Claude identifies itself in every commit message and PR.
 - Use the attribution lines your session provides, with the model and session URL of the **current** session. Do not copy them from older commits or this file. The shape is:
   - Commit messages end with `Co-Authored-By: Claude <model> <noreply@anthropic.com>` and `Claude-Session: <current session URL>`.

@@ -1,7 +1,7 @@
 """Remember which version of the app a user last ran (#125).
 
 The launcher opens on the Help tab for a user who has never run the app, and
-(see #126) on "What's new" the first time they open a new version. The last
+(see #126) on "What's New" the first time they open a new version. The last
 version run is kept in a small text file in the app's cache folder.
 
 Kept free of Toga imports so it can be unit tested on desktop.

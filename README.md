@@ -76,6 +76,8 @@ bundle exec fastlane ios share
 - `local` builds and installs on local devices.
 - `manual` builds the Xcode project and leaves signing and deploying to Xcode.
 
+The `share` lane also collects the change fragments in `changes/` into the app's Help → What's New page and commits them (see `changes/README.md`).
+
 Fastlane sets the version, so do not edit it by hand. Before Briefcase runs, it picks today's date and the next build number on TestFlight, and `scripts/set_version.py` stamps them into `pyproject.toml` (restored afterwards). Python sees the build number as a fourth number, so the version is plain PEP 440 with no words. Xcode's version keys hold at most three numbers, so it keeps the build number apart. Every lane numbers its build the same way:
 
 | | Example |
