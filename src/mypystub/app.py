@@ -189,6 +189,7 @@ class MyApp(toga.App):
                 getattr(mw, "content_stack", []).append((mw.title, mw.content))
             mw.title = t
             mw.content = p.get_content()
+            p.choose_start_tab()
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             app.loop.create_task(mw.dialog(toga.ErrorDialog("Error Occurred", str(e))))

@@ -17,6 +17,7 @@ from toga.style import Pack
 
 from . import (
     about,
+    first_run,
     info_pages,
     maintenance,
     permissions,
@@ -1191,6 +1192,20 @@ class Prototype:
                     self.reload_logs(widget)
                 case "Help":
                     self.show_help_page()
+
+    def choose_start_tab(self) -> str:
+        """Open on Help for a user who has never run the app (#125).
+
+        Anyone else opens on the List, as before, and so does everyone if the
+        version can't be recorded. The version run is recorded for next time. Returns the name of the tab that is showing.
+        """
+        version = self.app.version
+        state = first_run.start_state(Path(self.cache_path), version)
+        recorded = first_run.record_version(Path(self.cache_path), version)
+        # If the version can't be recorded, every start would look like a first
+        if recorded and state is first_run.StartState.NEW:
+            self.tabs.current_tab = "Help"
+        return str(self.tabs.current_tab.text)
 
     def pad_keyboard(self, on: bool) -> None:
         # keyboard_box.style.visibility = "visible" if on else "hidden"

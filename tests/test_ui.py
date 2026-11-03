@@ -1459,6 +1459,44 @@ def test_streams_are_restored_after_a_run(
 
 
 # ---------------------------------------------------------------------------
+# New users open on Help (#125)
+# ---------------------------------------------------------------------------
+
+
+def test_new_user_opens_on_help(
+    proto: ui.Prototype, app: toga.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no version recorded, the app opens on the Help tab."""
+    monkeypatch.setattr(type(app), "version", "2026.11.3.1", raising=False)
+    proto.cache_path = tmp_path / "fresh-cache"
+    proto.tabs.current_tab = "List"
+    assert proto.choose_start_tab() == "Help"
+
+
+def test_returning_user_opens_on_the_list(
+    proto: ui.Prototype, app: toga.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With this version already recorded, the app opens on the List."""
+    monkeypatch.setattr(type(app), "version", "2026.11.3.1", raising=False)
+    proto.cache_path = tmp_path / "cache"
+    proto.tabs.current_tab = "List"
+    assert proto.choose_start_tab() == "Help"  # the first run records the version
+    proto.tabs.current_tab = "List"
+    assert proto.choose_start_tab() == "List"
+
+
+def test_unwritable_cache_opens_on_the_list(
+    proto: ui.Prototype, app: toga.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the version can't be recorded, the app still starts."""
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    monkeypatch.setattr(type(app), "version", "2026.11.3.1", raising=False)
+    proto.cache_path = blocker / "cache"
+    proto.tabs.current_tab = "List"
+    assert proto.choose_start_tab() == "List"  # no record possible: not a new user
+
+
 # The Setup menu's layout doesn't depend on timing (#109)
 # ---------------------------------------------------------------------------
 
