@@ -1430,10 +1430,25 @@ class Prototype:
             if self.screen_bases:
                 stack.floor = self.screen_bases[-1]
 
-    def setup_menu_button(self, page: str) -> toga.Button:
+    @staticmethod
+    def menu_entry(button: toga.Button) -> toga.Box:
+        """A Setup menu button filling a row of its own (#109).
+
+        A bare button in a column is as wide as its text until the tab's
+        width is known, and then stretches, so the menu looked different on
+        first showing, after coming back from a page, and on iPad. In a row,
+        flex=1 makes it fill the width the same way every time.
+        """
+        button.style.flex = 1
+        return toga.Row(children=[button])
+
+    def setup_menu_button(self, page: str) -> toga.Box:
         """A Setup menu entry that opens one of the detail pages."""
-        return toga.Button(
-            f"{self.SETUP_PAGES[page]} ›", on_press=lambda w: self.open_setup_page(page)
+        return self.menu_entry(
+            toga.Button(
+                f"{self.SETUP_PAGES[page]} ›",
+                on_press=lambda w: self.open_setup_page(page),
+            )
         )
 
     # -- Setup actions --------------------------------------------------------
@@ -1551,15 +1566,19 @@ class Prototype:
                     toga.Button("Add", on_press=self.new_project),
                 ],
             ),
-            toga.Button("Environment ›", on_press=self.open_setup_environment),
+            self.menu_entry(
+                toga.Button("Environment ›", on_press=self.open_setup_environment)
+            ),
             heading("Maintenance"),
             *(self.setup_menu_button(page) for page in self.SETUP_PAGES),
             heading("App"),
-            toga.Button("Backup", on_press=self.handle_backup_press),
-            toga.Button(
-                "Exit",
-                visibility="visible" if exit_visible else "hidden",
-                on_press=self.do_on_done_callback,
+            self.menu_entry(toga.Button("Backup", on_press=self.handle_backup_press)),
+            self.menu_entry(
+                toga.Button(
+                    "Exit",
+                    visibility="visible" if exit_visible else "hidden",
+                    on_press=self.do_on_done_callback,
+                )
             ),
         ]
 

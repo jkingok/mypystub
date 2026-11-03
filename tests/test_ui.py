@@ -1456,3 +1456,57 @@ def test_streams_are_restored_after_a_run(
     stdout, stderr = sys.stdout, sys.stderr
     run_to_end(proto, app, docs, "print('x')\n", monkeypatch)
     assert (sys.stdout, sys.stderr) == (stdout, stderr)
+
+
+# ---------------------------------------------------------------------------
+# The Setup menu's layout doesn't depend on timing (#109)
+# ---------------------------------------------------------------------------
+
+
+def menu_layout(widgets: list[toga.Widget]) -> list[tuple]:
+    """What decides a Setup menu entry's layout: its type, flex and children."""
+
+    def describe(widget: toga.Widget) -> tuple:
+        return (
+            type(widget).__name__,
+            widget.style.flex,
+            widget.style.align_items,
+            tuple(describe(child) for child in widget.children),
+        )
+
+    return [describe(widget) for widget in widgets]
+
+
+def test_every_menu_button_fills_its_own_row(proto: ui.Prototype) -> None:
+    """Buttons sit in rows and fill them, so their width is never left to chance."""
+    assert not [w for w in proto.setup_sections() if isinstance(w, toga.Button)]
+    rows = [
+        w
+        for w in proto.setup_sections()
+        if w.style.direction == "row" and len(w.children) == 1
+    ]
+    buttons = [row.children[0] for row in rows]
+    assert all(isinstance(b, toga.Button) for b in buttons)
+    assert {b.text for b in buttons} >= {"Environment ›", "Backup"}
+    assert all(b.style.flex == 1 for b in buttons)
+
+
+def test_new_project_field_fills_its_row(proto: ui.Prototype) -> None:
+    """The name field takes the space between its label and Add button."""
+    (row,) = [
+        w
+        for w in proto.setup_sections()
+        if w.style.direction == "row"
+        and any(isinstance(c, toga.TextInput) for c in w.children)
+    ]
+    (field,) = [c for c in row.children if isinstance(c, toga.TextInput)]
+    assert field.style.flex == 1
+
+
+def test_menu_is_the_same_after_a_page_and_back(proto: ui.Prototype) -> None:
+    """Opening a Setup page and coming back leaves the menu's layout as it was."""
+    menu = proto.setup_sections()
+    before = menu_layout(menu)
+    proto.open_setup_page("packages")
+    proto.close_setup_page()
+    assert menu_layout(menu) == before
