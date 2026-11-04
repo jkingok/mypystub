@@ -51,8 +51,8 @@ def python_rows() -> list[Row]:
 def package_sections(user_site: Path) -> list[Section]:
     """List bundled and user-installed distributions as two sections.
 
-    The user site is added to ``sys.path`` once a prototype with dependencies has
-    run, so anything found there is reported as user-installed, not bundled.
+    The user site is where prototypes install their dependencies, so anything
+    found there is reported as user-installed, not bundled.
     """
     user = get_package_inventory(user_site)
     bundled = {

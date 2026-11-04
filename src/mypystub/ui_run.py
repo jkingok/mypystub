@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -166,11 +165,11 @@ class RunMixin(RowSettingsMixin):
         required_packages = getattr(selected_row, "dependencies", [])
 
         target_user_packages = self.cache_path / "site_packages"
-        # The folder must exist before it's on sys.path, or imports searching
-        # it cache "nothing here" (piplike also clears that after installing)
+        # The folder must exist before the run puts it on sys.path, or imports
+        # searching it cache "nothing here" (piplike also clears that after
+        # installing). RunContext adds it to the path only for the run and
+        # takes it off again, so the launcher never imports from it.
         target_user_packages.mkdir(parents=True, exist_ok=True)
-        if str(target_user_packages) not in sys.path:
-            sys.path.insert(0, str(target_user_packages))
 
         # Switch to the Script view first, so installing dependencies shows
         # progress there instead of leaving the list looking frozen.
@@ -214,7 +213,10 @@ class RunMixin(RowSettingsMixin):
         # 3. Run it the way Python would: __main__, argv, its folder importable
         try:
             context = runner.RunContext(
-                self.run_target(selected_row), argv=settings.args, env=env
+                self.run_target(selected_row),
+                argv=settings.args,
+                env=env,
+                user_site=target_user_packages,
             )
         except Exception as e:  # noqa: BLE001
             self.script_activity.update(on=False)

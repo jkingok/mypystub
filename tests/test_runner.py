@@ -134,6 +134,22 @@ def test_run_modules_are_cleared_but_framework_modules_kept(
     assert "colorsys" in sys.modules
 
 
+def test_user_site_is_scoped_to_the_run(tmp_path: Path) -> None:
+    """user_site is on sys.path for the run and off it after, and a module
+    imported from it is purged, so the launcher never inherits a script's
+    packages (the shared folder stays on disk for the next run)."""
+    site = tmp_path / "site"
+    write(site / "user_pkg_for_runner_test.py", "VALUE = 1\n")
+    script = write(tmp_path / "s.py", "import user_pkg_for_runner_test\n")
+    sys.modules.pop("user_pkg_for_runner_test", None)
+    before = list(sys.path)
+    with RunContext(target_for(script, tmp_path), user_site=site) as run:
+        run.run()  # the import only resolves because user_site is on the path
+    assert str(site) not in sys.path
+    assert sys.path == before
+    assert "user_pkg_for_runner_test" not in sys.modules
+
+
 def test_callbacks_keep_their_globals(tmp_path: Path, registry: ModuleType) -> None:
     """Functions the script hands to the app still work after run_path returns."""
     script = write(

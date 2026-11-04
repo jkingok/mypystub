@@ -293,11 +293,19 @@ class StdinGuard:
 class RunContext:
     """Process state for one run, applied on :meth:`open` and undone on :meth:`close`.
 
+    ``user_site`` (the shared folder prototypes install their dependencies into)
+    is put on ``sys.path`` only for the length of the run and taken off again on
+    close, so the launcher's own imports never resolve from it. It is a purge
+    root too, so a package imported by one run is dropped before the next, and
+    can't linger in ``sys.modules`` for the launcher or a later script to pick
+    up. Prototypes still share the folder on disk; this isolates the launcher
+    from them, not the scripts from each other.
+
     Modules first imported during the run are removed on close only if they were
-    loaded from ``purge_roots`` (by default the run's import root). That makes
-    edits to a prototype take effect on the next run, while leaving Toga and the
-    standard library alone: the app already holds references to those, and a
-    second copy would mix versions.
+    loaded from ``purge_roots`` (by default the run's import root and
+    ``user_site``). That makes edits to a prototype take effect on the next run,
+    while leaving Toga and the standard library alone: the app already holds
+    references to those, and a second copy would mix versions.
     """
 
     def __init__(
@@ -306,12 +314,17 @@ class RunContext:
         argv: Sequence[str] = (),
         env: Mapping[str, str] | None = None,
         purge_roots: Iterable[Path] = (),
+        user_site: Path | None = None,
     ) -> None:
         """Prepare a run of `target` with extra `argv` and `env` entries."""
         self.target = target
         self.argv = [target.argv0 or str(target.path), *argv]
         self.env = dict(env or {})
-        self.purge_roots = [p.resolve() for p in (target.import_root, *purge_roots)]
+        self.user_site = Path(user_site) if user_site else None
+        extra = (self.user_site,) if self.user_site is not None else ()
+        self.purge_roots = [
+            p.resolve() for p in (target.import_root, *extra, *purge_roots)
+        ]
         self._saved: dict[str, Any] | None = None
 
     def open(self) -> Self:
@@ -331,6 +344,9 @@ class RunContext:
         sys.argv = list(self.argv)
         os.environ.update(self.env)
         os.chdir(self.target.workdir)
+        # user_site first so import_root ends up ahead of it, as before
+        if self.user_site is not None:
+            sys.path.insert(0, str(self.user_site))
         sys.path.insert(0, str(self.target.import_root))
         return self
 

@@ -722,8 +722,8 @@ def get_package_inventory(target_path: Path | None = None) -> dict[str, str]:
 def get_bundled_inventory(exclude: Path | None = None) -> dict[str, str]:
     """Return packages importable from ``sys.path``, excluding ``exclude``.
 
-    The launcher prepends the user site-packages to ``sys.path`` after the first
-    run, so exclude it here: those packages are user installs, not bundled ones.
+    A run puts the user site-packages on ``sys.path``, so exclude it here:
+    those packages are user installs, not bundled ones.
     """
     excluded = exclude.resolve() if exclude else None
     paths = [
