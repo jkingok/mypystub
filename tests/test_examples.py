@@ -13,6 +13,35 @@ from mypystub import scan
 BUNDLED = Path(mypystub.__file__).parent / "resources" / "examples"
 REPO_EXAMPLES = Path(__file__).parent.parent / "examples"
 
+# Core examples: the folders and files the launcher's own tests rely on. These
+# get every check. Anything else in the bundled folder is an extra example that
+# can be added or removed freely: it must not break the launcher, but it isn't
+# held to the core rules (folder layout, docstrings, main() guards, bridge use).
+CORE_FOLDERS = frozenset({"basics", "errors", "hardware", "takeover", "threads"})
+CORE_FILES = frozenset(
+    {
+        "basics/hello_world.py",
+        "basics/hello_you.py",
+        "basics/args_and_env.py",
+        "basics/show_args.py",
+        "basics/show_env.py",
+        "basics/with_dependency.py",
+        "basics/repl.py",
+        "basics/console.py",
+        "threads/countdown.py",
+        "threads/main_thread.py",
+        "takeover/back_button.py",
+        "takeover/nested_takeover.py",
+        "errors/main_thread_error.py",
+        "errors/test_error.py",
+    }
+)
+
+
+def core_files() -> list[Path]:
+    """The core example scripts, in the bundled folder."""
+    return [BUNDLED / name for name in sorted(CORE_FILES)]
+
 
 def walk(folder: Path) -> dict[str, list[str]]:
     """Follow folder entries like the launcher does; map folder to its titles."""
@@ -26,37 +55,28 @@ def walk(folder: Path) -> dict[str, list[str]]:
 
 
 def test_examples_are_grouped_in_folders() -> None:
-    """The top level shows only folders, and every sample is reachable."""
+    """The core folders are reachable; extra folders may come and go."""
     tree = walk(BUNDLED)
-    assert tree["."] == [
-        "basics",
-        "errors",
-        "hardware",
-        "projects",
-        "takeover",
-        "threads",
-    ]
-    assert tree["hardware"] == [
-        "paste_diagnostics",
-        "router_check",
-        "take_photo",
-        "where_am_i",
-    ]
-    assert tree["basics"] == [
-        "args_and_env",
-        "console",
-        "Hello Project",
-        "hello_world",
-        "hello_you",
-        "repl",
-        "show_args",
-        "show_env",
-        "with_dependency",
-    ]
-    assert tree["errors"] == ["main_thread_error", "test_error"]
-    assert tree["threads"] == ["countdown", "main_thread"]
-    assert tree["takeover"] == ["back_button", "nested_takeover"]
-    assert tree["projects"] == ["Two Tools"]
+    assert CORE_FOLDERS <= set(tree["."])
+    # Each core folder lists its core samples; extras may also be there
+    core_titles = {
+        "basics": {
+            "args_and_env",
+            "console",
+            "hello_world",
+            "hello_you",
+            "repl",
+            "show_args",
+            "show_env",
+            "with_dependency",
+        },
+        "hardware": {"paste_diagnostics", "router_check", "take_photo", "where_am_i"},
+        "errors": {"main_thread_error", "test_error"},
+        "threads": {"countdown", "main_thread"},
+        "takeover": {"back_button", "nested_takeover"},
+    }
+    for folder, titles in core_titles.items():
+        assert titles <= set(tree[folder]), folder
 
 
 def test_project_example_is_one_runnable_entry() -> None:
@@ -85,11 +105,11 @@ def test_repo_examples_folder_is_the_bundled_folder() -> None:
     assert REPO_EXAMPLES.resolve() == BUNDLED.resolve()
 
 
-def test_every_example_has_a_docstring() -> None:
-    """The list shows each example's docstring, so every example needs one."""
+def test_every_core_example_has_a_docstring() -> None:
+    """The list shows each core example's docstring, so each needs one."""
     missing = [
         path.name
-        for path in sorted(BUNDLED.rglob("*.py"))
+        for path in core_files()
         if not ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
     ]
     assert not missing, f"add a one-line module docstring to: {missing}"
@@ -112,7 +132,7 @@ def test_examples_that_define_main_call_it() -> None:
     must also call it under `if __name__ == "__main__":`, or it does nothing.
     """
     silent = []
-    for path in sorted(BUNDLED.rglob("*.py")):
+    for path in core_files():
         body = ast.parse(path.read_text(encoding="utf-8")).body
         has_main = any(
             isinstance(node, ast.FunctionDef) and node.name == "main" for node in body

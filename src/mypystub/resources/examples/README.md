@@ -31,4 +31,6 @@ Small scripts and projects to learn from and copy. Tap a folder to open it, and 
 
 Every script here also runs unchanged with plain `python`, or as a standalone Briefcase app.
 
+`claude/` and `joshua/` hold extra scripts and apps to explore. Some of them need an iPhone or iPad, and they may change or go away.
+
 When you write your own scripts, keep the file name different from any module you import (a script called `json.py` would hide the standard library's). Folder names can be anything.
