@@ -26,8 +26,8 @@ PEP723_BLOCK = re.compile(
     r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
 )
 
-# Loose scripts that are part of the launcher itself, not prototypes
-RESERVED_SCRIPTS = frozenset({"patch_app.py", "__init__.py"})
+# Loose scripts that are never prototypes (a package marker, not a script)
+RESERVED_SCRIPTS = frozenset({"__init__.py"})
 
 # Subtitle for a loose script without a module docstring
 DEFAULT_SCRIPT_SUBTITLE = "Standalone Python script."

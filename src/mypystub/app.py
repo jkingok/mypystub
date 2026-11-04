@@ -1,8 +1,8 @@
 """
-Application initialization, log redirection, and dynamic hot-patching runtime.
+Application initialization and log redirection.
 
-Manages application startup (`MyApp`), redirects standard output/error to disk (`LogRedirector`),
-and checks the iOS user sandbox (`~/Documents/patch_app.py`) for live runtime overrides.
+Manages application startup (`MyApp`) and redirects standard output/error to
+disk (`LogRedirector`).
 """
 
 import asyncio
@@ -244,13 +244,11 @@ def bootstrap_application() -> Any:
     """
     Bootstraps the application environment on device launch.
 
-    Sets up stdout/stderr logging in `~/Documents/app_runtime.log` and exports
-    `SSL_CERT_FILE` for certifi's CA bundle.
-    If an updated `patch_app.py` script exists in the iOS user Documents folder,
-    it executes `patch_app.main()` to allow live code updates without recompiling.
-    Otherwise, returns a standard :class:`MyApp` instance.
+    Sets up stdout/stderr logging in `~/Documents/app_runtime.log`, exports
+    `SSL_CERT_FILE` for certifi's CA bundle, and returns a :class:`MyApp`
+    instance.
 
-    :returns: Application instance or result of `patch_app.main()`.
+    :returns: The application instance.
     :rtype: toga.App
     """
 
@@ -285,26 +283,11 @@ def bootstrap_application() -> Any:
     if not readme.exists():
         try:
             readme.write_text(
-                "This folder is used for logging and customising this app."
+                "This folder is used for logging by this app"
+                " and you may place Python scripts, projects or zipapps here."
             )
         except OSError as e:
             print(f"Failed to write placeholder: {e}")
-
-    hot_patch_file = user_documents_dir / "patch_app.py"
-
-    if hot_patch_file.exists():
-        print(f"Hot-Patch Intercepted on Device Storage: {hot_patch_file}")
-        try:
-            sys.path.insert(0, str(user_documents_dir))
-            import patch_app  # type: ignore
-
-            print("Hot-patch workspace parsed and executed flawlessly.")
-            return patch_app.main()
-        except Exception as e:  # noqa: BLE001
-            print(f"Hot-patch execution runtime failure: {e}")
-            print(
-                "Gracefully routing application boot back to compiled factory core..."
-            )
 
     print(f"creating MyApp with user_documents_dir: {user_documents_dir}")
     return MyApp(user_documents_dir)

@@ -32,14 +32,15 @@ def test_missing_base_dir_is_empty(tmp_path: Path) -> None:
 
 
 def test_lists_scripts_and_skips_reserved_and_hidden(tmp_path: Path) -> None:
-    """Loose scripts are listed; launcher files, hidden files and non-.py are not."""
+    """Loose scripts are listed, including patch_app.py (no longer special);
+    the package marker __init__.py, hidden files and non-.py are not."""
     write(tmp_path / "b_script.py")
     write(tmp_path / "A_script.py")
     write(tmp_path / "patch_app.py")
     write(tmp_path / "__init__.py")
     write(tmp_path / ".hidden.py")
     write(tmp_path / "notes.txt")
-    assert titles(tmp_path) == ["A_script", "b_script"]
+    assert titles(tmp_path) == ["A_script", "b_script", "patch_app"]
 
 
 def test_script_dependencies_from_pep723(tmp_path: Path) -> None:
@@ -298,14 +299,14 @@ def test_compact_summary_leaves_out_empty_kinds_and_handles_no_folder(
 
 
 def test_folder_summary_skips_hidden_cache_and_launcher_files(tmp_path: Path) -> None:
-    """Things the list never shows aren't counted either."""
+    """Things the list never shows aren't counted; patch_app.py now is."""
     write(tmp_path / ".DS_Store")
     write(tmp_path / ".git" / "HEAD")
     write(tmp_path / "__pycache__" / "x.pyc")
     write(tmp_path / "patch_app.py")
     write(tmp_path / "__init__.py")
     write(tmp_path / "only.py")
-    assert scan.folder_summary(tmp_path) == "1 script"
+    assert scan.folder_summary(tmp_path) == "2 scripts"
 
 
 def test_folder_summary_empty_and_missing(tmp_path: Path) -> None:
