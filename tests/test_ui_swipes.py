@@ -335,18 +335,20 @@ def test_setup_environment_page(
     form.done()
 
 
-def test_setup_forms_have_only_done(proto: ui.Prototype, config: Path) -> None:
-    """With changes saved as they're made, Done is the only button needed."""
-    for form in (
-        proto.open_run_with(row(proto, "top")),
-        proto.open_setup_environment(),
-    ):
+def test_setup_forms_finish_with_done(proto: ui.Prototype, config: Path) -> None:
+    """Changes save as they're made, so there's no Save button; a runnable
+    row also offers Make Quick Start, and the environment form just Done."""
+    expected = {
+        proto.open_run_with(row(proto, "top")): ["Make Quick Start", "Done"],
+        proto.open_setup_environment(): ["Done"],
+    }
+    for form, want in expected.items():
         buttons = [
             w.text
             for w in form.content.children[-1].children
             if isinstance(w, toga.Button)
         ]
-        assert buttons == ["Done"]
+        assert buttons == want
         form.done()
 
 

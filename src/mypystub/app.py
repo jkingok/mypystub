@@ -190,6 +190,10 @@ class MyApp(toga.App):
             mw.title = t
             mw.content = p.get_content()
             p.choose_start_tab()
+            if fresh:
+                # Offer the Quick Start once the window is up (startup shows it
+                # in its finally), so its dialog has a window to open over.
+                app.loop.call_soon(lambda: app.loop.create_task(p.offer_quick_start()))
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             app.loop.create_task(mw.dialog(toga.ErrorDialog("Error Occurred", str(e))))

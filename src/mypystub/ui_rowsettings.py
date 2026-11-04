@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePath
+from types import SimpleNamespace
 from typing import Any
 
 from . import (
     row_info,
+    scan,
 )
-from .run_settings import Layer, RunSettings, merged_env, settings_key
+from .run_settings import (
+    Layer,
+    RunSettings,
+    merged_env,
+    parse_settings_key,
+    settings_key,
+)
 from .ui_base import PrototypeBase
 
 
@@ -78,3 +86,72 @@ class RowSettingsMixin(PrototypeBase):
         own = self.settings.get_run_with(self.row_key(row))
         layers = [layer.env for layer in self.inherited_layers(row)]
         return own, merged_env([*layers, own.env])
+
+    def resolve_quick_start(self) -> Any | None:
+        """The row the Quick Start points at, or None.
+
+        Rebuilds the row from the file or project on disk, leaving the list
+        where it is: nothing moves unless the user chooses to run it. A missing,
+        malformed or stale target clears the setting and returns None, so a
+        deleted script can never block launch.
+        """
+        key = self.settings.get_quick_start()
+        parsed = parse_settings_key(key) if key else None
+        if parsed is None:
+            return None
+        category, relative, entry = parsed
+        dirs = self.category_dirs()
+        if category not in dirs:
+            self.settings.set_quick_start(None)
+            return None
+        base = dirs[category].resolve()
+        target = base if relative == PurePath() else base / relative.as_posix()
+        if not target.resolve().is_relative_to(base) or not target.exists():
+            self.settings.set_quick_start(None)
+            return None
+        proto = self._scan_quick_start_target(target, entry)
+        row = None if proto is None else SimpleNamespace(splash=None, **proto)
+        # The saved key must round-trip, or it names something we can't run
+        browsing, self.category = self.category, category
+        try:
+            matches = row is not None and self.row_key(row) == key
+        finally:
+            self.category = browsing
+        if not matches:
+            self.settings.set_quick_start(None)
+            return None
+        return row
+
+    def open_quick_start_folder(self) -> None:
+        """Move the list to the folder holding the Quick Start."""
+        parsed = parse_settings_key(self.settings.get_quick_start() or "")
+        if parsed is not None:
+            category, relative, _ = parsed
+            self.show_category(category)
+            self.subfolder = Path(relative.parent)
+
+    def _scan_quick_start_target(
+        self, target: Path, entry: str | None
+    ) -> dict[str, Any] | None:
+        """Describe a Quick Start target as a runnable row, or None."""
+        try:
+            if target.is_file() and target.suffix == ".py":
+                proto = scan.scan_script(target)
+            elif target.is_file() and target.suffix == ".pyz":
+                proto = scan.scan_zipapp(target)
+            elif target.is_dir() and (target / "pyproject.toml").exists():
+                proto = scan.scan_project(target)
+            else:
+                return None
+        except (OSError, ValueError):
+            return None
+        if proto is None:
+            return None
+        if entry is None:
+            # A package (several entry points) opens like a folder, so can't run
+            return None if proto.get("kind") == "package" else proto
+        if proto.get("kind") == "package":
+            matches = [r for r in scan.entry_rows(proto) if r["entry"].name == entry]
+            return matches[0] if matches else None
+        single = proto.get("entry")
+        return proto if single is not None and single.name == entry else None

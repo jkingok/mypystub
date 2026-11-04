@@ -10,6 +10,7 @@ is made, so the form only needs Done; running is left to a tap on the row.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Protocol
@@ -116,8 +117,15 @@ class RunWithForm:
         ask_fields: AskFields,
         args_note: str = "Arguments are set on each entry point.",
         screen_title: str | None = None,
+        on_quick_start: Callable[[], Awaitable[bool]] | None = None,
+        is_quick_start: bool = False,
     ) -> None:
-        """Build the form; call :meth:`open` to show it."""
+        """Build the form; call :meth:`open` to show it.
+
+        `on_quick_start`, for a runnable thing, makes it the one offered at
+        launch; it returns whether it is now the Quick Start. `is_quick_start`
+        is whether it already is.
+        """
         self.title = title
         self.screen_title = screen_title or f"Setup · {title}"
         self.with_args = args is not None
@@ -129,6 +137,9 @@ class RunWithForm:
         self.ask = ask
         self.tell = tell
         self.ask_fields = ask_fields
+        self.on_quick_start = on_quick_start
+        self._is_quick_start = is_quick_start
+        self._qs_button: toga.Button | None = None
         self.arg_index: int | None = None
         self.env_name: str | None = None
         self._refreshing = False
@@ -197,16 +208,33 @@ class RunWithForm:
             self.env_empty,
             self.env_note,
         ]
-        children.append(
-            toga.Row(
-                margin=4,
-                children=[
-                    toga.Box(flex=1),
-                    toga.Button("Done", on_press=self.done, margin=GAP),
-                ],
-            )
-        )
+        bottom: list[toga.Widget] = [toga.Box(flex=1)]
+        if self.on_quick_start is not None:
+            bottom.append(self._quick_start_button())
+        bottom.append(toga.Button("Done", on_press=self.done, margin=GAP))
+        children.append(toga.Row(margin=4, children=bottom))
         return toga.Column(flex=1, children=children)
+
+    def _quick_start_button(self) -> toga.Button:
+        """The button that makes this thing the launch Quick Start."""
+        self._qs_button = toga.Button(
+            "Quick Start ✓" if self._is_quick_start else "Make Quick Start",
+            on_press=self._press_quick_start,
+            margin=GAP,
+            enabled=not self._is_quick_start,
+        )
+        return self._qs_button
+
+    def _press_quick_start(self, widget: toga.Widget | None = None, **_: Any) -> None:
+        asyncio.ensure_future(self._run_quick_start())
+
+    async def _run_quick_start(self) -> None:
+        if self.on_quick_start is None or not await self.on_quick_start():
+            return
+        self._is_quick_start = True
+        if self._qs_button is not None:
+            self._qs_button.text = "Quick Start ✓"
+            self._qs_button.enabled = False
 
     def open(self) -> None:
         """Show the form over the current screen."""

@@ -15,7 +15,7 @@ from . import (
     scan,
 )
 from .pages import html_page, readme_html
-from .run_settings import RunSettings
+from .run_settings import RunSettings, quick_start_name
 from .run_with import RunWithForm
 from .ui_rowsettings import RowSettingsMixin
 
@@ -121,13 +121,33 @@ class SwipeMixin(RowSettingsMixin):
             return
         self.open_run_with(row)
 
+    async def make_quick_start(self, key: str, title: str) -> bool:
+        """Offer `key` at launch; confirm first if another is already set.
+
+        Returns whether `key` is now the Quick Start.
+        """
+        current = self.settings.get_quick_start()
+        if current == key:
+            return True
+        if current and not await self.ask(
+            "Quick Start",
+            f"{quick_start_name(current)} is the current Quick Start. "
+            f"Replace it with {title}?",
+        ):
+            return False
+        self.settings.set_quick_start(key)
+        await self.info(f"{title} will be offered when the app opens.", "Quick Start")
+        return True
+
     def open_run_with(self, row: Any) -> RunWithForm:
         """Open the Setup form for a runnable row or a package.
 
         A package with several entry points has no arguments of its own and
         can't run, so its form sets only the variables its entry points inherit.
+        A runnable row can also be made the Quick Start from here.
         """
         key = self.row_key(row)
+        title = str(getattr(row, "title", ""))
         saved = self.settings.get_run_with(key)
         runs = row_info.runnable(row_info.row_type(row))
 
@@ -135,7 +155,7 @@ class SwipeMixin(RowSettingsMixin):
             self.settings.set_run_with(key, settings, with_args=runs)
 
         form = RunWithForm(
-            str(getattr(row, "title", "")),
+            title,
             args=saved.args if runs else None,
             env=saved.env,
             inherited=self.inherited_layers(row),
@@ -144,6 +164,10 @@ class SwipeMixin(RowSettingsMixin):
             ask=self.ask,
             tell=self.tell,
             ask_fields=self.ask_fields,
+            on_quick_start=(
+                (lambda: self.make_quick_start(key, title)) if runs else None
+            ),
+            is_quick_start=runs and self.settings.get_quick_start() == key,
         )
         form.open()
         self.run_with_form = form

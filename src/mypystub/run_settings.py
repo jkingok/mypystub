@@ -60,6 +60,35 @@ def settings_key(category: str, relative: PurePath, entry: str | None = None) ->
     return f"{key}:{entry}" if entry else key
 
 
+def parse_settings_key(key: str) -> tuple[str, PurePath, str | None] | None:
+    """Split a settings key back into ``(category, relative, entry)``.
+
+    The inverse of :func:`settings_key`. ``entry`` is an entry point's name
+    when the key carries a trailing ``:entry``, else None. Returns None for an
+    empty key or one with no category. (A path cannot itself contain ``:``,
+    which the Files app disallows in names.)
+    """
+    if not key:
+        return None
+    body, sep, entry = key.rpartition(":")
+    if not sep:
+        body, entry = key, ""
+    category, _, path = body.partition("/")
+    if not category:
+        return None
+    return category, PurePath(path) if path else PurePath(), entry or None
+
+
+def quick_start_name(key: str) -> str:
+    """A short human label for a settings key, for prompts and messages."""
+    parsed = parse_settings_key(key)
+    if parsed is None:
+        return key
+    category, relative, entry = parsed
+    base = relative.as_posix() if relative != PurePath() else category
+    return f"{base} · {entry}" if entry else base
+
+
 def env_sort_key(name: str) -> tuple[str, str]:
     """Sort names case-insensitively, then by exact case so the order is stable."""
     return (name.casefold(), name)

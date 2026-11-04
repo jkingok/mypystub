@@ -19,6 +19,7 @@ from . import (
     setup_pages,
 )
 from . import piplike as pip
+from .run_settings import quick_start_name
 from .run_with import RunWithForm
 from .ui_base import PrototypeBase
 from .ui_helpers import (
@@ -243,6 +244,21 @@ class SetupMixin(PrototypeBase):
             )
         )
 
+    async def handle_clear_quick_start(
+        self, widget: toga.Widget, **kwargs: Any
+    ) -> None:
+        """Stop offering a prototype at launch."""
+        current = self.settings.get_quick_start()
+        if not current:
+            await self.info("No Quick Start is set.", "Quick Start")
+            return
+        if await self.confirm(
+            f"Stop offering {quick_start_name(current)} when the app opens?",
+            "Clear Quick Start",
+        ):
+            self.settings.set_quick_start(None)
+            await self.info("Quick Start cleared.", "Quick Start")
+
     def handle_open_settings(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Open this app's page in the iOS Settings app."""
         if not permissions.open_app_settings():
@@ -362,6 +378,9 @@ class SetupMixin(PrototypeBase):
             heading("Maintenance"),
             *(self.setup_menu_button(page) for page in self.SETUP_PAGES),
             heading("App"),
+            self.menu_entry(
+                toga.Button("Clear Quick Start", on_press=self.handle_clear_quick_start)
+            ),
             self.menu_entry(toga.Button("Backup", on_press=self.handle_backup_press)),
             self.menu_entry(
                 toga.Button(

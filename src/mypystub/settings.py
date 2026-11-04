@@ -12,6 +12,7 @@ DEFAULTS_NAME = "config.toml"
 CONFIG_NAME = "launcher.toml"
 RUN_WITH = "run_with"  # [run_with."<key>"]: settings saved per path
 ENVIRONMENT = "environment"  # [environment]: Setup's variables, inherited by all
+QUICK_START = "quick_start"  # the row key offered to run at launch, if any
 
 
 class Settings:
@@ -82,6 +83,21 @@ class Settings:
         env.update(table["env"])
         entry["env"] = env
         self.config_doc[RUN_WITH][key] = entry  # type: ignore[index]
+        self._save()
+
+    def get_quick_start(self) -> str | None:
+        """The row key offered to run at launch, or None if none is set."""
+        self.config_doc = self._load()  # allow on disk changes
+        value = self.config_doc.get(QUICK_START)
+        return str(value) if isinstance(value, str) and value else None
+
+    def set_quick_start(self, key: str | None) -> None:
+        """Offer `key` at launch, or clear the setting when `key` is None."""
+        self.config_doc = self._load()
+        if key:
+            self.config_doc[QUICK_START] = key
+        elif QUICK_START in self.config_doc:
+            del self.config_doc[QUICK_START]
         self._save()
 
     def get_environment(self) -> dict[str, str]:

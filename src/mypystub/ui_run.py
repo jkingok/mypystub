@@ -16,6 +16,7 @@ from . import (
     runner,
     scan,
 )
+from .run_settings import quick_start_name
 from .ui_rowsettings import RowSettingsMixin
 
 
@@ -156,6 +157,21 @@ class RunMixin(RowSettingsMixin):
         if not row_info.runnable(row_info.row_type(selected_row)):
             return
         await self.run_row(selected_row)
+
+    async def offer_quick_start(self) -> None:
+        """At launch, ask whether to run the saved Quick Start, then run it.
+
+        Does nothing if no Quick Start is set, or it names a target that is no
+        longer there (resolve_quick_start clears a stale setting).
+        """
+        row = self.resolve_quick_start()
+        if row is None:
+            return
+        name = quick_start_name(self.settings.get_quick_start() or "")
+        if await self.ask("Quick Start", f"Do you want to run {name}?"):
+            self.open_quick_start_folder()
+            self.reload_menu(self.script_list)
+            await self.run_row(row)
 
     async def run_row(self, selected_row: Any) -> None:
         """Run a script or project row with the settings saved in its Setup."""
