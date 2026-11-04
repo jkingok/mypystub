@@ -111,6 +111,11 @@ def is_archive(name: str) -> bool:
     return name.lower().endswith(ARCHIVE_SUFFIXES)
 
 
+def archive_top_level(archive: Path) -> list[str]:
+    """The top-level names an archive would add, for a preview (junk removed)."""
+    return sorted(_top_level(_members(archive)))
+
+
 def _target(folder: Path, name: str, overwrite: bool) -> Path:
     return folder / name if overwrite else unique_path(folder, name)
 

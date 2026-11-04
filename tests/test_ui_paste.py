@@ -23,6 +23,20 @@ from tests.support_ui import (
 # ---------------------------------------------------------------------------
 
 
+def paste(proto: ui.Prototype, app: toga.App) -> None:
+    """Show the paste preview, then press Import (when there's something to import)."""
+    run(app, proto.handle_paste())
+    if proto._pending_import is not None:
+        run(app, proto._do_import())
+
+
+def preview_buttons(app: toga.App) -> list[str]:
+    """The buttons on the preview screen currently shown."""
+    column = app.main_window.content
+    top = column.children[0]
+    return [w.text for w in top.children if isinstance(w, toga.Button)]
+
+
 @pytest.fixture
 def pasteboard(monkeypatch: pytest.MonkeyPatch) -> dict:
     """The pasteboard's content, set by each test as ("file", path) or ("text", s)."""
@@ -71,7 +85,7 @@ def test_paste_text_asks_for_a_name_and_adds_a_runnable_script(
     """Pasted text is assumed to be Python and saved under the name given."""
     pasteboard["content"] = ("text", "print('pasted')\n")
     answers["name"] = "pasted_tool"
-    run(app, proto.handle_paste())
+    paste(proto, app)
     assert (docs / "pasted_tool.py").read_text() == "print('pasted')\n"
     assert answers["suggested"].startswith("pasted_") and answers["suggested"].endswith(
         ".py"
@@ -86,7 +100,7 @@ def test_paste_text_can_be_cancelled(
     """Cancelling the name screen adds nothing."""
     pasteboard["content"] = ("text", "x = 1\n")
     answers["name"] = None
-    run(app, proto.handle_paste())
+    paste(proto, app)
     assert not (docs / "pasted").exists() and "x" not in titles(proto)
     assert answers["info"] == []
 
@@ -99,11 +113,11 @@ def test_paste_text_does_not_overwrite_unless_told(
     pasteboard["content"] = ("text", "new")
     answers["name"] = "top.py"
     answers["yes_no"] = [False]
-    run(app, proto.handle_paste())
+    paste(proto, app)
     assert (docs / "top.py").read_text() == "old"
     assert (docs / "top_2.py").read_text() == "new"
     answers["yes_no"] = [True]
-    run(app, proto.handle_paste())
+    paste(proto, app)
     assert (docs / "top.py").read_text() == "new"
 
 
@@ -119,12 +133,12 @@ def test_paste_a_file_keeps_it_as_it_is(
     source = source_dir / "tool.pyz"
     source.write_bytes(b"PK-zipapp")
     pasteboard["content"] = ("file", str(source))
-    run(app, proto.handle_paste())
+    paste(proto, app)
     assert (docs / "tool.pyz").read_bytes() == b"PK-zipapp"
     assert answers["asked"] == []
 
 
-def test_paste_an_archive_asks_whether_to_extract(
+def test_paste_an_archive_previews_then_extracts(
     proto: ui.Prototype,
     app: toga.App,
     docs: Path,
@@ -132,20 +146,20 @@ def test_paste_an_archive_asks_whether_to_extract(
     pasteboard: dict,
     answers: dict,
 ) -> None:
-    """Yes extracts into one folder; No keeps the archive as it is."""
+    """The preview lists the archive's contents; Import extracts into a folder."""
     import zipfile
 
     source = source_dir / "proj.zip"
     with zipfile.ZipFile(source, "w") as archive:
         archive.writestr("proj/a.py", "print(1)\n")
     pasteboard["content"] = ("file", str(source))
-    answers["yes_no"] = [True]
     run(app, proto.handle_paste())
+    _, body, _ = proto.import_preview("file", str(source))
+    assert "proj" in body  # the top-level folder is listed in the preview
+    assert preview_buttons(app) == ["✕ Cancel", "Import"]
+    run(app, proto._do_import())
     assert (docs / "proj" / "a.py").exists() and not (docs / "proj.zip").exists()
-    assert answers["asked"] == ["Extract archive?"]
-    answers["yes_no"] = [False]
-    run(app, proto.handle_paste())
-    assert (docs / "proj.zip").exists()
+    assert answers["asked"] == []  # no extract/keep question any more
 
 
 def test_paste_with_nothing_or_in_examples_says_why(
@@ -182,10 +196,47 @@ def test_paste_reports_a_bad_archive(
 
     monkeypatch.setattr(proto, "error", error)
     pasteboard["content"] = ("file", str(source))
-    answers["yes_no"] = [True]
-    run(app, proto.handle_paste())
+    paste(proto, app)
     assert errors and "unsafe" in errors[0]
     assert not (source_dir.parent / "escape.py").exists()
+
+
+def test_an_unreadable_archive_cannot_be_imported(
+    proto: ui.Prototype, app: toga.App, source_dir: Path, pasteboard: dict
+) -> None:
+    """The preview says so plainly, without tarfile's errors, and Import is off."""
+    source = source_dir / "bad.zip"
+    source.write_bytes(b"not a zip at all")
+    pasteboard["content"] = ("file", str(source))
+    _, body, can_import = proto.import_preview("file", str(source))
+    assert not can_import
+    assert "can't be read" in body and "method" not in body
+    run(app, proto.handle_paste())
+    assert not proto.import_button.enabled
+
+
+def test_preview_shows_source_before_importing(
+    proto: ui.Prototype, app: toga.App, docs: Path, pasteboard: dict, answers: dict
+) -> None:
+    """Pasting text shows its source behind Cancel/Import, and imports nothing yet."""
+    pasteboard["content"] = ("text", "print('review me')\n")
+    run(app, proto.handle_paste())
+    assert preview_buttons(app) == ["✕ Cancel", "Import"]
+    assert proto._pending_import is not None
+    assert list(docs.glob("pasted*.py")) == []  # not written until Import
+    _, body, _ = proto.import_preview("text", "print('review me')\n")
+    assert "review me" in body
+
+
+def test_cancel_discards_without_importing(
+    proto: ui.Prototype, app: toga.App, docs: Path, pasteboard: dict, answers: dict
+) -> None:
+    """Cancel on the preview adds nothing and forgets the pending paste."""
+    pasteboard["content"] = ("text", "x = 1\n")
+    run(app, proto.handle_paste())
+    proto.cancel_import()
+    assert proto._pending_import is None
+    assert list(docs.glob("pasted*.py")) == []
 
 
 def test_paste_button_is_for_ios_only(proto: ui.Prototype) -> None:

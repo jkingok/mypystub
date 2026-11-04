@@ -220,7 +220,8 @@ def test_paste_goes_into_the_folder_being_browsed(
     monkeypatch.setattr(bridge, "read_pasteboard", read_pasteboard)
     tap(proto, "a", monkeypatch, app)
     names["answers"] = ["pasted"]
-    run(app, proto.handle_paste())
+    run(app, proto.handle_paste())  # shows the preview
+    run(app, proto._do_import())  # Import
     assert (docs / "a" / "pasted.py").read_text() == "print(1)\n"
     assert not (docs / "pasted.py").exists()
     assert "pasted" in titles(proto)
