@@ -12,6 +12,11 @@ import toga
 
 UIUserInterfaceIdiomPad = 1
 
+# The app's own Python source, as shipped inside the bundle: this package's
+# folder. Sharing it is a backstop to the About page's Source link, so anyone
+# can read exactly what is running without trusting that link.
+APP_SOURCE_DIR = Path(__file__).resolve().parent
+
 
 def is_ipad_from_window(toga_window: toga.Window) -> bool:
     """Detects iPad idiom via the native UIWindow / UIViewController trait collection."""
@@ -82,6 +87,24 @@ def create_nested_app_backup(app: toga.App) -> Path:
 
     print(f"Structured master archive created at: {master_zip_path}")
     return master_zip_path
+
+
+def create_source_zip(app: toga.App) -> Path:
+    """Zip the app's own Python source (this package) for sharing or review.
+
+    Everything in the package folder as shipped is included, in sorted order so
+    the listing is stable, apart from ``__pycache__``. The file is named with
+    the app's version, and written to the cache directory for a transient share.
+    """
+    name = f"{app.formal_name.lower().replace(' ', '_')}-{app.version}-source.zip"
+    app.paths.cache.mkdir(parents=True, exist_ok=True)
+    dest = app.paths.cache / name
+    with ZipFile(dest, "w", ZIP_DEFLATED) as archive:
+        for item in sorted(APP_SOURCE_DIR.rglob("*")):
+            relative = item.relative_to(APP_SOURCE_DIR)
+            if item.is_file() and "__pycache__" not in relative.parts:
+                archive.write(item, Path(APP_SOURCE_DIR.name) / relative)
+    return dest
 
 
 def open_share_sheet(w: toga.Widget, file_path: Path) -> None:

@@ -18,6 +18,7 @@ from . import (
 from .pages import help_html
 from .ui_actions import ActionsMixin
 from .ui_helpers import (
+    create_source_zip,
     is_ipad_from_window,
     open_share_sheet,
 )
@@ -41,6 +42,10 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
         self.help_view = toga.WebView(flex=1, on_navigation_starting=self.open_external)
         self.about_share = toga.Button(
             "Share", on_press=self.handle_about_share, visibility="hidden"
+        )
+        # A backstop to the Source link above: share the actual bundled code
+        self.source_share = toga.Button(
+            "Share source code", on_press=self.handle_source_share, visibility="hidden"
         )
         self.log_text = toga.MultilineTextInput(
             readonly=True,
@@ -130,6 +135,8 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
             help_md = self.template_path / "help.md"
             body = help_html(help_md.read_text()) if help_md.exists() else ""
             self.about_share.style.visibility = "hidden"
+        # The source-code button follows the Share button: shown only on About
+        self.source_share.style.visibility = self.about_share.style.visibility
         self.load_page(self.help_view, body)
 
     def handle_about_share(self, widget: toga.Button, **kwargs: Any) -> None:
@@ -140,6 +147,16 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
         except Exception as e:  # noqa: BLE001
             asyncio.create_task(
                 self.error(f"Could not share environment details: {e}", "Share")
+            )
+
+    def handle_source_share(self, widget: toga.Button, **kwargs: Any) -> None:
+        """Share a zip of the app's own Python source, as it runs on device."""
+        try:
+            archive = create_source_zip(self.app)
+            open_share_sheet(widget, archive)
+        except Exception as e:  # noqa: BLE001
+            asyncio.create_task(
+                self.error(f"Could not share the app's source: {e}", "Share source")
             )
 
     def choose_container(self, *args: Any, **kwargs: Any) -> toga.Widget:
@@ -220,6 +237,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
                             self.help_selection,
                             self.help_view,
                             self.about_share,
+                            self.source_share,
                         ]
                     ),
                     self.icon_path / "interrogation.png",
