@@ -75,10 +75,15 @@ class PasteMixin(PrototypeBase):
                 "Paste",
             )
             return
-        content = bridge.read_pasteboard()
+        try:
+            content = await bridge.read_pasteboard(Path(self.app.paths.cache) / "paste")
+        except (OSError, ValueError) as error:
+            await self.error(f"Couldn't paste: {error}", "Paste")
+            return
         if content is None:
             await self.info(
-                "Copy a script as text, or a file in the Files app, then paste.",
+                "Copy a script as text, or a file in the Files app, then paste. "
+                "If iOS asks, choose Allow Paste.",
                 "Nothing to paste",
             )
             return

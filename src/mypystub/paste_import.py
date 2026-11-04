@@ -22,6 +22,44 @@ ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz")
 # Entries archives made on a Mac carry that are never the user's content
 JUNK_NAMES = frozenset({"__MACOSX", ".DS_Store"})
 
+# How the Files app marks what it copied. These are bookmarks, listed before the
+# real type, and reading one gets a small binary plist instead of the file.
+FILES_APP_TYPES = "com.apple.DocumentManager.FINode."
+BOOKMARK_TYPES = (FILES_APP_TYPES, "com.apple.uikit.useractivity")
+FOLDER_TYPE = "public.folder"
+FOLDER_MESSAGE = "A folder can't be pasted. Compress it in Files, and copy the zip."
+
+
+def is_folder(types: list[str]) -> bool:
+    """Whether a pasteboard item with these type identifiers is a folder."""
+    return FOLDER_TYPE in types
+
+
+def file_type(types: list[str], has_text: bool) -> str | None:
+    """The type identifier to read a pasteboard item's file from, or None.
+
+    Anything from the Files app is a file, even when it also counts as text (a
+    ``.py`` does), so that it keeps its name. Otherwise text stays text, and
+    what's left, such as a copied image, is read as a file.
+    """
+    content = [uti for uti in types if not uti.startswith(BOOKMARK_TYPES)]
+    from_files = any(uti.startswith(FILES_APP_TYPES) for uti in types)
+    if not content or (has_text and not from_files):
+        return None
+    return content[0]
+
+
+def keep_copy(source: Path, folder: Path) -> Path:
+    """Copy `source` into `folder`, emptied first, keeping its name.
+
+    For a file the system is about to delete. Only the latest paste is kept, so
+    these don't pile up.
+    """
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True)
+    return Path(shutil.copy2(source, folder / source.name))
+
 
 def default_filename(now: datetime) -> str:
     """The suggested name for pasted text, such as ``pasted_20261103_0905.py``."""

@@ -214,7 +214,10 @@ def test_paste_goes_into_the_folder_being_browsed(
     """Pasting inside a folder adds the file there, not in Documents."""
     from mypystub import bridge
 
-    monkeypatch.setattr(bridge, "read_pasteboard", lambda: ("text", "print(1)\n"))
+    async def read_pasteboard(into: Path) -> tuple[str, str]:
+        return ("text", "print(1)\n")
+
+    monkeypatch.setattr(bridge, "read_pasteboard", read_pasteboard)
     tap(proto, "a", monkeypatch, app)
     names["answers"] = ["pasted"]
     run(app, proto.handle_paste())

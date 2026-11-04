@@ -36,7 +36,12 @@ def test_examples_are_grouped_in_folders() -> None:
         "takeover",
         "threads",
     ]
-    assert tree["hardware"] == ["router_check", "take_photo", "where_am_i"]
+    assert tree["hardware"] == [
+        "paste_diagnostics",
+        "router_check",
+        "take_photo",
+        "where_am_i",
+    ]
     assert tree["basics"] == [
         "args_and_env",
         "console",

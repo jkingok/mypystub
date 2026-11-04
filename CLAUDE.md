@@ -29,7 +29,7 @@ MyPyStub is a Python Briefcase/Toga prototype app for iOS, with macOS, Linux, an
 
 All Toga code and widgets must come from the subset supported on iOS. Do not use widgets that are unsupported there, such as Table and Tree. Check the Toga iOS backend before using any widget.
 
-Import Objective-C classes from `toga_iOS.libs` (inside `sys.platform == "ios"` branches, since desktop and CI only install `toga-core`). Only classes or frameworks that toga_iOS doesn't provide go in `src/mypystub/bridge.py`; never call rubicon's `ObjCClass` or `load_library` anywhere else (`tests/test_objc_usage.py` enforces this). Examples must not import `bridge.py`; they use `toga_iOS.libs` directly.
+Import Objective-C classes from `toga_iOS.libs` (inside `sys.platform == "ios"` branches, since desktop and CI only install `toga-core`). In the app, only classes or frameworks that toga_iOS doesn't provide go in `src/mypystub/bridge.py`; never call rubicon's `ObjCClass` or `load_library` anywhere else (`tests/test_objc_usage.py` enforces this). Examples must not import `bridge.py`. They use `toga_iOS.libs` directly, and like `bridge.py` they may use `ObjCClass` for classes it doesn't provide, never for ones it does.
 
 ## Standards
 

@@ -29,7 +29,11 @@ def pasteboard(monkeypatch: pytest.MonkeyPatch) -> dict:
     from mypystub import bridge
 
     state: dict = {"content": None}
-    monkeypatch.setattr(bridge, "read_pasteboard", lambda: state["content"])
+
+    async def read_pasteboard(into: Path) -> tuple[str, str] | None:
+        return state["content"]
+
+    monkeypatch.setattr(bridge, "read_pasteboard", read_pasteboard)
     return state
 
 
