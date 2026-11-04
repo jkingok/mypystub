@@ -6,7 +6,7 @@ import asyncio
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import toga
 from toga.style import Pack
@@ -24,7 +24,7 @@ from .ui_helpers import (
 from .ui_run import RunMixin
 from .ui_setup import SetupMixin
 from .ui_swipe import SwipeMixin
-from .ui_widgets import LabelledSelection, NotAnOptionContainer
+from .ui_widgets import LabelledSelection, NotAnOptionContainer, refresh_on_new_width
 
 
 class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
@@ -149,6 +149,19 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
         else:
             return toga.OptionContainer(*args, **kwargs)
 
+    def setup_scroll(self) -> toga.ScrollContainer:
+        """The Setup tab's menu, which scrolls on small screens."""
+        scroll = toga.ScrollContainer(
+            horizontal=False,
+            flex=1,
+            content=toga.Column(margin=(0, 8), children=self.setup_sections()),
+        )
+        if sys.platform == "ios":
+            refresh_on_new_width(
+                scroll._impl.document_container, cast(Any, scroll.content).refresh
+            )
+        return scroll
+
     def get_content(self) -> toga.Widget:
         # return toga.OptionContainer(
         self.tabs = self.choose_container(
@@ -197,18 +210,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
                 ),
                 (
                     "Setup",
-                    toga.Column(
-                        children=[
-                            toga.ScrollContainer(
-                                horizontal=False,
-                                flex=1,
-                                content=toga.Column(
-                                    margin=(0, 8),
-                                    children=self.setup_sections(),
-                                ),
-                            ),
-                        ]
-                    ),
+                    toga.Column(children=[self.setup_scroll()]),
                     self.icon_path / "settings-sliders.png",
                 ),
                 (

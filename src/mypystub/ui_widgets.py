@@ -10,6 +10,28 @@ from typing import Any
 import toga
 
 
+def refresh_on_new_width(container: Any, refresh: Callable[[], None]) -> None:
+    """Call `refresh` when a native container gets a new width.
+
+    A scroll view in a tab that hasn't been shown lays its content out before it
+    has a width, and Toga's refreshes on showing the tab can run before the
+    width arrives too. Nothing lays the content out after that, so it stays at
+    its minimum width: flex can't help, as the content's own width is what's
+    too small. Waiting for the native layout, not a timer, also covers rotation.
+    Only a change of width refreshes, as a refresh causes a native layout.
+    """
+    seen = 0.0
+
+    def laid_out(_container: Any) -> None:
+        nonlocal seen
+        width = container.width
+        if width and width != seen:
+            seen = width
+            refresh()
+
+    container.on_native_layout = laid_out
+
+
 class LabelledProgress(toga.Box):
     def __init__(self, **kwargs: Any) -> None:
         self.bar = toga.ProgressBar(flex=1)
