@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 import tarfile
 from collections.abc import Callable
@@ -13,9 +12,7 @@ from zipfile import BadZipFile
 
 import toga
 
-from . import (
-    paste_import,
-)
+from . import paste_import, prompts
 from .ui_base import PrototypeBase
 
 
@@ -24,7 +21,6 @@ class PasteMixin(PrototypeBase):
 
     def __init__(self, host_app: toga.App, on_done: Callable[[Any], None]) -> None:
         super().__init__(host_app, on_done)
-        self.ask_text_field: toga.TextInput | None = None
         self.paste_button = toga.Button("Paste", on_press=self.handle_paste)
         self.add_button_icon(self.paste_button, "paste.png")
         if sys.platform != "ios":
@@ -56,37 +52,9 @@ class PasteMixin(PrototypeBase):
         button.refresh()
 
     async def ask_text(self, title: str, label: str, initial: str) -> str | None:
-        """Ask for a line of text on a screen of its own; None if cancelled."""
-        answer: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
-        field = toga.TextInput(value=initial, flex=1, on_confirm=self.close_keyboard)
-
-        def finish(value: str | None) -> None:
-            if not answer.done():
-                self.pop_screen()
-                answer.set_result(value)
-
-        self.push_screen(
-            title,
-            toga.Column(
-                margin=8,
-                children=[
-                    toga.Label(label),
-                    toga.Row(children=[field]),
-                    toga.Row(
-                        margin=(8, 0),
-                        children=[
-                            toga.Button("Cancel", on_press=lambda w: finish(None)),
-                            toga.Box(flex=1),
-                            toga.Button(
-                                "Done", on_press=lambda w: finish(str(field.value))
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-        )
-        self.ask_text_field = field
-        return await answer
+        """Ask for a line of text; None if cancelled."""
+        texts = await self.ask_fields(title, "", [prompts.Field(label, initial)])
+        return None if texts is None else texts[0]
 
     async def handle_paste(
         self, widget: toga.Widget | None = None, **kwargs: Any

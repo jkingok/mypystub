@@ -16,6 +16,7 @@ from typing import Any, Protocol
 
 import toga
 
+from mypystub.prompts import Field
 from mypystub.run_settings import (
     MOVES,
     EnvRow,
@@ -59,6 +60,7 @@ class Screens(Protocol):
 
 Ask = Callable[[str, str], Awaitable[bool]]
 Tell = Callable[[str, str], Awaitable[None]]
+AskFields = Callable[..., Awaitable[list[str] | None]]
 
 
 def select_row(widget: toga.DetailedList, index: int | None) -> None:
@@ -111,6 +113,7 @@ class RunWithForm:
         on_save: Callable[[RunSettings], None],
         ask: Ask,
         tell: Tell,
+        ask_fields: AskFields,
         args_note: str = "Arguments are set on each entry point.",
         screen_title: str | None = None,
     ) -> None:
@@ -125,6 +128,7 @@ class RunWithForm:
         self.on_save = on_save
         self.ask = ask
         self.tell = tell
+        self.ask_fields = ask_fields
         self.arg_index: int | None = None
         self.env_name: str | None = None
         self._refreshing = False
@@ -299,27 +303,25 @@ class RunWithForm:
 
     # -- Arguments ------------------------------------------------------------
 
-    def add_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+    async def add_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Add an argument at the end."""
-
-        def done(value: str) -> None:
-            self.args.append(value)
+        texts = await self.ask_fields("Add argument", "", [Field("Argument")])
+        if texts is not None:
+            self.args.append(texts[0])
             self.arg_index = len(self.args) - 1
             self.changed()
 
-        self._edit_value("Add argument", "", done)
-
-    def edit_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+    async def edit_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Change the selected argument."""
         index = self.arg_index
         if index is None:
             return
-
-        def done(value: str) -> None:
-            self.args[index] = value
+        texts = await self.ask_fields(
+            "Edit argument", "", [Field("Argument", self.args[index])]
+        )
+        if texts is not None and index < len(self.args):
+            self.args[index] = texts[0]
             self.changed()
-
-        self._edit_value("Edit argument", self.args[index], done)
 
     def delete_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Remove the selected argument."""
@@ -336,46 +338,17 @@ class RunWithForm:
         self.arg_index = move(self.args, self.arg_index, where)
         self.changed()
 
-    def _edit_value(self, title: str, value: str, done: Callable[[str], None]) -> None:
-        field = toga.TextInput(value=value, flex=1)
-
-        def save(widget: toga.Widget, **kwargs: Any) -> None:
-            self.screens.pop_screen()
-            done(str(field.value))
-
-        self.screens.push_screen(
-            title,
-            toga.Column(
-                margin=8,
-                children=[
-                    toga.Label("Argument"),
-                    toga.Row(children=[field]),
-                    self._editor_actions(save),
-                ],
-            ),
-        )
-
-    def _editor_actions(self, save: Callable[..., Any]) -> toga.Box:
-        return toga.Row(
-            margin=(8, 0),
-            children=[
-                toga.Button("Cancel", on_press=lambda w: self.screens.pop_screen()),
-                toga.Box(flex=1),
-                toga.Button("Done", on_press=save),
-            ],
-        )
-
     # -- Environment ----------------------------------------------------------
 
-    def add_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+    async def add_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Add a variable here."""
-        self._edit_env("Add variable", "", "")
+        await self._edit_env("Add variable", "", "")
 
-    def edit_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+    async def edit_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Change the selected variable; an inherited one gets an override here."""
         row = self.selected_env()
         if row is not None:
-            self._edit_env("Edit variable", row.name, row.value, original=row)
+            await self._edit_env("Edit variable", row.name, row.value, original=row)
 
     def delete_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Remove this layer's value; an inherited value shows again."""
@@ -408,31 +381,19 @@ class RunWithForm:
         self.changed()
         return True
 
-    def _edit_env(
+    async def _edit_env(
         self, title: str, name: str, value: str, original: EnvRow | None = None
     ) -> None:
-        name_field = toga.TextInput(value=name, flex=1)
-        value_field = toga.TextInput(value=value, flex=1)
-
-        async def save(widget: toga.Widget, **kwargs: Any) -> None:
-            if await self.set_env(
-                str(name_field.value), str(value_field.value), original
-            ):
-                self.screens.pop_screen()
-
-        self.screens.push_screen(
-            title,
-            toga.Column(
-                margin=8,
-                children=[
-                    toga.Label("Name"),
-                    toga.Row(children=[name_field]),
-                    toga.Label("Value"),
-                    toga.Row(children=[value_field]),
-                    self._editor_actions(save),
-                ],
-            ),
-        )
+        """Ask for a name and value until they're accepted or it's cancelled."""
+        while True:
+            texts = await self.ask_fields(
+                title, "", [Field("Name", name), Field("Value", value)]
+            )
+            if texts is None:
+                return
+            name, value = texts
+            if await self.set_env(name, value, original):
+                return
 
     # -- Finishing ------------------------------------------------------------
 

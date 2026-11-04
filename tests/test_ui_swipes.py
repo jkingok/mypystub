@@ -34,24 +34,28 @@ from tests.support_ui import (
 # ---------------------------------------------------------------------------
 
 
-def editor_fields(app: toga.App) -> list[toga.TextInput]:
-    """The text fields on the editor screen that's showing."""
-    content = app.main_window.content
-    return [
-        w.children[0]
-        for w in content.children
-        if w.children and isinstance(w.children[0], toga.TextInput)
-    ]
+Prompt = tuple[str, list[tuple[str, str]]]
 
 
-def editor_save(app: toga.App) -> toga.Button:
-    """The editor screen's Done button."""
-    return app.main_window.content.children[-1].children[-1]
+def script_prompts(form: Any, *answers: list[str] | None) -> list[Prompt]:
+    """Answer `form`'s next prompts with `answers` (None cancels).
 
+    Returns what was asked. The form keeps the prompt it was opened with, so
+    it is replaced on the form itself.
 
-def editor_cancel(app: toga.App) -> toga.Button:
-    """The editor screen's Cancel button."""
-    return app.main_window.content.children[-1].children[0]
+    Each asked prompt is recorded as (title, [(label, starting text), ...]).
+    """
+    asked: list[Prompt] = []
+    queue = list(answers)
+
+    async def ask_fields(
+        title: str, message: str, fields: list[Any], ok: str = "Done"
+    ) -> list[str] | None:
+        asked.append((title, [(f.label, f.value) for f in fields]))
+        return queue.pop(0)
+
+    form.ask_fields = ask_fields
+    return asked
 
 
 def test_launcher_list_has_info_and_run_with_swipes(proto: ui.Prototype) -> None:
@@ -154,18 +158,17 @@ def test_script_info_page(
 
 
 def test_run_with_form_edits_arguments(
-    proto: ui.Prototype, app: toga.App, config: Path
+    proto: ui.Prototype, app: toga.App, config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Add, select, move, edit and delete arguments; buttons follow the selection."""
     tabs = app.main_window.content
     form = proto.open_run_with(row(proto, "top"))
     assert app.main_window.title == "Setup · top"
     assert not form.arg_buttons["edit"].enabled
-    for value in ("--name", "Ada", "x"):
-        form.add_arg()
-        (field,) = editor_fields(app)
-        field.value = value
-        press(app, editor_save(app))
+    asked = script_prompts(form, ["--name"], ["Ada"], ["x"], ["Ada Lovelace"], None)
+    for _ in range(3):
+        run(app, form.add_arg())
+    assert asked[0] == ("Add argument", [("Argument", "")])
     assert form.args == ["--name", "Ada", "x"]
     assert form.arg_index == 2  # the new row is selected
     assert [r.subtitle for r in form.args_list.data] == [
@@ -186,10 +189,10 @@ def test_run_with_form_edits_arguments(
 
     select(form.args_list, form._arg_selected, 1)
     press(app, form.arg_buttons["edit"])
-    (field,) = editor_fields(app)
-    assert field.value == "Ada"
-    field.value = "Ada Lovelace"
-    press(app, editor_save(app))
+    assert asked[-1] == ("Edit argument", [("Argument", "Ada")])
+    assert form.args == ["--name", "Ada Lovelace", "x"]
+    run(app, form.edit_arg())  # cancelled: nothing changes
+    assert form.args == ["--name", "Ada Lovelace", "x"]
     press(app, form.arg_buttons["delete"])
     assert form.args == ["--name", "x"] and form.arg_index is None
     assert not form.arg_buttons["delete"].enabled
@@ -201,7 +204,7 @@ def test_run_with_form_edits_arguments(
 
 
 def test_run_with_form_environment_is_sorted_and_inherits_setup(
-    proto: ui.Prototype, app: toga.App, config: Path
+    proto: ui.Prototype, app: toga.App, config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Variables stay A–Z; Setup's show as inherited and can be overridden."""
     proto.settings.set_environment({"GREETING": "Hello"})
@@ -214,16 +217,11 @@ def test_run_with_form_environment_is_sorted_and_inherits_setup(
     assert not form.env_buttons["delete"].enabled  # it's set in Setup
     assert "set in Setup" in form.env_note.text
 
+    asked = script_prompts(form, ["GREETING", "Hi"], ["zed", ""], ["Alpha", ""])
     press(app, form.env_buttons["edit"])  # override it here
-    name, value = editor_fields(app)
-    assert (name.value, value.value) == ("GREETING", "Hello")
-    value.value = "Hi"
-    press(app, editor_save(app))
-    for new_name in ("zed", "Alpha"):
-        form.add_env()
-        name, value = editor_fields(app)
-        name.value, value.value = new_name, ""
-        press(app, editor_save(app))
+    assert asked[0] == ("Edit variable", [("Name", "GREETING"), ("Value", "Hello")])
+    for _ in range(2):
+        run(app, form.add_env())
     assert [(r.title, r.subtitle) for r in form.env_list.data] == [
         ("Alpha", "(empty)"),
         ("GREETING", "Hi"),
@@ -240,7 +238,7 @@ def test_run_with_form_environment_is_sorted_and_inherits_setup(
 def test_run_with_form_refuses_bad_names(
     proto: ui.Prototype, app: toga.App, config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bad names keep the editor open; replacing a name asks first."""
+    """Bad names ask again with what was typed; replacing a name asks first."""
     told: list[tuple[str, str]] = []
     answers: list[bool] = [False]
 
@@ -253,28 +251,22 @@ def test_run_with_form_refuses_bad_names(
     monkeypatch.setattr(proto, "tell", tell)
     monkeypatch.setattr(proto, "ask", ask)
     form = proto.open_run_with(row(proto, "top"))
-    form.add_env()
-    name, value = editor_fields(app)
-    for bad in ("A=B", "MY VAR", "1ST", "my-var"):
-        name.value = bad
-        press(app, editor_save(app))
-        assert told and told[-1][0] == "Variable name"
-        assert app.main_window.title == "Add variable"  # still editing
-    assert form.env == {}
-    name.value, value.value = "A", "x\0y"
-    press(app, editor_save(app))
+    bad_names = ["A=B", "MY VAR", "1ST", "my-var"]
+    asked = script_prompts(
+        form,
+        *([[bad, "v"] for bad in bad_names]),
+        ["A", "x\0y"],
+        ["A", "1"],
+    )
+    run(app, form.add_env())
+    assert [t[0] for t in told[:4]] == ["Variable name"] * 4
+    assert asked[1][1] == [("Name", "A=B"), ("Value", "v")]  # kept what was typed
     assert told[-1][0] == "Variable value" and "NUL" in told[-1][1]
-    assert app.main_window.title == "Add variable"
-    name.value, value.value = "A", "1"
-    press(app, editor_save(app))
     assert form.env == {"A": "1"}
 
-    form.add_env()
-    name, value = editor_fields(app)
-    name.value, value.value = "A", "2"
-    press(app, editor_save(app))  # "Replace?" answered no
+    script_prompts(form, ["A", "2"], None)
+    run(app, form.add_env())  # "Replace?" answered no, then cancelled
     assert form.env == {"A": "1"}
-    assert app.main_window.title == "Add variable"
 
 
 def test_setup_form_saves_as_you_go_and_done_never_runs(
@@ -289,21 +281,13 @@ def test_setup_form_saves_as_you_go_and_done_never_runs(
     monkeypatch.setattr(proto, "run_row", run_row)
     form = proto.open_run_with(row(proto, "top"))
     assert "run_with" not in config.read_text()  # opening saves nothing
-    form.add_arg()
-    (field,) = editor_fields(app)
-    field.value = "one"
-    press(app, editor_save(app))
+    script_prompts(form, ["one"], ["B", "2"], None)
+    run(app, form.add_arg())
     assert proto.settings.get_run_with("Documents/top.py").args == ["one"]
-    form.add_env()
-    name, value = editor_fields(app)
-    name.value, value.value = "B", "2"
-    press(app, editor_save(app))
+    run(app, form.add_env())
     assert proto.settings.get_run_with("Documents/top.py").env == {"B": "2"}
 
-    form.add_arg()
-    (field,) = editor_fields(app)
-    field.value = "abandoned"
-    press(app, editor_cancel(app))  # the editor's Cancel drops the typing
+    run(app, form.add_arg())  # cancelled: the typing is dropped
     assert proto.settings.get_run_with("Documents/top.py").args == ["one"]
 
     form.done()
@@ -339,16 +323,14 @@ def test_tap_runs_with_saved_arguments_and_inherited_environment(
 
 
 def test_setup_environment_page(
-    proto: ui.Prototype, app: toga.App, config: Path
+    proto: ui.Prototype, app: toga.App, config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The Setup tab's Environment page edits variables only, saving as it goes."""
     form = proto.open_setup_environment()
     assert not form.with_args
     assert app.main_window.title == "Environment"
-    form.add_env()
-    name, value = editor_fields(app)
-    name.value, value.value = "GREETING", "Hello"
-    press(app, editor_save(app))
+    script_prompts(form, ["GREETING", "Hello"])
+    run(app, form.add_env())
     assert proto.settings.get_environment() == {"GREETING": "Hello"}
     form.done()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -13,6 +14,7 @@ from toga.style import Pack
 from . import hooks as h
 from . import piplike as pip
 from . import (
+    prompts,
     runner,
     scan,
 )
@@ -70,6 +72,7 @@ class PrototypeBase:
         self.icon_path = self.this_path / "resources" / "icons"
         self.template_path = self.this_path / "resources" / "templates"
         self.prototype_dir = self.data_path
+        self.ask_text_fields: list[toga.TextInput] = []  # the fallback prompt's
         # The tabs, once get_content has built them
         self.tabs: Any = None
         self.input_prompt = toga.Label("Input")
@@ -153,6 +156,71 @@ class PrototypeBase:
     async def todo(self, name: str) -> None:
         assert isinstance(self.app.main_window, toga.MainWindow)
         await self.app.main_window.dialog(toga.InfoDialog("TODO", name))
+
+    async def ask_fields(
+        self,
+        title: str,
+        message: str,
+        fields: list[prompts.Field],
+        ok: str = "Done",
+    ) -> list[str] | None:
+        """Ask for one or more lines of text; the texts, or None if cancelled.
+
+        On iOS this is a native alert over the current screen. Elsewhere Toga
+        has no text dialog, so a screen of its own is pushed instead.
+        """
+        if prompts.NATIVE:
+            return await prompts.ask_fields(
+                lambda *a: prompts.present_alert(self.app, *a),  # pyright: ignore
+                title,
+                message,
+                fields,
+                ok,
+            )
+        return await self.ask_fields_screen(title, message, fields, ok)
+
+    async def ask_fields_screen(
+        self,
+        title: str,
+        message: str,
+        fields: list[prompts.Field],
+        ok: str = "Done",
+    ) -> list[str] | None:
+        """The fallback for :meth:`ask_fields`: a pushed screen of text inputs."""
+        answer: asyncio.Future[list[str] | None] = (
+            asyncio.get_running_loop().create_future()
+        )
+        inputs = [
+            toga.TextInput(value=f.value, placeholder=f.label, flex=1) for f in fields
+        ]
+        self.ask_text_fields = inputs
+
+        def finish(value: list[str] | None) -> None:
+            if not answer.done():
+                self.pop_screen()
+                answer.set_result(value)
+
+        rows: list[toga.Widget] = [toga.Label(message)] if message else []
+        for field, widget in zip(fields, inputs):
+            rows.append(toga.Label(field.label))
+            rows.append(toga.Box(children=[widget]))
+        rows.append(
+            toga.Box(
+                style=Pack(margin=(8, 0)),
+                children=[
+                    toga.Button("Cancel", on_press=lambda w: finish(None)),
+                    toga.Box(style=Pack(flex=1)),
+                    toga.Button(
+                        ok, on_press=lambda w: finish([str(i.value) for i in inputs])
+                    ),
+                ],
+            )
+        )
+        self.push_screen(
+            title,
+            toga.Box(style=Pack(direction="column", margin=8), children=rows),
+        )
+        return await answer
 
     async def ask(self, title: str, text: str) -> bool:
         """Ask a yes/no question; True for yes."""

@@ -384,6 +384,7 @@ class SetupMixin(PrototypeBase):
             on_save=lambda settings: self.settings.set_environment(settings.env),
             ask=self.ask,
             tell=self.tell,
+            ask_fields=self.ask_fields,
             args_note="Every script and project inherits these variables. "
             "To override them, or set arguments, swipe right on a script and "
             "choose Setup.",

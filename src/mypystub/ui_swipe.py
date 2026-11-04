@@ -143,6 +143,7 @@ class SwipeMixin(RowSettingsMixin):
             on_save=save,
             ask=self.ask,
             tell=self.tell,
+            ask_fields=self.ask_fields,
         )
         form.open()
         self.run_with_form = form
