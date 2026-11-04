@@ -1,4 +1,4 @@
-"""The Paste button: add a copied file, archive or script to the list."""
+"""Paste: add a copied file, archive or script to the folder being browsed."""
 
 from __future__ import annotations
 
@@ -30,10 +30,6 @@ class PasteMixin(PrototypeBase):
         if sys.platform != "ios":
             self.paste_button.style.display = "none"  # no pasteboard to read
 
-    def list_actions(self) -> toga.Box:
-        """The row of actions above the list: Paste (#36)."""
-        return toga.Row(margin=(0, 4), children=[self.paste_button, toga.Box(flex=1)])
-
     def add_button_icon(
         self, button: toga.Button, icon_file: str, size: int = 20
     ) -> None:
@@ -55,6 +51,9 @@ class PasteMixin(PrototypeBase):
             .imageWithRenderingMode(2)  # UIImageRenderingModeAlwaysTemplate
         )
         button._impl.native.setImage(image, forState=UIControlStateNormal)
+        # Toga measured the button from its text alone; measure it again now
+        # that the image is there, or the label can be squeezed ("P...te")
+        button.refresh()
 
     async def ask_text(self, title: str, label: str, initial: str) -> str | None:
         """Ask for a line of text on a screen of its own; None if cancelled."""

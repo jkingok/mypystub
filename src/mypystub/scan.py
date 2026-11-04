@@ -226,6 +226,12 @@ SUMMARY_KINDS = {
 }
 
 
+# There's no emoji for "empty"; an empty bucket is the stand-in. It needs
+# iOS 14.2 or later (Unicode 13). The empty-mailbox symbol is older, but means
+# little outside the US
+EMPTY_SYMBOL = "🪣"
+
+
 def read_zipapp_metadata(archive: Path) -> dict[str, Any]:
     """What a zipapp's ``*.dist-info`` says about it, as a PEP 621-like table.
 
@@ -365,13 +371,14 @@ def folder_summary_compact(folder: Path) -> str:
     """Summarise a folder in a short line for a narrow row: "📁 2 · 📦 1 · 🐍 3".
 
     The same counts as :func:`folder_summary`, a symbol each, so the line isn't
-    truncated on a phone. Kinds that aren't there are left out.
+    truncated on a phone. Kinds that aren't there are left out, and an empty
+    folder is "🪣 Empty".
     """
     counts = folder_counts(folder)
     if counts is None:
         return "Folder"
     parts = [f"{SUMMARY_KINDS[kind]} {n}" for kind, n in counts.items() if n]
-    return " · ".join(parts) if parts else "Empty folder"
+    return " · ".join(parts) if parts else f"{EMPTY_SYMBOL} Empty"
 
 
 def scan_folder(item: Path) -> dict[str, Any]:

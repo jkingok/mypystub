@@ -293,7 +293,7 @@ def test_compact_summary_leaves_out_empty_kinds_and_handles_no_folder(
     assert scan.folder_summary_compact(tmp_path) == "🐍 1"
     empty = tmp_path / "empty"
     empty.mkdir()
-    assert scan.folder_summary_compact(empty) == "Empty folder"
+    assert scan.folder_summary_compact(empty) == "🪣 Empty"
     assert scan.folder_summary_compact(tmp_path / "missing") == "Folder"
 
 

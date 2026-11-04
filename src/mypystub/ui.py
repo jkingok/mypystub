@@ -16,18 +16,18 @@ from . import (
     first_run,
 )
 from .pages import help_html
+from .ui_actions import ActionsMixin
 from .ui_helpers import (
     is_ipad_from_window,
     open_share_sheet,
 )
-from .ui_paste import PasteMixin
 from .ui_run import RunMixin
 from .ui_setup import SetupMixin
 from .ui_swipe import SwipeMixin
 from .ui_widgets import LabelledSelection, NotAnOptionContainer
 
 
-class Prototype(RunMixin, SwipeMixin, PasteMixin, SetupMixin):
+class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
     """The launcher's state and screens, built from the feature mixins."""
 
     def __init__(self, host_app: toga.App, on_done: Callable[[Any], None]) -> None:
