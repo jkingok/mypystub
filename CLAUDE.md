@@ -50,7 +50,7 @@ Use `uv` for everything except on-device code.
 
 - `uv sync` installs the environment, including the `dev` group. `uv run pytest` runs tests.
 - `uv run ruff check .`, `uv run ruff format --check .` and `uv run pyright` run the desktop checks (pyright is configured in `pyproject.toml`). Run `uv run ruff format .` before committing.
-- `uv run pre-commit install` once per clone runs ruff, pyright, and pytest before each commit.
+- `uv run pre-commit install` once per clone (and at the start of a cloud session) is required: it runs ruff, pyright, and pytest before each commit and each merge commit, which is what keeps CI minutes down. Never commit with `--no-verify`. `uv run pre-commit run --all-files` runs them by hand.
 - `uv.lock` is committed. Run `uv lock` after changing dependencies.
 - `python devtools.py` runs the on-device pipeline. It skips mypy on iOS.
 - `briefcase run` launches the app. Simulator runs happen on the Mac, not in the cloud.

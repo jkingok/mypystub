@@ -1,6 +1,9 @@
 name: Pull Request Approval Gate
 
 on:
+  # Run by hand to try the macOS build (it's the only job that costs real
+  # minutes: macOS runners bill at ten times Linux)
+  workflow_dispatch:
   # Every PR, including ones stacked on another feature branch (#73)
   pull_request:
     # `edited` covers retargeting, e.g. a stacked PR moved to main after its
@@ -55,8 +58,10 @@ jobs:
   briefcase-build:
     name: Briefcase iOS Compilation
     needs: quality-gate      # Only trigger if Job 1 passes
-    # The macOS build is slow; stacked PRs get it once retargeted to main
-    if: github.base_ref == 'main'
+    # macOS minutes cost ten times Linux, so this runs only when started by
+    # hand (Actions → Pull Request Approval Gate → Run workflow), not on every
+    # push to every PR. Pre-commit runs the same checks as Job 1 locally.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-26
 
     steps:

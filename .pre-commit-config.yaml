@@ -1,5 +1,10 @@
-# Runs the same checks as .github/workflows/pr-gate.yml before each commit.
-# Setup: uv sync && uv run pre-commit install
+# Runs the same checks as .github/workflows/pr-gate.yml before each commit,
+# and before each merge commit (so a merge that breaks the build is caught
+# where it's made, not in CI).
+# Setup, once per clone: uv sync && uv run pre-commit install
+# Run by hand: uv run pre-commit run --all-files
+default_install_hook_types: [pre-commit, pre-merge-commit]
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3
