@@ -41,7 +41,7 @@ KIND_ICONS = {
     "project": "box.png",
     "package": "boxes.png",  # a project with several entry points
     "script": "file-code.png",
-    "zipapp": "zipapp.png",  # placeholder until the icon is added
+    "zipapp": "zipapp.png",
 }
 
 # Entry points inside a package, by kind. Placeholders until the icons are
