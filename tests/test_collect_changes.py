@@ -165,3 +165,18 @@ def test_rejects_a_bad_version(repo: Path) -> None:
     with pytest.raises(ValueError, match="version"):
         load().collect(repo, "v1", date(2026, 11, 3))
     assert (repo / "changes" / "1.feature.md").exists()  # nothing was consumed
+
+
+def test_notes_are_the_newest_builds_section_as_plain_text(repo: Path) -> None:
+    """TestFlight gets only the newest build's notes, without Markdown."""
+    module = load()
+    (repo / "changes" / "1.feature.md").write_text("Added a thing.", encoding="utf-8")
+    (repo / "changes" / "2.bugfix.md").write_text("Fixed a thing.", encoding="utf-8")
+    module.collect(repo, "2026.11.3.1", date(2026, 11, 3))
+    text = (repo / module.WHATS_NEW).read_text(encoding="utf-8")
+    assert module.notes_for(text, "2026.11.3.1") == (
+        "New:\n• Added a thing.\n\nFixed:\n• Fixed a thing."
+    )
+    # An older release's notes are never passed off as this build's
+    assert module.notes_for(text, "2026.11.3.2") == ""
+    assert module.notes_for("# What's New\n", "2026.11.3.1") == ""

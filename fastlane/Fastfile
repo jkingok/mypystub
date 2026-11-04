@@ -34,6 +34,32 @@ def xcode_project_path
   File.join("build", AppConfig::BRIEFCASE_SLUG, "iOS", "Xcode", "#{AppConfig::APP_NAME}.xcodeproj")
 end
 
+# Copies main, and the release tags on main, to the public repository. Release
+# tags (YYYY.M.D.N) are added by the share lane; the About page links to the tag
+# of the running build. Tags on commits that aren't on main are never copied, so
+# unmerged work stays private. Run it after merging, from a clone with push
+# access to the public repository:
+#
+#     bundle exec fastlane mirror
+def mirror_to_public
+  public_url = ENV["PUBLIC_REPO_URL"] || "git@github.com:jkingok/mypystub.git"
+  sh("git -C .. remote add public #{public_url}", error_callback: lambda { |_| })
+  sh("git -C .. fetch --tags --force --quiet origin")
+
+  # Push the remote-tracking main, not whatever is checked out
+  sh("git -C .. push public refs/remotes/origin/main:refs/heads/main --force")
+
+  # Tags never move, so this isn't forced; identical tags are left alone
+  tags = sh("git -C .. tag --merged origin/main --list '[0-9][0-9][0-9][0-9].*.*.*'", log: false)
+    .lines.map(&:strip)
+    .select { |tag| tag.match?(/\A\d{4}\.[1-9]\d?\.[1-9]\d?\.[1-9]\d*\z/) }
+  if tags.empty?
+    UI.message("No release tags on main to mirror")
+  else
+    sh("git -C .. push public #{tags.map { |tag| "refs/tags/#{tag}" }.join(' ')}")
+  end
+end
+
 default_platform(:ios)
 
 platform :ios do
@@ -262,19 +288,27 @@ platform :ios do
 
     api_key = lane_context[:API_KEY]
 
-    changelog_from_git_commits
-
-    # 5. Upload to TestFlight
+    # 5. Upload to TestFlight. "What to Test" is this build's section of the
+    # What's New notes only (not git commits); see scripts/collect_changes.py.
+    python_version = lane_context[:PYTHON_VERSION]
+    notes = sh("uv --directory .. run scripts/collect_changes.py --notes #{python_version}", log: false).strip
+    notes = "Build #{python_version}. No user-facing changes." if notes.empty?
     upload_to_testflight(
       api_key: api_key,
+      changelog: notes[0, 4000],
       #username: ENV["APP_STORE_APPLE_ID"],
       #app_identifier: bundle_id
     )
 
     # 6. Tag the release with its version, e.g. 2026.11.2.3, so the About
-    # page's Source link finds the exact code. mirror-main.yml copies tags on
+    # page's Source link finds the exact code. the mirror step copies tags on
     # main to the public repository.
     tag_release
+
+    # 7. The About page's Source link points at the public repository, so the
+    # tag (and main, which holds the build's release notes) must be there
+    # before the build reaches testers.
+    mirror_to_public
     #pilot(
     #  api_key: api_key,
     #  ipa: ipa_path,
@@ -282,4 +316,9 @@ platform :ios do
     #  changelog: ENV["RELEASE_NOTES"] || "Automated build submitted via Fastlane & Briefcase."
     #)
   end
+end
+
+desc "Mirror main and its release tags to the public repository"
+lane :mirror do
+  mirror_to_public
 end

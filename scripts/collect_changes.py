@@ -17,6 +17,10 @@ Fastlane runs this when a build is made, once it knows the version:
 Usage::
 
     uv run scripts/collect_changes.py 2026.11.3.1
+    uv run scripts/collect_changes.py --notes 2026.11.3.1
+
+The second form prints that build's section as plain text, for TestFlight's
+"What to Test". It prints nothing if the build has no section.
 """
 
 import argparse
@@ -75,6 +79,23 @@ def parse(text: str) -> list[Section]:
 def render(sections: list[Section]) -> str:
     """A What's New (or archive) file for `sections`."""
     return TITLE + "\n\n" + "\n".join(section.render() for section in sections)
+
+
+def notes_for(text: str, version: str) -> str:
+    """Plain text of `version`'s section in a What's New file; "" if it has none.
+
+    Groups read "New:" or "Fixed:" followed by "• " bullets, which is how
+    TestFlight shows it (it has no Markdown). Only the newest build is wanted,
+    so an older section is never returned.
+    """
+    sections = parse(text)
+    if not sections or sections[0].version != version:
+        return ""
+    lines: list[str] = []
+    for title, bullets in sections[0].groups.items():
+        if bullets:
+            lines += [f"{title}:"] + [f"• {bullet}" for bullet in bullets] + [""]
+    return "\n".join(lines).strip()
 
 
 def read_fragments(folder: Path) -> list[tuple[str, str, str]]:
@@ -140,6 +161,11 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("version", help="YYYY.M.D.N, the build's version")
     parser.add_argument(
+        "--notes",
+        action="store_true",
+        help="print the build's notes as plain text instead of collecting",
+    )
+    parser.add_argument(
         "--root",
         type=Path,
         default=Path(__file__).resolve().parent.parent,
@@ -149,6 +175,11 @@ def main(argv: list[str] | None = None) -> None:
         "--today", type=date.fromisoformat, default=None, help="YYYY-MM-DD"
     )
     args = parser.parse_args(argv)
+    if args.notes:
+        path = args.root / WHATS_NEW
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        print(notes_for(text, args.version))
+        return
     count = collect(args.root, args.version, args.today or date.today())
     print(f"Collected {count} change{'' if count == 1 else 's'} for {args.version}")
 

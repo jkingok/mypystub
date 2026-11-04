@@ -51,7 +51,7 @@ uv run pre-commit run --all-files
 
 ## Releasing to TestFlight
 
-Builds are shipped by hand from a clone on a Mac with Xcode, Ruby, and Bundler. The `Continuous Delivery to TestFlight` workflow no longer runs on push; it can still be started manually, but only works on a runner that has the credentials below.
+Builds are shipped by hand from a clone on a Mac with Xcode, Ruby, and Bundler. The `Continuous Delivery to TestFlight` workflow only runs `fastlane ios share` and is manual; on a Mac it costs no CI minutes.
 
 ```bash
 bundle install
@@ -70,7 +70,8 @@ Then run one of the lanes in `fastlane/Fastfile`:
 bundle exec fastlane ios share
 ```
 
-- `share` builds and uploads to TestFlight.
+- `share` builds and uploads to TestFlight. TestFlight's "What to Test" is the newest build's section of What's New, not the git log.
+- `mirror` copies `main` and its release tags to the public repository (`bundle exec fastlane mirror`; set `PUBLIC_REPO_URL` to override the remote). `share` runs it after tagging, so the About page's Source link works in the public repository; run it by hand to catch up after merging.
 - `local` builds and installs on local devices.
 - `manual` builds the Xcode project and leaves signing and deploying to Xcode.
 
@@ -86,4 +87,4 @@ Fastlane sets the version, so do not edit it by hand. Before Briefcase runs, it 
 
 Runs straight from the source tree (`briefcase dev`, tests) show the placeholder version in `pyproject.toml`.
 
-After a successful upload, `share` tags the commit with the Python version (for example `2026.11.2.3`) and pushes the tag. `mirror-main.yml` copies `main` and the release tags on `main` to the public repository, and the About page links to the tag of the running build ("Source"). Tags on commits that aren't on `main` stay private, so share from `main`; a build from a branch that is later squash-merged keeps a private tag, and the lane warns about it. Build numbers count both TestFlight and these tags, so a number is never reused.
+After a successful upload, `share` tags the commit with the Python version (for example `2026.11.2.3`) and pushes the tag. The `mirror` lane copies `main` and the release tags on `main` to the public repository, and the About page links to the tag of the running build ("Source"). Tags on commits that aren't on `main` stay private, so share from `main`; a build from a branch that is later squash-merged keeps a private tag, and the lane warns about it. Build numbers count both TestFlight and these tags, so a number is never reused.
