@@ -237,9 +237,9 @@ installer_icon = "assets/icons/icon"
 [tool.briefcase.app.mypystub.iOS]
 requires = [
 # For the moment iOS needs bleeding edge packages
-    "toga-core @ git+https://github.com/jkingok/beeware-toga.git@feature/ios-selection-done-rebased#subdirectory=core",
-    "travertino @ git+https://github.com/jkingok/beeware-toga.git@feature/ios-selection-done-rebased#subdirectory=travertino",
-    "toga-iOS @ git+https://github.com/jkingok/beeware-toga.git@feature/ios-selection-done-rebased#subdirectory=iOS",
+    "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
+    "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
+    "toga-iOS @ git+https://github.com/beeware/toga.git#subdirectory=iOS",
     "std-nslog~=2.0.0; python_version < '3.14'",
 # Since iOS does not allow binaries to be added after the fact
 # we build in some for convenience
