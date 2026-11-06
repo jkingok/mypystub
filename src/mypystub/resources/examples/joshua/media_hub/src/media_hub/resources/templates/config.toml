@@ -1,0 +1,4 @@
+# Media Hub requires configuration
+# This can be performed in app or via this file
+page_title = "Media Hub"
+tmdb_api_key = ""

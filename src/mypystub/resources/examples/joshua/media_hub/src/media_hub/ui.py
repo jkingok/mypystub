@@ -11,6 +11,7 @@ from . import functions as f
 from . import model as m
 from . import settings as s
 from . import widgets as ws
+from .state import state
 
 
 class Prototype:
@@ -18,9 +19,9 @@ class Prototype:
         self.app = host_app
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Media Hub"
-        self.app.settings = s.Settings(host_app.paths)
-        self.app.functions = f.Functions(host_app.paths, self.app.settings)
-        self.app.model = m.Model(host_app.paths, self.app.functions)
+        state.settings = s.Settings(host_app.paths)
+        state.functions = f.Functions(host_app.paths, state.settings)
+        state.model = m.Model(host_app.paths, state.functions)
         self.data_path = self.app.paths.data
         self.this_path = Path(__file__).resolve().parent
         self.icon_path = self.this_path / "resources" / "icons"
@@ -98,7 +99,7 @@ class Prototype:
                                     "Save",
                                     flex=1,
                                     on_press=lambda w: (
-                                        self.app.model.save(self.key, self.values),  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
+                                        state.model.save(self.key, self.values),  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
                                         self.app.widgets[self.stack].pop(),  # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
                                     ),
                                 ),
@@ -120,28 +121,28 @@ class Prototype:
                         id="stack_list",
                         direction="column",
                         children=[
-                            self.app.model.set_list_count_label(toga.Label("")),
+                            state.model.set_list_count_label(toga.Label("")),
                             toga.DetailedList(
                                 flex=1,
-                                on_refresh=lambda w: {self.app.model.reload_items()},  # pyright: ignore[reportArgumentType]
+                                on_refresh=lambda w: {state.model.reload_items()},  # pyright: ignore[reportArgumentType]
                                 primary_action="View",
                                 on_primary_action=lambda w, row: asyncio.create_task(  # pyright: ignore[reportArgumentType]
                                     self.todo("View")
                                 ),
                                 secondary_action="Delete",
                                 on_secondary_action=lambda w, row: (  # pyright: ignore[reportArgumentType]
-                                    self.app.model.delete(row.index)
+                                    state.model.delete(row.index)
                                 ),
                                 on_select=lambda w: {
                                     self.app.widgets["stack_list"].push(
                                         EditBox(
                                             "stack_list",
                                             i := w.selection.index,
-                                            self.app.functions.get_cached_selection(i),
+                                            state.functions.get_cached_selection(i),
                                         )
                                     )
                                 },
-                                data=self.app.model.items_list_source,
+                                data=state.model.items_list_source,
                             ),
                         ],
                     ),
@@ -162,19 +163,19 @@ class Prototype:
                                         "⁠➕ Add This",
                                         flex=1,
                                         on_press=lambda w: {
-                                            # ws.Utils.info_task(w, w.text, f"{r.title} added." if (r := self.app.model.add_from_url(url := self.app.widgets["web_add"].url)) else f"Unknown URL {url}")
+                                            # ws.Utils.info_task(w, w.text, f"{r.title} added." if (r := state.model.add_from_url(url := self.app.widgets["web_add"].url)) else f"Unknown URL {url}")
                                             self.app.widgets["stack_add"].push(
                                                 EditBox("stack_add", None, v)
                                             )
                                             if (
-                                                v := self.app.model.add_from_url(
+                                                v := state.model.add_from_url(
                                                     u := self.app.widgets["web_add"].url
                                                 )
                                             )
                                             else ws.Utils.info_task(
                                                 w, w.text, f"Unknown URL {u}"
                                             )
-                                            # self.app.model.add_from_url(self.app.widgets["web_add"].url)
+                                            # state.model.add_from_url(self.app.widgets["web_add"].url)
                                         },
                                     ),
                                     toga.Button(
@@ -210,9 +211,9 @@ class Prototype:
                                         flex=1,
                                         on_press=lambda w: threading.Thread(
                                             target=lambda: (
-                                                self.app.functions.generate_offline_responsive_html(
-                                                    self.app.functions.load_titles_from_cache(),
-                                                    page_title=self.app.settings.get(
+                                                state.functions.generate_offline_responsive_html(
+                                                    state.functions.load_titles_from_cache(),
+                                                    page_title=state.settings.get(
                                                         "page_title"
                                                     ),
                                                     output_path=self.data_path
@@ -251,9 +252,9 @@ class Prototype:
                         children=[
                             ws.LabelledText(
                                 "Title",
-                                value_text=self.app.settings.get("page_title"),
+                                value_text=state.settings.get("page_title"),
                                 callback=lambda w: {
-                                    self.app.settings.set("page_title", w.value)
+                                    state.settings.set("page_title", w.value)
                                 },
                                 confirm=lambda w: {ws.Utils.close_keyboard(w)},
                             ),
@@ -261,13 +262,9 @@ class Prototype:
                                 children=[
                                     ws.LabelledText(
                                         "API Key",
-                                        value_text=self.app.settings.get(
-                                            "tmdb_api_key"
-                                        ),
+                                        value_text=state.settings.get("tmdb_api_key"),
                                         callback=lambda w: {
-                                            self.app.settings.set(
-                                                "tmdb_api_key", w.value
-                                            )
+                                            state.settings.set("tmdb_api_key", w.value)
                                         },
                                         confirm=lambda w: {ws.Utils.close_keyboard(w)},
                                         flex=1,

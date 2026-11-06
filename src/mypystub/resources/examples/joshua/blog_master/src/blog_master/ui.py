@@ -10,6 +10,7 @@ from markdown import markdown as md
 
 from . import settings as s
 from . import widgets as ws
+from .state import state
 
 
 class Prototype:
@@ -17,7 +18,7 @@ class Prototype:
         self.app = host_app
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Blog Master"  # host_app.formal_name
-        self.app.settings = s.Settings(host_app.paths)
+        state.settings = s.Settings(host_app.paths)
         self.data_path = self.app.paths.data
         self.this_path = Path(__file__).resolve().parent
         self.icon_path = self.this_path / "resources" / "icons"

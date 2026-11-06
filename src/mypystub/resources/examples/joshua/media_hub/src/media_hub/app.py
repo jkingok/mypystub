@@ -5,6 +5,7 @@ A Toga demonstration that generates a media catalog using themoviedb.org targeti
 import toga
 
 from . import ui
+from .state import state
 
 
 class MyApp(toga.App):
@@ -15,12 +16,12 @@ class MyApp(toga.App):
         We then create a main window (with a name matching the app), and
         show the main window.
         """
-        app.proto = ui.Prototype(
+        state.proto = ui.Prototype(
             host_app=app, on_done=lambda _: MyApp.unstack_from(app)
         )
 
         # Update window context and inject the prototype layout
-        t = getattr(app.proto, "title", app.formal_name)
+        t = getattr(state.proto, "title", app.formal_name)
         if not app.main_window:
             app.main_window = toga.MainWindow(title=t)
         mw = app.main_window
@@ -29,7 +30,7 @@ class MyApp(toga.App):
                 mw.content_stack = []  # pyright: ignore[reportAttributeAccessIssue]
             mw.content_stack.append((mw.title, mw.content))  # pyright: ignore[reportAttributeAccessIssue]
         mw.title = t  # pyright: ignore[reportAttributeAccessIssue]
-        mw.content = app.proto.get_content()  # pyright: ignore[reportAttributeAccessIssue]
+        mw.content = state.proto.get_content()  # pyright: ignore[reportAttributeAccessIssue]
         if not mw.visible:  # pyright: ignore[reportAttributeAccessIssue]
             mw.show()  # pyright: ignore[reportAttributeAccessIssue]
 
