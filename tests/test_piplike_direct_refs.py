@@ -25,8 +25,8 @@ def resolve(text: str, tmp_path: Path) -> Any:
 @pytest.mark.parametrize(
     "text",
     [
-        "foo @ git+https://github.com/o/r.git@v1",
-        "foo @ https://host/foo-1.0.tar.gz",
+        "foo @ git+https://gitlab.com/o/r.git@v1",
+        "foo @ git+ssh://git@github.com/o/r.git",
     ],
 )
 def test_url_requirement_raises_dependency_error(text: str, tmp_path: Path) -> None:
@@ -45,4 +45,4 @@ def test_bundled_names_are_not_an_exception(tmp_path: Path) -> None:
     )
     resolver = resolvelib.Resolver(provider, resolvelib.BaseReporter())
     with pytest.raises(piplike.DependencyError):
-        resolver.resolve([Requirement("foo @ git+https://github.com/o/r.git")])
+        resolver.resolve([Requirement("foo @ git+ssh://git@github.com/o/r.git")])

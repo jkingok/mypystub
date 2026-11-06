@@ -27,15 +27,16 @@ from packaging.utils import (
 )
 from packaging.version import Version
 
+from .source_installs import github_archive_url
+
 ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar")
 
 # Kinds of direct reference that can be installed. A kind not in here is refused
 # with a message that says why (see :func:`unsupported_message`).
-SUPPORTED: frozenset[str] = frozenset({"wheel"})
+SUPPORTED: frozenset[str] = frozenset({"wheel", "archive", "github"})
 
 WHY = {
-    "archive": "installing a source archive from a URL isn't supported yet",
-    "git+https": "installing from a git repository isn't supported yet",
+    "git+https": "installing from this git host isn't supported yet (GitHub is)",
     "git+ssh": "installing from git over SSH isn't supported",
     "git": "this kind of git URL isn't supported",
     "file": "a local file path can't be used, since it won't exist on other devices",
@@ -46,11 +47,14 @@ WHY = {
 def kind_of(url: str) -> str:
     """What a requirement's URL points at.
 
-    One of ``wheel``, ``archive``, ``git+https``, ``git+ssh``, ``git`` (any
+    One of ``wheel``, ``archive``, ``github`` (a GitHub repository, which is
+    fetched as an archive), ``git+https``, ``git+ssh``, ``git`` (any
     other ``git+`` scheme), ``file`` or ``other``.
     """
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
+    if github_archive_url(url):
+        return "github"
     if scheme.startswith("git+"):
         transport = scheme[len("git+") :]
         if transport in ("https", "http"):

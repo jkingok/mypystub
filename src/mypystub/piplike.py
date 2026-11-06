@@ -7,7 +7,7 @@ import tempfile
 import zipfile
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,78 +24,13 @@ from packaging.version import Version
 from unearth import PackageFinder, TargetPython
 from unearth.link import Link
 
-from . import direct_refs
+from . import direct_refs, purity, source_installs
 from .direct_refs import unsupported_message
+from .package_aliases import ALIASES, Alias, parse_aliases  # noqa: F401
 
 
 class DependencyError(Exception):
     """Raised when dependency resolution, downloading, or unpacking fails."""
-
-
-ALIAS_KINDS = ("bundled", "substitute")
-ALIAS_WHEN = ("no_wheel", "always")
-ALIAS_SPECIFIER = ("drop", "keep")
-
-
-@dataclass(frozen=True)
-class Alias:
-    """A requirement that is really satisfied by another distribution (#79).
-
-    :param kind: ``"bundled"``: satisfied by a distribution the app bundles, so
-        nothing is installed (``toga`` is provided by ``toga-core``).
-        ``"substitute"``: install `target` instead, typically a pure-Python
-        replacement for a package with no wheel for this platform.
-    :param target: The distribution that satisfies the requirement.
-    :param when: For substitutes: ``"no_wheel"`` (the default) tries the
-        original first and only substitutes when it has no compatible wheel;
-        ``"always"`` always substitutes.
-    :param specifier: For substitutes: ``"drop"`` (the default) ignores the
-        requirement's version specifier, since the two projects number their
-        versions differently; ``"keep"`` applies it to the substitute.
-    """
-
-    kind: str
-    target: str
-    when: str = "no_wheel"
-    specifier: str = "drop"
-
-
-# Built-in aliases. Each substitute is a verified drop-in: same import name,
-# compatible API, and a pure-Python (py3-none-any) wheel.
-ALIASES = {
-    # The toga meta-package isn't bundled, but toga-core and the backend are
-    "toga": Alias("bundled", "toga-core"),
-    # PyYAML's wheels are compiled and none are built for iOS; pyyaml-pure
-    # provides the same `yaml` package (safe_load, dump, YAMLError, loaders)
-    "pyyaml": Alias("substitute", "pyyaml-pure"),
-}
-
-
-def parse_aliases(table: Mapping[str, Any]) -> dict[str, Alias]:
-    """Read an alias table, as written in launcher.toml or [tool.stub_launcher].
-
-    Each entry is ``name = { kind = "...", target = "...", when = "...",
-    specifier = "..." }``. Raises ValueError for anything malformed, so typos
-    don't silently change what gets installed.
-    """
-    aliases: dict[str, Alias] = {}
-    for name, entry in table.items():
-        if not isinstance(entry, Mapping) or "target" not in entry:
-            raise ValueError(f"alias {name!r} needs a table with a target")
-        alias = Alias(
-            kind=str(entry.get("kind", "substitute")),
-            target=canonicalize_name(str(entry["target"])),
-            when=str(entry.get("when", "no_wheel")),
-            specifier=str(entry.get("specifier", "drop")),
-        )
-        if (
-            alias.kind not in ALIAS_KINDS
-            or alias.when not in ALIAS_WHEN
-            or alias.specifier not in ALIAS_SPECIFIER
-        ):
-            raise ValueError(f"alias {name!r} has an unknown kind, when or specifier")
-        aliases[canonicalize_name(name)] = alias
-    return aliases
 
 
 @dataclass(frozen=True)
@@ -108,6 +43,10 @@ class Candidate:
     is_installed: bool = False
     # A wheel the requirement itself pointed at (`foo @ https://...whl`, #171)
     is_direct: bool = False
+    # Source the requirement pointed at, unpacked here and installed without a
+    # build (#172); set only for those
+    source_root: Path | None = None
+    source_project: source_installs.Project | None = field(default=None, compare=False)
     # Use frozenset for immutability so dataclass remains hashable
     requested_extras: frozenset[str] = frozenset()
     # The requirement name this candidate satisfies; differs from `name` when an
@@ -185,6 +124,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             supported_tags if supported_tags is not None else sys_tags()
         )
         self._warned: set[str] = set()
+        self._sources: dict[str, source_installs.Project] = {}
         self.http_client = http_client
         self.use_system = use_system
         self.max_candidates = max_candidates
@@ -376,6 +316,10 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 f"{canon_id} is bundled with the app, so a URL can't replace it."
             )
         requirement = direct[0]
+        if direct_refs.kind_of(requirement.url or "") in ("archive", "github"):
+            return self._source_candidates(
+                canon_id, requirement, req_specs, excluded, active_extras
+            )
         try:
             name, version = direct_refs.wheel_identity(requirement, self.supported_tags)
         except direct_refs.WheelProblem as problem:
@@ -394,6 +338,65 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         ):
             return []
         return [candidate]
+
+    def _source_candidates(
+        self,
+        canon_id: str,
+        requirement: Requirement,
+        req_specs: list[Requirement],
+        excluded: set[Candidate],
+        active_extras: frozenset[str],
+    ) -> list[Candidate]:
+        """The pure-Python project in a source archive, ready to install (#172)."""
+        url = source_installs.github_archive_url(requirement.url or "") or (
+            requirement.url or ""
+        )
+        project = self._prepare_source(url, requirement)
+        candidate = Candidate(
+            name=project.name,
+            version=project.version,
+            link=Link(url),
+            is_direct=True,
+            source_root=project.root,
+            source_project=project,
+            requested_extras=active_extras,
+            identifier=canon_id,
+        )
+        plain = [r for r in req_specs if not r.url]
+        if candidate in excluded or not all(
+            self.is_satisfied_by(r, candidate) for r in plain
+        ):
+            return []
+        return [candidate]
+
+    def _prepare_source(
+        self, url: str, requirement: Requirement
+    ) -> source_installs.Project:
+        """Download and unpack an archive, and read the project in it (cached)."""
+        if url in self._sources:
+            return self._sources[url]
+        archive = direct_refs.cache_path(self.cache_dir, url)
+        if not archive.exists():
+            try:
+                response = self.http_client.get(
+                    direct_refs.urldefrag(url).url, follow_redirects=True
+                )
+                response.raise_for_status()
+            except httpx2.HTTPError as exc:
+                raise DependencyError(f"Couldn't download {url}: {exc}") from exc
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            archive.write_bytes(response.content)
+        try:
+            direct_refs.check_sha256(archive, url)
+            project = source_installs.open_archive(archive, url, requirement.name)
+        except (direct_refs.WheelProblem, source_installs.SourceProblem) as problem:
+            if isinstance(problem, direct_refs.WheelProblem):
+                archive.unlink(missing_ok=True)  # a wrong hash: don't keep the file
+            raise DependencyError(
+                f"Can't install “{requirement}”: {problem}."
+            ) from None
+        self._sources[url] = project
+        return project
 
     def _direct_wheel_metadata(self, candidate: Candidate) -> str:
         """The METADATA of a wheel at a URL: downloaded once, then read from disk."""
@@ -458,6 +461,10 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                         f"ignoring {requirement.specifier}",
                     )
                 return True
+        if candidate.source_root and source_installs.version_is_unknown(
+            candidate.version
+        ):
+            return True  # the source doesn't say, and it was asked for by URL
         return not (
             requirement.specifier
             and not requirement.specifier.contains(candidate.version, prereleases=True)
@@ -540,6 +547,8 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
     def _fetch_candidate_metadata(self, candidate: Candidate) -> str:
         if not candidate.link:
             return ""
+        if candidate.is_direct and candidate.source_root is not None:
+            return self._sources[candidate.link.url].metadata_text()
         if candidate.is_direct:
             return self._direct_wheel_metadata(candidate)
         metadata_url = f"{candidate.link.url}.metadata"
@@ -610,6 +619,86 @@ def unpack_wheel(wheel_path: Path, target_site_packages: Path) -> None:
 # Main Async Entry Point
 
 
+async def install_resolved(
+    mapping: Mapping[str, Candidate],
+    target_dir: Path,
+    cache_dir: Path,
+    require_pure: bool,
+    force_reinstall: bool = False,
+    progress: Callable[[str], None] = lambda message: None,
+) -> int:
+    """Install what was resolved, returning how many: all of it, or nothing.
+
+    Every wheel is fetched and checked first, so a refused one can't leave the
+    packages that depend on it installed without it.
+    """
+    pending: list[tuple[Candidate, Path, Any]] = []
+    async with httpx2.AsyncClient(timeout=30.0) as async_http:
+        for candidate in mapping.values():
+            if candidate.is_system or candidate.is_installed:
+                continue
+            installed = await asyncio.to_thread(
+                get_installed_distribution, target_dir, candidate.name
+            )
+            if (
+                installed
+                and Version(installed.version) == candidate.version
+                and not force_reinstall
+            ):
+                continue
+            link = candidate.link
+            assert link is not None  # only system packages have none
+            wheel_path = (
+                direct_refs.cache_path(cache_dir, link.url)
+                if candidate.is_direct
+                else cache_dir / link.filename
+            )
+            if candidate.source_root is None:
+                if not wheel_path.exists():
+                    wheel_path.parent.mkdir(parents=True, exist_ok=True)
+                    print(f"downloading {link}")
+                    progress(f"Downloading {candidate.name} {candidate.version}")
+                    await download_wheel_async(
+                        async_http, direct_refs.urldefrag(link.url).url, wheel_path
+                    )
+                # Only pure Python is installed at run time (#172)
+                if require_pure and (reason := purity.wheel_impurity(wheel_path)):
+                    raise DependencyError(
+                        f"{candidate.name} {candidate.version} can't be installed: "
+                        f"{reason}. Only pure Python is installed at run time; "
+                        "compiled packages have to be bundled with the app."
+                    )
+            pending.append((candidate, wheel_path, installed))
+
+    for candidate, wheel_path, installed in pending:
+        if installed:
+            print(
+                f"upgrading {candidate.name} from {installed.version} "
+                f"to {candidate.version}"
+            )
+            progress(f"Removing {candidate.name} {installed.version}")
+            await asyncio.to_thread(
+                remove_installed_package, target_dir, candidate.name
+            )
+        progress(f"Installing {candidate.name} {candidate.version}")
+        if candidate.source_project is not None:
+            # Pure Python from source: copied, never built (#172)
+            try:
+                await asyncio.to_thread(
+                    source_installs.install, candidate.source_project, target_dir
+                )
+            except OSError as exc:
+                raise DependencyError(
+                    f"Failed to install {candidate.name}: {exc}"
+                ) from exc
+            continue
+        try:
+            await asyncio.to_thread(unpack_wheel, wheel_path, target_dir)
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise DependencyError(f"Failed to unpack {wheel_path.name}: {exc}") from exc
+    return len(pending)
+
+
 async def resolve_and_install_async(
     requirements: list[str],
     target_dir: Path,
@@ -620,6 +709,7 @@ async def resolve_and_install_async(
     use_system: bool = True,
     on_progress: Callable[[str], None] | None = None,
     aliases: Mapping[str, Alias] | None = None,
+    pure_only: bool | None = None,
 ) -> None:
     """
     Async dependency resolver and installer compatible with Toga / asyncio event loops.
@@ -733,55 +823,14 @@ async def resolve_and_install_async(
         finally:
             drain_progress()  # the resolver's messages come before anything after
 
-        # Async Download & Install Phase
-        changed = 0
-        async with httpx2.AsyncClient(timeout=30.0) as async_http:
-            for candidate in resolution.mapping.values():
-                if candidate.is_system or candidate.is_installed:
-                    continue
-
-                installed = await asyncio.to_thread(
-                    get_installed_distribution, target_dir, candidate.name
-                )
-                wheel_path = (
-                    direct_refs.cache_path(cache_dir, candidate.link.url)
-                    if candidate.is_direct
-                    else cache_dir / candidate.link.filename
-                )
-
-                if installed:
-                    installed_version = Version(installed.version)
-                    if installed_version == candidate.version and not force_reinstall:
-                        continue
-                    else:
-                        print(
-                            f"upgrading {candidate.name} from {installed_version} to {candidate.version}"
-                        )
-                        progress(f"Removing {candidate.name} {installed_version}")
-                        await asyncio.to_thread(
-                            remove_installed_package, target_dir, candidate.name
-                        )
-
-                # Download wheel asynchronously if not cached
-                if not wheel_path.exists():
-                    wheel_path.parent.mkdir(parents=True, exist_ok=True)
-                    print(f"downloading {candidate.link}")
-                    progress(f"Downloading {candidate.name} {candidate.version}")
-                    await download_wheel_async(
-                        async_http,
-                        direct_refs.urldefrag(candidate.link.url).url,
-                        wheel_path,
-                    )
-
-                # Unpack wheel on a worker thread
-                changed += 1
-                progress(f"Installing {candidate.name} {candidate.version}")
-                try:
-                    await asyncio.to_thread(unpack_wheel, wheel_path, target_dir)
-                except (zipfile.BadZipFile, OSError) as exc:
-                    raise DependencyError(
-                        f"Failed to unpack {wheel_path.name}: {exc}"
-                    ) from exc
+        changed = await install_resolved(
+            resolution.mapping,
+            target_dir,
+            cache_dir,
+            sys.platform == "ios" if pure_only is None else pure_only,
+            force_reinstall,
+            progress,
+        )
         if changed:
             # Python may have cached "nothing here" for target_dir while it was
             # missing or empty; forget that so the new packages can be imported
