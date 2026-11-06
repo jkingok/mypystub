@@ -23,6 +23,8 @@ from packaging.version import Version
 from unearth import PackageFinder, TargetPython
 from unearth.link import Link
 
+from .direct_refs import unsupported_message
+
 
 class DependencyError(Exception):
     """Raised when dependency resolution, downloading, or unpacking fails."""
@@ -195,6 +197,10 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         req_specs = [
             r for r in requirements.get(identifier, []) if isinstance(r, Requirement)
         ]
+        # A URL must never be quietly turned into the same name from PyPI
+        for req in req_specs:
+            if problem := unsupported_message(req):
+                raise DependencyError(problem)
 
         # resolvelib maps identifier -> candidates already ruled out (backtracking)
         excluded: set[Candidate] = set(incompatibilities.get(identifier, ()))
