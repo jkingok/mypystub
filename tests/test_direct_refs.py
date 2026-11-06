@@ -36,7 +36,6 @@ def test_a_plain_name_is_fine() -> None:
 @pytest.mark.parametrize(
     ("text", "fragment"),
     [
-        ("foo @ https://host/foo-1.0-py3-none-any.whl", "wheel from a URL"),
         ("foo @ https://host/foo-1.0.tar.gz", "source archive"),
         ("foo @ git+https://github.com/o/r.git@v1", "git repository"),
         ("foo @ git+ssh://git@github.com/o/r.git", "SSH"),

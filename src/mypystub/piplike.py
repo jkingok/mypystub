@@ -6,7 +6,7 @@ import sys
 import tempfile
 import zipfile
 from collections import deque
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,11 +18,13 @@ from installer import install
 from installer.destinations import SchemeDictionaryDestination
 from installer.sources import WheelFile
 from packaging.requirements import Requirement
+from packaging.tags import Tag, sys_tags
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 from unearth import PackageFinder, TargetPython
 from unearth.link import Link
 
+from . import direct_refs
 from .direct_refs import unsupported_message
 
 
@@ -104,6 +106,8 @@ class Candidate:
     is_system: bool = False
     # Already unpacked into the target site-packages by an earlier run
     is_installed: bool = False
+    # A wheel the requirement itself pointed at (`foo @ https://...whl`, #171)
+    is_direct: bool = False
     # Use frozenset for immutability so dataclass remains hashable
     requested_extras: frozenset[str] = frozenset()
     # The requirement name this candidate satisfies; differs from `name` when an
@@ -118,7 +122,13 @@ class Candidate:
 
     def __str__(self) -> str:
         source = (
-            "system" if self.is_system else "installed" if self.is_installed else "pypi"
+            "system"
+            if self.is_system
+            else "installed"
+            if self.is_installed
+            else "url"
+            if self.is_direct
+            else "pypi"
         )
         extras_str = (
             f"[{','.join(sorted(self.requested_extras))}]"
@@ -140,6 +150,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         max_candidates: int = 5,
         installed_packages: dict[str, Version] | None = None,
         target_dir: Path | None = None,
+        supported_tags: Iterable[Tag] | None = None,
     ):
         """Resolve against bundled, then installed, then PyPI packages.
 
@@ -169,6 +180,10 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             canonicalize_name(k): v for k, v in (installed_packages or {}).items()
         }
         self.target_dir = target_dir
+        # What this platform can run, for wheels the requirement names by URL
+        self.supported_tags: frozenset[Tag] = frozenset(
+            supported_tags if supported_tags is not None else sys_tags()
+        )
         self._warned: set[str] = set()
         self.http_client = http_client
         self.use_system = use_system
@@ -209,6 +224,12 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         active_extras: frozenset[str] = frozenset(
             extra for req in req_specs if req.extras for extra in req.extras
         )
+
+        # 0. A requirement that names a wheel by URL (#171) is that wheel, only
+        if direct := [r for r in req_specs if r.url]:
+            return self._direct_candidates(
+                canon_id, direct, req_specs, excluded, active_extras
+            )
 
         # 1. Bundled packages always win, even against a conflicting specifier.
         # A second copy in site_packages would shadow the app's own, which is
@@ -335,6 +356,75 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         candidates.sort(key=lambda c: c.version, reverse=True)
         return candidates[: self.max_candidates]
 
+    def _direct_candidates(
+        self,
+        canon_id: str,
+        direct: list[Requirement],
+        req_specs: list[Requirement],
+        excluded: set[Candidate],
+        active_extras: frozenset[str],
+    ) -> list[Candidate]:
+        """The one wheel a requirement points at, after checking it fits (#171)."""
+        urls = {direct_refs.urldefrag(r.url or "").url for r in direct}
+        if len(urls) > 1:
+            raise DependencyError(
+                f"{canon_id} is pointed at more than one URL: "
+                + ", ".join(sorted(urls))
+            )
+        if self.use_system and canon_id in self.system_packages:
+            raise DependencyError(
+                f"{canon_id} is bundled with the app, so a URL can't replace it."
+            )
+        requirement = direct[0]
+        try:
+            name, version = direct_refs.wheel_identity(requirement, self.supported_tags)
+        except direct_refs.WheelProblem as problem:
+            raise DependencyError(str(problem)) from None
+        candidate = Candidate(
+            name=name,
+            version=version,
+            link=Link(requirement.url or ""),  # keeps any #sha256= to check
+            is_direct=True,
+            requested_extras=active_extras,
+            identifier=canon_id,
+        )
+        plain = [r for r in req_specs if not r.url]
+        if candidate in excluded or not all(
+            self.is_satisfied_by(r, candidate) for r in plain
+        ):
+            return []
+        return [candidate]
+
+    def _direct_wheel_metadata(self, candidate: Candidate) -> str:
+        """The METADATA of a wheel at a URL: downloaded once, then read from disk."""
+        assert candidate.link is not None
+        url = candidate.link.url
+        path = direct_refs.cache_path(self.cache_dir, url)
+        if not path.exists():
+            try:
+                response = self.http_client.get(
+                    direct_refs.urldefrag(url).url, follow_redirects=True
+                )
+                response.raise_for_status()
+            except httpx2.HTTPError as exc:
+                raise DependencyError(f"Couldn't download {url}: {exc}") from exc
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(response.content)
+        try:
+            direct_refs.check_sha256(path, url)
+        except direct_refs.WheelProblem as problem:
+            path.unlink(missing_ok=True)
+            raise DependencyError(str(problem)) from None
+        try:
+            with zipfile.ZipFile(path) as wheel:
+                for member in wheel.namelist():
+                    if member.endswith(".dist-info/METADATA"):
+                        return wheel.read(member).decode("utf-8", "replace")
+        except zipfile.BadZipFile as exc:
+            path.unlink(missing_ok=True)
+            raise DependencyError(f"{path.name} isn't a valid wheel: {exc}") from exc
+        return ""
+
     def _warn_if_bundled_mismatch(self, req: Requirement, cand: Candidate) -> None:
         """Log once when a bundled package doesn't meet a script's specifier."""
         if (
@@ -450,6 +540,8 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
     def _fetch_candidate_metadata(self, candidate: Candidate) -> str:
         if not candidate.link:
             return ""
+        if candidate.is_direct:
+            return self._direct_wheel_metadata(candidate)
         metadata_url = f"{candidate.link.url}.metadata"
         try:
             resp = self.http_client.get(metadata_url, follow_redirects=True)
@@ -651,7 +743,11 @@ async def resolve_and_install_async(
                 installed = await asyncio.to_thread(
                     get_installed_distribution, target_dir, candidate.name
                 )
-                wheel_path = cache_dir / candidate.link.filename
+                wheel_path = (
+                    direct_refs.cache_path(cache_dir, candidate.link.url)
+                    if candidate.is_direct
+                    else cache_dir / candidate.link.filename
+                )
 
                 if installed:
                     installed_version = Version(installed.version)
@@ -668,10 +764,13 @@ async def resolve_and_install_async(
 
                 # Download wheel asynchronously if not cached
                 if not wheel_path.exists():
+                    wheel_path.parent.mkdir(parents=True, exist_ok=True)
                     print(f"downloading {candidate.link}")
                     progress(f"Downloading {candidate.name} {candidate.version}")
                     await download_wheel_async(
-                        async_http, candidate.link.url, wheel_path
+                        async_http,
+                        direct_refs.urldefrag(candidate.link.url).url,
+                        wheel_path,
                     )
 
                 # Unpack wheel on a worker thread

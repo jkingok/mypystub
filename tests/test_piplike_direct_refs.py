@@ -26,7 +26,7 @@ def resolve(text: str, tmp_path: Path) -> Any:
     "text",
     [
         "foo @ git+https://github.com/o/r.git@v1",
-        "foo @ https://host/foo-1.0-py3-none-any.whl",
+        "foo @ https://host/foo-1.0.tar.gz",
     ],
 )
 def test_url_requirement_raises_dependency_error(text: str, tmp_path: Path) -> None:
