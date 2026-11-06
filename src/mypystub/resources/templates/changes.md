@@ -1,5 +1,19 @@
 # What's New
 
+## 2026.11.6.1 (2026-11-06)
+
+### New
+
+- A script can now depend on a wheel at a web address, for example `foo @ https://example.com/foo-1.0-py3-none-any.whl`, optionally with `#sha256=` to check the file.
+- A script can now depend on a pure-Python project from a GitHub address or a source archive, for example `toga-console @ https://github.com/beeware/toga-console`. Anything that needs compiling is refused with a reason, as is any wheel that isn't pure Python.
+- Setup has a new "Open Documents in Files" button, which opens your Documents folder in the Files app.
+
+### Fixed
+
+- Fixed a script not running after an example such as Blog Master had been run: the launcher lost its own settings. Errors that used to appear only in the Log now show in a dialog. Pasted scripts are offered the name they were copied with and always saved as .py, and a pasted name never ends in a repeated extension such as .py.py. Copied text named notes.txt is saved as notes.py, and a plain text file can't be imported.
+- Fixed the Media Hub example failing on its first run: its default settings were missing.
+- A dependency that points at a URL or a git repository is now refused with an explanation, instead of installing a different package of the same name from PyPI.
+
 ## 2026.11.4.2 (2026-11-04)
 
 ### New
