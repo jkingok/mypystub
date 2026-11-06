@@ -6,7 +6,7 @@ import asyncio
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import toga
 from toga.style import Pack
@@ -19,6 +19,7 @@ from . import (
     scan,
 )
 from . import settings as s
+from .errors import guarded
 from .pages import html_page
 from .ui_widgets import LabelledActivity
 from .widgets import OrientationBox
@@ -64,7 +65,10 @@ class PrototypeBase:
         self.app = host_app
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Launcher"  # host_app.formal_name
-        cast(Any, self.app).settings = s.Settings(host_app.paths)
+        # The launcher keeps its own state (settings, widgets) on itself and
+        # never on the shared app object or its widget registry: prototypes run
+        # in this process, and some set app.settings or reuse widget ids.
+        self.launcher_settings = s.Settings(host_app.paths)
         self.cache_path = self.app.paths.cache
         self.data_path = getattr(self.app, "user_documents_dir", self.app.paths.data)
         print(f"Prototype initialized with data_path: {self.data_path}")
@@ -75,6 +79,9 @@ class PrototypeBase:
         self.ask_text_fields: list[toga.TextInput] = []  # the fallback prompt's
         # The tabs, once get_content has built them
         self.tabs: Any = None
+        self.script_box = toga.Column()  # the Script tab; input boxes go on top
+        self.keyboard_box = toga.Box(style=Pack(flex=0))  # pads for the keyboard
+        self.new_project_name: toga.TextInput | None = None
         self.input_prompt = toga.Label("Input")
         self.input_text = toga.TextInput(
             style=Pack(flex=1),
@@ -237,6 +244,10 @@ class PrototypeBase:
             toga.InfoDialog(title if title else "Info", text)
         )
 
+    async def report_error(self, error: Exception, where: str) -> None:
+        """Tell the user about an error that a handler raised (see errors.guarded)."""
+        await self.error(f"{type(error).__name__}: {error}\n\n(in {where})", "Error")
+
     async def error(self, text: str, title: str | None = None) -> None:
         assert isinstance(self.app.main_window, toga.MainWindow)
         await self.app.main_window.dialog(
@@ -317,6 +328,7 @@ class PrototypeBase:
             )
         return image
 
+    @guarded
     def reload_menu(
         self, widget: toga.DetailedList | toga.Selection, **kwargs: Any
     ) -> None:
@@ -471,7 +483,7 @@ class PrototypeBase:
     def configured_aliases(self) -> dict[str, pip.Alias]:
         """Package aliases from launcher.toml's [aliases] ({} if absent or bad)."""
         try:
-            table = cast(Any, self.app).settings.get_table("aliases")
+            table = self.settings.get_table("aliases")
             return pip.parse_aliases(table)
         except (ValueError, OSError) as e:
             print(f"Ignoring [aliases] in launcher.toml: {e}")
@@ -480,8 +492,9 @@ class PrototypeBase:
     @property
     def settings(self) -> s.Settings:
         """The launcher's settings file."""
-        return cast(Any, self.app).settings
+        return self.launcher_settings
 
+    @guarded
     def open_external(self, widget: toga.WebView, url: str, **kwargs: Any) -> bool:
         """Open web links in the system browser, not inside a web view (README, Info, About)."""
         if url.startswith(("http://", "https://", "mailto:")):
@@ -493,11 +506,13 @@ class PrototypeBase:
 
     def pad_keyboard(self, on: bool) -> None:
         # keyboard_box.style.visibility = "visible" if on else "hidden"
-        self.app.widgets["keyboard_box"].style.flex = 1 if on else 0
+        self.keyboard_box.style.flex = 1 if on else 0
 
+    @guarded
     def gain_focus(self, widget: toga.TextInput, **kwargs: Any) -> None:
         self.pad_keyboard(True)
 
+    @guarded
     def lose_focus(self, widget: toga.TextInput, **kwargs: Any) -> None:
         self.pad_keyboard(False)
 
@@ -510,7 +525,7 @@ class PrototypeBase:
 
     def toggle_box(self, box: toga.Box, on: bool) -> None:
         """Show `box` at the top of the Script tab, or take it away."""
-        script_box = self.app.widgets["script_box"]
+        script_box = self.script_box
         if on:
             if box.parent is None:
                 script_box.insert(0, box)
@@ -523,16 +538,19 @@ class PrototypeBase:
             self.splash.style.flex = 0
             self.script_output.style.flex = 1
 
+    @guarded
     def show_error_output(self, text: str) -> None:
         """Add a run's stderr text, showing the pane if it was hidden."""
         self.error_text.value += text
         self.error_pane.style.display = "pack"
         self.toggle_print(True)
 
+    @guarded
     def hide_errors(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Hide the stderr pane until something is next written to it."""
         self.error_pane.style.display = "none"
 
+    @guarded
     def do_on_done_callback(self, widget: toga.Widget, **kwargs: Any) -> None:
         # Leaving the launcher on purpose: lift the guard against extra pops
         self.content_stack().floor = 0

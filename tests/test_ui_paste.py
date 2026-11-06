@@ -87,9 +87,9 @@ def test_paste_text_asks_for_a_name_and_adds_a_runnable_script(
     answers["name"] = "pasted_tool"
     paste(proto, app)
     assert (docs / "pasted_tool.py").read_text() == "print('pasted')\n"
-    assert answers["suggested"].startswith("pasted_") and answers["suggested"].endswith(
-        ".py"
-    )
+    # The suggestion has no extension: pasted text is always saved as .py
+    assert answers["suggested"].startswith("pasted_")
+    assert "." not in answers["suggested"]
     assert "pasted_tool" in titles(proto)
     assert answers["info"][-1] == ("Pasted", "Added pasted_tool.py.")
 

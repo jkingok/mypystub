@@ -14,6 +14,7 @@ from zipfile import BadZipFile
 import toga
 
 from . import info_pages, paste_import, prompts
+from .errors import guarded
 from .ui_base import PrototypeBase
 
 
@@ -28,6 +29,7 @@ class PasteMixin(PrototypeBase):
             self.paste_button.style.display = "none"  # no pasteboard to read
         # What a shown preview would import, until Cancel or Import
         self._pending_import: tuple[str, str, Path] | None = None
+        self._pending_suggestion: str | None = None  # the copied item's own name
         self.import_button: toga.Button | None = None
 
     def add_button_icon(
@@ -60,6 +62,7 @@ class PasteMixin(PrototypeBase):
         texts = await self.ask_fields(title, "", [prompts.Field(label, initial)])
         return None if texts is None else texts[0]
 
+    @guarded
     async def handle_paste(
         self, widget: toga.Widget | None = None, **kwargs: Any
     ) -> None:
@@ -96,6 +99,7 @@ class PasteMixin(PrototypeBase):
         folder = self.get_current_dir()
         screen_title, body, can_import = self.import_preview(kind, value)
         self._pending_import = (kind, value, folder)
+        self._pending_suggestion = bridge.suggested_name() if kind == "text" else None
         self.show_import_preview(screen_title, body, can_import)
 
     def import_preview(self, kind: str, value: str) -> tuple[str, str, bool]:
@@ -121,6 +125,13 @@ class PasteMixin(PrototypeBase):
                 + "<p>Import extracts these into a new folder here.</p>"
             )
             return name, body, True
+        if paste_import.is_plain_text(name):
+            body = (
+                f"<h1>{info_pages.escape(name)}</h1>\n"
+                "<p>Plain text files can't be imported. If this is a Python script, "
+                "rename it to end in .py first, or copy its text and paste that.</p>"
+            )
+            return name, body, False
         if path.suffix == ".py":
             return name, info_pages.script_info_html(path, path.stem), True
         if path.suffix == ".pyz":
@@ -149,15 +160,18 @@ class PasteMixin(PrototypeBase):
         )
         self.push_screen(screen_title, toga.Column(children=[top, view]))
 
+    @guarded
     def cancel_import(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Discard the previewed item without importing it."""
         self._pending_import = None
         self.pop_screen()
 
+    @guarded
     def confirm_import(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Import button: carry out the import for the previewed item."""
         asyncio.ensure_future(self._do_import())
 
+    @guarded
     async def _do_import(self) -> None:
         """Perform the pending import, then return to the list."""
         pending = self._pending_import
@@ -182,20 +196,23 @@ class PasteMixin(PrototypeBase):
         """Copy a pasted file, or extract a pasted archive into a new folder."""
         if paste_import.is_archive(source.name):
             return paste_import.extract_archive(source, folder)
+        name = paste_import.collapse_repeated_extension(source.name)
         overwrite = False
-        if paste_import.would_overwrite(folder, source.name):
+        if paste_import.would_overwrite(folder, name):
             overwrite = await self.ask(
                 "Replace existing file?",
-                f"{source.name} already exists. Replace it? Choose No to keep both.",
+                f"{name} already exists. Replace it? Choose No to keep both.",
             )
         return paste_import.import_file(source, folder, overwrite)
 
     async def paste_text(self, text: str, folder: Path) -> Path | None:
         """Save pasted text, taken to be Python, under a name the user gives."""
-        suggestion = paste_import.default_filename(datetime.now())
+        suggestion = paste_import.suggested_stem(
+            self._pending_suggestion, datetime.now()
+        )
         while True:
             typed = await self.ask_text(
-                "Paste", "File name for the pasted code", suggestion
+                "Paste", "Name for the pasted code (saved as .py)", suggestion
             )
             if typed is None:
                 return None

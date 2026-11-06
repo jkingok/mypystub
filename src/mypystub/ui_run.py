@@ -16,6 +16,7 @@ from . import (
     runner,
     scan,
 )
+from .errors import guarded
 from .run_settings import quick_start_name
 from .ui_rowsettings import RowSettingsMixin
 
@@ -118,6 +119,7 @@ class RunMixin(RowSettingsMixin):
 
         asyncio.create_task(report())
 
+    @guarded
     async def handle_row_selection(
         self, widget: toga.DetailedList, **kwargs: Any
     ) -> None:
@@ -158,6 +160,7 @@ class RunMixin(RowSettingsMixin):
             return
         await self.run_row(selected_row)
 
+    @guarded
     async def offer_quick_start(self) -> None:
         """At launch, ask whether to run the saved Quick Start, then run it.
 
@@ -173,6 +176,7 @@ class RunMixin(RowSettingsMixin):
             self.reload_menu(self.script_list)
             await self.run_row(row)
 
+    @guarded
     async def run_row(self, selected_row: Any) -> None:
         """Run a script or project row with the settings saved in its Setup."""
         settings, env = self.run_settings_for(selected_row)
@@ -202,7 +206,7 @@ class RunMixin(RowSettingsMixin):
             self.splash.image = None
             self.splash.style.flex = 0
             self.script_output.style.flex = 1
-        self.app.widgets["tabs"].current_tab = "Script"
+        self.tabs.current_tab = "Script"
         self.script_activity.update(f"Preparing {title}")
 
         # 2. Check and satisfy dependencies

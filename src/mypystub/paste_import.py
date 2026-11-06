@@ -9,6 +9,7 @@ Kept free of Toga imports so it can be unit tested on desktop.
 
 from __future__ import annotations
 
+import re
 import shutil
 import tarfile
 import tempfile
@@ -61,23 +62,72 @@ def keep_copy(source: Path, folder: Path) -> Path:
     return Path(shutil.copy2(source, folder / source.name))
 
 
+# The same extension twice at the end of a name: ``test.py.py``, ``notes.txt.txt``.
+# Letters only, so a name that ends in a version (``release 1.2.2``) is left alone.
+REPEATED_EXTENSION = re.compile(r"(\.[A-Za-z][A-Za-z0-9]*)(?:\1)+$", re.IGNORECASE)
+
+
+# Plain text isn't something to import: pasted text is taken to be Python, and a
+# text file isn't accepted (see :func:`is_plain_text`)
+TEXT_SUFFIXES = (".txt", ".text")
+# Every ending that gives way to the single ``.py`` of a pasted script
+SCRIPT_ENDINGS = re.compile(r"(?:\.(?:py|txt|text))+$", re.IGNORECASE)
+
+
+def is_plain_text(name: str) -> bool:
+    """Whether a file called `name` is plain text, which Paste doesn't accept."""
+    return name.lower().endswith(TEXT_SUFFIXES)
+
+
+def collapse_repeated_extension(name: str) -> str:
+    """`name` with a repeated final extension reduced to one.
+
+    ``test.py.py`` becomes ``test.py`` and ``notes.txt.txt`` becomes
+    ``notes.txt``, whichever way the name arrived (typed, suggested by the app
+    that copied the item, or the name of a copied file).
+    """
+    return REPEATED_EXTENSION.sub(r"\1", name)
+
+
 def default_filename(now: datetime) -> str:
-    """The suggested name for pasted text, such as ``pasted_20261103_0905.py``."""
-    return f"pasted_{now:%Y%m%d_%H%M}.py"
+    """The suggested name for pasted text, such as ``pasted_20261103_0905``.
+
+    Without the extension: pasted text is always saved as ``.py``, so the
+    extension isn't the user's to type or change.
+    """
+    return f"pasted_{now:%Y%m%d_%H%M}"
+
+
+def suggested_stem(suggested: str | None, now: datetime) -> str:
+    """The name to offer for pasted text: the copied item's own, else the time.
+
+    `suggested` is the name the other app gave the item, such as
+    ``interest tracker.py``. Its extension is dropped: pasted text is always
+    saved as ``.py``.
+    """
+    cleaned = clean_filename(suggested) if suggested else None
+    if cleaned is None:
+        return default_filename(now)
+    return cleaned[: -len(".py")]
 
 
 def clean_filename(typed: str) -> str | None:
     """A safe file name for pasted Python from what the user typed, or None.
 
     Folders are dropped (only the last part is kept), control characters are
-    removed, and ``.py`` is added if it isn't there. None means nothing usable
-    was typed.
+    removed, and the name ends in one ``.py``. Pasted text is always Python, so
+    ``test.py.py`` and ``notes.txt`` give ``test.py`` and ``notes.py``, while other
+    extensions are part of the name. None means nothing usable was typed.
     """
     name = "".join(ch for ch in typed if ch >= " " and ch != "\x7f")
     name = PurePosixPath(name.replace("\\", "/")).name.strip()
     if name in ("", ".", ".."):
         return None
-    return name if name.lower().endswith(".py") else f"{name}.py"
+    name = collapse_repeated_extension(name)
+    stem = SCRIPT_ENDINGS.sub("", name)
+    if not stem.strip("."):
+        return None
+    return name if name[len(stem) :].lower() == ".py" else f"{stem}.py"
 
 
 def _split_name(name: str) -> tuple[str, str]:
@@ -123,10 +173,12 @@ def _target(folder: Path, name: str, overwrite: bool) -> Path:
 def import_file(source: Path, folder: Path, overwrite: bool = False) -> Path:
     """Copy `source` into `folder` under its own name, as it is.
 
+    A repeated final extension in the name (``x.txt.txt``) is reduced to one.
+
     An existing file is replaced only with ``overwrite``; otherwise the copy
     gets an incrementing name. Returns the path written.
     """
-    target = _target(folder, source.name, overwrite)
+    target = _target(folder, collapse_repeated_extension(source.name), overwrite)
     shutil.copyfile(source, target)
     return target
 
@@ -167,6 +219,7 @@ def _top_level(names: list[str]) -> set[str]:
 
 
 def _archive_stem(name: str) -> str:
+    name = collapse_repeated_extension(name)
     return _split_name(name)[0] or name
 
 

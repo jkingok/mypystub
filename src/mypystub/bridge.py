@@ -139,3 +139,16 @@ async def read_pasteboard(into: Path) -> tuple[str, str] | None:
         if text is not None and str(text):
             return ("text", str(text))
     return None
+
+
+def suggested_name() -> str | None:
+    """The name the app that copied the pasteboard's item gave it, if any.
+
+    For example ``interest tracker.py`` for a script copied from another app.
+    Only iOS has pasteboards: elsewhere this returns None.
+    """
+    if sys.platform != "ios":
+        return None
+    providers = list(UIPasteboard.generalPasteboard.itemProviders)
+    name = providers[0].suggestedName if providers else None
+    return str(name) if name else None

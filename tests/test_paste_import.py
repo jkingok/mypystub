@@ -18,7 +18,7 @@ def test_default_filename_uses_the_time() -> None:
     """Pasted text is named for when it was pasted."""
     assert (
         paste_import.default_filename(datetime(2026, 11, 3, 9, 5))
-        == "pasted_20261103_0905.py"
+        == "pasted_20261103_0905"
     )
 
 
@@ -27,6 +27,13 @@ def test_default_filename_uses_the_time() -> None:
     [
         ("tool", "tool.py"),
         ("tool.py", "tool.py"),
+        ("TOOL.PY", "TOOL.PY"),
+        ("test.py.py", "test.py"),
+        ("test.PY.py", "test.PY"),
+        ("test.py.py.py", "test.py"),
+        ("notes.txt.txt", "notes.py"),  # pasted text is always Python
+        ("release 1.2.2", "release 1.2.2.py"),  # a version is not an extension
+        ("notes.txt", "notes.py"),  # never anything but .py
         ("  spaced name  ", "spaced name.py"),
         ("sub/dir/tool.py", "tool.py"),
         ("../../evil", "evil.py"),
@@ -188,3 +195,45 @@ def test_the_extracted_name_for_an_archive_without_a_folder(tmp_path: Path) -> N
     dest = tmp_path / "docs"
     dest.mkdir()
     assert paste_import.extract_archive(archive, dest) == dest / "tools"
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("test.py.py", "test.py"),
+        ("notes.txt.txt", "notes.txt"),
+        ("a.TXT.txt", "a.TXT"),
+        ("archive.tar.gz.gz", "archive.tar.gz"),
+        ("test.py", "test.py"),
+        ("notes.txt.py", "notes.txt.py"),
+        ("release 1.2.2", "release 1.2.2"),
+        ("data.v2.v2", "data.v2"),
+        ("no_extension", "no_extension"),
+    ],
+)
+def test_collapse_repeated_extension(name: str, expected: str) -> None:
+    """The same extension twice at the end becomes one; nothing else changes."""
+    assert paste_import.collapse_repeated_extension(name) == expected
+
+
+def test_suggested_names_with_repeats_are_cleaned() -> None:
+    """The name another app gives an item can't make test.py.py either."""
+    now = datetime(2026, 11, 5, 9, 5)
+    assert paste_import.suggested_stem("test.py.py", now) == "test"
+    assert paste_import.suggested_stem("interest tracker.py", now) == "interest tracker"
+
+
+def test_a_copied_file_loses_a_repeated_extension(tmp_path: Path) -> None:
+    """Importing ``x.txt.txt`` writes ``x.txt``; the content is untouched."""
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "x.txt.txt").write_text("hello")
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    written = paste_import.import_file(source / "x.txt.txt", folder)
+    assert written.name == "x.txt" and written.read_text() == "hello"
+
+
+def test_an_archive_with_a_repeated_extension_names_its_folder_cleanly() -> None:
+    """``a.zip.zip`` unpacks into ``a``, not ``a.zip``."""
+    assert paste_import._archive_stem("a.zip.zip") == "a"

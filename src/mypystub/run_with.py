@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 import toga
 
+from mypystub.errors import guarded
 from mypystub.prompts import Field
 from mypystub.run_settings import (
     MOVES,
@@ -225,6 +226,7 @@ class RunWithForm:
         )
         return self._qs_button
 
+    @guarded
     def _press_quick_start(self, widget: toga.Widget | None = None, **_: Any) -> None:
         asyncio.ensure_future(self._run_quick_start())
 
@@ -315,6 +317,7 @@ class RunWithForm:
         else:
             self.env_note.text = ""
 
+    @guarded
     def _arg_selected(self, widget: toga.DetailedList, **kwargs: Any) -> None:
         if self._refreshing:
             return
@@ -322,6 +325,7 @@ class RunWithForm:
         self.arg_index = None if row is None else widget.data.index(row)
         self._update_buttons()
 
+    @guarded
     def _env_selected(self, widget: toga.DetailedList, **kwargs: Any) -> None:
         if self._refreshing:
             return
@@ -329,8 +333,13 @@ class RunWithForm:
         self.env_name = None if row is None else str(getattr(row, "title", ""))
         self._update_buttons()
 
+    async def report_error(self, error: Exception, where: str) -> None:
+        """Tell the user about an error that a handler raised (see errors.guarded)."""
+        await self.tell("Error", f"{type(error).__name__}: {error}\n\n(in {where})")
+
     # -- Arguments ------------------------------------------------------------
 
+    @guarded
     async def add_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Add an argument at the end."""
         texts = await self.ask_fields("Add argument", "", [Field("Argument")])
@@ -339,6 +348,7 @@ class RunWithForm:
             self.arg_index = len(self.args) - 1
             self.changed()
 
+    @guarded
     async def edit_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Change the selected argument."""
         index = self.arg_index
@@ -351,6 +361,7 @@ class RunWithForm:
             self.args[index] = texts[0]
             self.changed()
 
+    @guarded
     def delete_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Remove the selected argument."""
         if self.arg_index is None:
@@ -368,16 +379,19 @@ class RunWithForm:
 
     # -- Environment ----------------------------------------------------------
 
+    @guarded
     async def add_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Add a variable here."""
         await self._edit_env("Add variable", "", "")
 
+    @guarded
     async def edit_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Change the selected variable; an inherited one gets an override here."""
         row = self.selected_env()
         if row is not None:
             await self._edit_env("Edit variable", row.name, row.value, original=row)
 
+    @guarded
     def delete_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Remove this layer's value; an inherited value shows again."""
         row = self.selected_env()
@@ -425,6 +439,7 @@ class RunWithForm:
 
     # -- Finishing ------------------------------------------------------------
 
+    @guarded
     def done(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Go back; changes were already saved as they were made."""
         self.screens.pop_screen()

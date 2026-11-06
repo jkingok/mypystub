@@ -13,6 +13,7 @@ from typing import Any
 import toga
 
 from . import folders
+from .errors import guarded
 from .ui_paste import PasteMixin
 
 
@@ -54,6 +55,7 @@ class ActionsMixin(PasteMixin):
         for button, available in self.list_action_buttons:
             button.enabled = available()
 
+    @guarded
     def reload_menu(
         self, widget: toga.DetailedList | toga.Selection, **kwargs: Any
     ) -> None:
@@ -65,6 +67,7 @@ class ActionsMixin(PasteMixin):
         super().reload_menu(widget, **kwargs)
         self.update_list_actions()
 
+    @guarded
     async def handle_new_folder(
         self, widget: toga.Widget | None = None, **kwargs: Any
     ) -> None:

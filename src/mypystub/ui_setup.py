@@ -19,6 +19,7 @@ from . import (
     setup_pages,
 )
 from . import piplike as pip
+from .errors import guarded
 from .run_settings import quick_start_name
 from .run_with import RunWithForm
 from .ui_base import PrototypeBase
@@ -51,11 +52,17 @@ class SetupMixin(PrototypeBase):
         self.health: maintenance.Health | None = None
         self.health_error: str | None = None
 
+    def new_project_field(self) -> toga.TextInput:
+        """The New Project name field, which the launcher keeps hold of."""
+        self.new_project_name = toga.TextInput(flex=1, on_confirm=self.close_keyboard)
+        return self.new_project_name
+
+    @guarded
     def new_project(self, widget: toga.Button, **kwargs: Any) -> None:
         def snake(s: str) -> str:
             return "_".join(s.lower().split())
 
-        project_name = self.app.widgets["new_project_name"].value
+        project_name = self.new_project_name.value if self.new_project_name else ""
         template_zip = self.template_path / "my_template.zip"
         target = self.data_path / snake(project_name)
 
@@ -216,6 +223,7 @@ class SetupMixin(PrototypeBase):
         self.setup_page = page
         self.render_setup_page()
 
+    @guarded
     def close_setup_page(
         self, widget: toga.Widget | None = None, **kwargs: Any
     ) -> None:
@@ -244,6 +252,7 @@ class SetupMixin(PrototypeBase):
             )
         )
 
+    @guarded
     async def handle_clear_quick_start(
         self, widget: toga.Widget, **kwargs: Any
     ) -> None:
@@ -259,11 +268,13 @@ class SetupMixin(PrototypeBase):
             self.settings.set_quick_start(None)
             await self.info("Quick Start cleared.", "Quick Start")
 
+    @guarded
     def handle_open_settings(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Open this app's page in the iOS Settings app."""
         if not permissions.open_app_settings():
             self.setup_activity.update("Settings can only be opened on iOS", on=False)
 
+    @guarded
     async def handle_wipe_cache(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Delete user-installed packages, after confirmation."""
         if not await self.confirm(
@@ -282,6 +293,7 @@ class SetupMixin(PrototypeBase):
         self.render_setup_page()
         self.setup_activity.update("User packages deleted", on=False)
 
+    @guarded
     async def handle_check_updates(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Ask PyPI whether user packages have newer versions."""
         self.setup_activity.update("Checking PyPI for updates")
@@ -305,6 +317,7 @@ class SetupMixin(PrototypeBase):
         found = f"{len(updates)} update(s) available" if updates else "Up to date"
         self.setup_activity.update(found, on=False)
 
+    @guarded
     async def handle_update_all(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Install the versions found by the last update check."""
         if not self.pending_updates:
@@ -327,6 +340,7 @@ class SetupMixin(PrototypeBase):
         self.render_setup_page()
         self.setup_activity.update("Packages updated", on=False)
 
+    @guarded
     async def handle_check_health(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Compare Python and bundled packages with python.org and PyPI."""
         self.setup_activity.update("Checking python.org and PyPI")
@@ -364,11 +378,7 @@ class SetupMixin(PrototypeBase):
                 align_items="center",
                 children=[
                     toga.Label("New Project"),
-                    toga.TextInput(
-                        id="new_project_name",
-                        flex=1,
-                        on_confirm=self.close_keyboard,
-                    ),
+                    self.new_project_field(),
                     toga.Button("Add", on_press=self.new_project),
                 ],
             ),
@@ -391,6 +401,7 @@ class SetupMixin(PrototypeBase):
             ),
         ]
 
+    @guarded
     def open_setup_environment(
         self, widget: toga.Widget | None = None, **kwargs: Any
     ) -> RunWithForm:
@@ -414,6 +425,7 @@ class SetupMixin(PrototypeBase):
         return form
 
     # Inside your Toga App class layout or commands:
+    @guarded
     def handle_backup_press(self, widget: toga.Button, **kwargs: Any) -> None:
         try:
             # 1. Build the nested structured zip

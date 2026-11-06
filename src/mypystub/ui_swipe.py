@@ -14,6 +14,7 @@ from . import (
     row_info,
     scan,
 )
+from .errors import guarded
 from .pages import html_page, readme_html
 from .run_settings import RunSettings, quick_start_name
 from .run_with import RunWithForm
@@ -32,10 +33,12 @@ class SwipeMixin(RowSettingsMixin):
         self.script_list.on_primary_action = self.handle_info
         self.script_list.on_secondary_action = self.handle_run_with
 
+    @guarded
     def handle_info(self, widget: toga.DetailedList, row: Any, **kwargs: Any) -> None:
         """Swipe left: Info."""
         asyncio.ensure_future(self.show_info(row))
 
+    @guarded
     async def show_info(self, row: Any) -> None:
         """Show what's known about a row, or say why there's nothing."""
         kind = row_info.row_type(row)
@@ -105,12 +108,14 @@ class SwipeMixin(RowSettingsMixin):
             ),
         )
 
+    @guarded
     def handle_run_with(
         self, widget: toga.DetailedList, row: Any, **kwargs: Any
     ) -> None:
         """Swipe right: Setup."""
         asyncio.ensure_future(self.run_with(row))
 
+    @guarded
     async def run_with(self, row: Any) -> None:
         """Open the Setup form, or say why a row has none."""
         kind = row_info.row_type(row)

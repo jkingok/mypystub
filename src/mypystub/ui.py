@@ -15,6 +15,7 @@ from . import (
     about,
     first_run,
 )
+from .errors import guarded
 from .pages import help_html
 from .ui_actions import ActionsMixin
 from .ui_helpers import (
@@ -52,11 +53,13 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
             style=Pack(flex=1),
         )
 
+    @guarded
     def reload_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         if log_path := getattr(sys.stdout, "path", None):
             logs = log_path.read_text()
             self.log_text.value = logs
 
+    @guarded
     def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
         if log_path := getattr(sys.stdout, "path", None):
             log_path.unlink()
@@ -65,6 +68,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
                 self.info("You will need to close and re-open the app.", "Logs Cleared")
             )
 
+    @guarded
     def tab_changed(self, widget: toga.Widget) -> None:
         if t := widget.current_tab:
             match t.text:
@@ -116,6 +120,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
             home_page=self.app.home_page,
         )
 
+    @guarded
     def show_help_page(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         if str(self.help_selection.value) == "About":
             body = about.to_html(self.about_sections())
@@ -139,6 +144,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
         self.source_share.style.visibility = self.about_share.style.visibility
         self.load_page(self.help_view, body)
 
+    @guarded
     def handle_about_share(self, widget: toga.Button, **kwargs: Any) -> None:
         try:
             report = Path(self.cache_path) / "about.txt"
@@ -149,6 +155,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
                 self.error(f"Could not share environment details: {e}", "Share")
             )
 
+    @guarded
     def handle_source_share(self, widget: toga.Button, **kwargs: Any) -> None:
         """Share a zip of the app's own Python source, as it runs on device."""
         try:
@@ -179,10 +186,22 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
             )
         return scroll
 
+    def _script_tab(self) -> toga.Widget:
+        """The Script tab's content; the launcher keeps hold of the boxes it moves."""
+        self.keyboard_box = toga.Box(style=Pack(flex=0))
+        self.script_box = toga.Column(
+            children=[
+                self.splash,
+                self.script_output,
+                self.keyboard_box,
+                self.script_activity,
+            ]
+        )
+        return self.script_box
+
     def get_content(self) -> toga.Widget:
         # return toga.OptionContainer(
         self.tabs = self.choose_container(
-            id="tabs",
             content=[
                 (
                     "List",
@@ -191,15 +210,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
                 ),
                 (
                     "Script",
-                    toga.Column(
-                        id="script_box",
-                        children=[
-                            self.splash,
-                            self.script_output,
-                            toga.Box(id="keyboard_box", style=Pack(flex=0)),
-                            self.script_activity,
-                        ],
-                    ),
+                    self._script_tab(),
                     self.icon_path / "eye.png",
                 ),
                 (
