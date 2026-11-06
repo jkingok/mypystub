@@ -14,6 +14,7 @@ import httpx2
 import toga
 
 from . import (
+    files_app,
     maintenance,
     permissions,
     setup_pages,
@@ -274,6 +275,12 @@ class SetupMixin(PrototypeBase):
         if not permissions.open_app_settings():
             self.setup_activity.update("Settings can only be opened on iOS", on=False)
 
+    async def handle_open_files(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Open the Documents folder in the Files app (#181)."""
+        folder = self.category_dirs()["Documents"]
+        if not files_app.open_in_files(folder):
+            await self.info(f"Couldn't open {folder} in Files.", "Files")
+
     @guarded
     async def handle_wipe_cache(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Delete user-installed packages, after confirmation."""
@@ -388,6 +395,9 @@ class SetupMixin(PrototypeBase):
             heading("Maintenance"),
             *(self.setup_menu_button(page) for page in self.SETUP_PAGES),
             heading("App"),
+            self.menu_entry(
+                toga.Button("Open Documents in Files", on_press=self.handle_open_files)
+            ),
             self.menu_entry(
                 toga.Button("Clear Quick Start", on_press=self.handle_clear_quick_start)
             ),
