@@ -321,9 +321,13 @@ class PrototypeBase:
             # they follow light and dark mode like the row text does
             from toga_iOS.libs import UIColor
 
+            # A property, as toga_iOS's other colours are. Calling it as a method
+            # first would stop a later declaration working, and scripts share this
+            # class: toga-console declares it and draws nothing if that fails.
+            UIColor.declare_class_property("labelColor")
             native = image._impl.native
             image._impl.native = native.imageWithTintColor(
-                UIColor.labelColor(),
+                UIColor.labelColor,
                 renderingMode=1,  # UIImageRenderingModeAlwaysOriginal
             )
         return image
