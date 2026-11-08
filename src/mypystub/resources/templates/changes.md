@@ -1,5 +1,19 @@
 # What's New
 
+## 2026.11.8.1 (2026-11-08)
+
+### New
+
+- Paste now previews a script, project or archive as the same page that Info will show for it afterwards, instead of just the source.
+- Setup has a **Share** button for a script, project or zipapp. A script or zipapp is shared as a file; a project is shared as a zip that Paste on another device unpacks as it was. Your saved arguments and variables are not sent.
+- Setup now has one **Packages** page with the Python version, the packages built into the app, your user packages, aliases, and a single **Check for updates** that covers both your packages and the app's health. App health is no longer a separate page, and About no longer lists packages (the report you can share from About still does).
+- Setup's Environment now lists the variables iOS already sets for the app, marked "from the system". They are hidden until you turn on **Show inherited variables** (the choice applies on every Setup screen), each row says where its value comes from before the value, and the new **ⓘ** button shows a whole value, such as a long PATH. Edit one to override it (even to blank), delete the override to bring the system's value back, or use the new ⊘ button to unset a variable so it doesn't exist at all when a script runs. The same works in each script's own Setup.
+- The app now puts you back where you were after iOS ends it in the background: the same tab, the folder you were browsing, the Setup page that was open, and the Help page showing. If a script was running you are asked whether to run it again. It does nothing after an update, and you can turn it off with **Resume where I left off** in Setup. A new example, `basics/resume_counter.py`, shows how a script can do the same.
+
+### Fixed
+
+- On iPhone, choosing the Logs tab shows the logs straight away, instead of an empty page until you press Reload.
+
 ## 2026.11.6.1 (2026-11-06)
 
 ### New
