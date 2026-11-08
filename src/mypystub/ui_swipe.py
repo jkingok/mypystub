@@ -16,7 +16,7 @@ from . import (
     share_items,
 )
 from .errors import guarded
-from .pages import html_page, readme_html
+from .pages import html_page, readme_html, without_title
 from .run_settings import RunSettings, quick_start_name
 from .run_with import RunWithForm
 from .ui_helpers import open_share_sheet
@@ -93,7 +93,7 @@ class SwipeMixin(RowSettingsMixin):
         Links to the web open in the system browser (see open_external).
         """
         view = toga.WebView(flex=1, on_navigation_starting=self.open_external)
-        self.readme_page = html_page(body)
+        self.readme_page = html_page(without_title(body, title))
         view.content = self.readme_page
         self.readme_view = view
         self.push_screen(

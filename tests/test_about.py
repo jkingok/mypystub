@@ -179,3 +179,28 @@ def test_html_links_web_addresses_only() -> None:
     )
     assert f'<td><a href="{REPO}/tree/1.2.3.4">{REPO}/tree/1.2.3.4</a></td>' in html
     assert "<td>/var/x</td>" in html
+
+
+def test_the_about_page_leaves_packages_to_setup(tmp_path: Path) -> None:
+    """With packages=False: app, Python and paths, and a pointer to Setup."""
+    sections = about.collect_environment(
+        "MyPyStub", "1", {}, tmp_path / "site", packages=False
+    )
+    assert [title for title, _ in sections] == ["App", "Python", "Paths", "Packages"]
+    assert "Setup → Packages" in dict(sections)["Packages"][0][1]
+
+
+def test_the_shared_report_keeps_the_packages(tmp_path: Path) -> None:
+    """Bug reports need them, so the default still includes everything."""
+    titles = [
+        title.split(" (")[0]
+        for title, _ in about.collect_environment("MyPyStub", "1", {}, tmp_path / "s")
+    ]
+    assert titles == [
+        "App",
+        "Python",
+        "Paths",
+        "Bundled packages",
+        "User packages",
+        "Package aliases",
+    ]

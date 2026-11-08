@@ -124,7 +124,7 @@ def test_kind_icons_appear_once_downloaded(proto: ui.Prototype, tmp_path: Path) 
 def test_help_about_switch(
     proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """About shows environment sections; Help comes back; Share stays iOS-only."""
+    """About shows app sections, not packages; Help comes back; Share is iOS-only."""
     pages: list[str] = []
     monkeypatch.setattr(
         proto.help_view._impl, "set_content", lambda root, html: pages.append(html)
@@ -136,10 +136,9 @@ def test_help_about_switch(
         "App",
         "Python",
         "Paths",
-        "Bundled packages",
-        "User packages",
-        "Package aliases",
+        "Packages",
     ]
+    assert "Setup → Packages" in pages[-1] and "Bundled packages" not in pages[-1]
     assert proto.about_share.style.visibility == "hidden"  # not iOS
 
     proto.help_selection.selection.value = "Help"

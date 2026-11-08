@@ -28,15 +28,47 @@ def test_packages_page_states() -> None:
     assert "check: offline" in failed
 
 
-def test_health_page_states() -> None:
+def test_health_section_states() -> None:
     """Not checked, a result with details, and offline."""
-    assert setup_pages.NOT_CHECKED in setup_pages.health_html(None)
+    assert setup_pages.NOT_CHECKED in setup_pages.health_section(None)
 
     status = maintenance.PythonStatus(Version("3.15.1"), Version("3.15.2"), None, None)
-    page = setup_pages.health_html(maintenance.Health(status))
+    page = setup_pages.health_section(maintenance.Health(status))
     assert "<li>Python 3.15.1 → 3.15.2 available</li>" in page
 
-    assert "offline?" in setup_pages.health_html(None, "no network")
+    assert "offline?" in setup_pages.health_section(None, "no network")
+
+
+def test_the_packages_page_has_every_section() -> None:
+    """Python, bundled (collapsed), user, updates, health and aliases, in order."""
+    page = setup_pages.packages_html(
+        "1 user package",
+        {"humanize": "4.10.0"},
+        None,
+        python=[("Version", "3.15.2")],
+        bundled={"toga-core": "0.5.7", "travertino": "0.5.7"},
+        aliases=[("pyyaml", "pyyaml-pure (when no compatible wheel)")],
+    )
+    order = [
+        "<h3>Python</h3>",
+        "<h3>Bundled with the app</h3>",
+        "<h3>User packages</h3>",
+        "<h3>Updates</h3>",
+        "<h3>App health</h3>",
+        "<h3>Aliases</h3>",
+    ]
+    positions = [page.index(heading) for heading in order]
+    assert positions == sorted(positions)
+    assert "<details><summary>2 packages</summary>" in page
+    assert "<td>toga-core</td><td>0.5.7</td>" in page
+    assert "<td>pyyaml</td>" in page
+
+
+def test_sections_left_out_when_there_is_nothing_for_them() -> None:
+    """No bundled list or aliases given: those sections don't appear."""
+    page = setup_pages.packages_html("none", {}, None)
+    assert "Bundled with the app" not in page and "<h3>Aliases</h3>" not in page
+    assert "<h3>Python</h3>" not in page
 
 
 def test_permissions_page_lists_each_status() -> None:

@@ -54,8 +54,7 @@ The Setup tab has these sections:
 
 - **Projects**: create a new project from the template (below).
 - **Environment**: environment variables every script and project inherits (see *Swipe right: Setup* above).
-- **Packages**: how many packages your prototypes have installed, and their size. *Check for updates* asks [PyPI](https://pypi.org) for newer versions (through its [JSON API](https://docs.pypi.org/api/json/)), and *Update all* installs them. *Wipe user packages…* deletes them all; prototypes reinstall what they need on their next run, which needs the network.
-- **Health**: *Check app health* compares the app's Python with [python.org's releases](https://www.python.org/downloads/) (through its [downloads API](https://www.python.org/api/v2/downloads/release/?is_published=true)): the latest dot release for this version, and the next version if it's out or in pre-release. It also compares the packages built into the app with PyPI. These can only be updated by a new build of the app.
+- **Packages**: everything about the Python and packages in this app, on one page: the Python version, the packages built into the app, your user packages with their size, and the aliases in effect. *Check for updates* does two checks at once. It asks [PyPI](https://pypi.org) (through its [JSON API](https://docs.pypi.org/api/json/)) for newer versions of your user packages, and compares the app's Python with [python.org's releases](https://www.python.org/downloads/) (through its [downloads API](https://www.python.org/api/v2/downloads/release/?is_published=true)) and the built-in packages with PyPI. If one check can't be made, the other still shows. *Update all* installs the newer user packages. The app's own Python and packages can only be updated by a new build of the app. *Wipe user packages…* deletes the user packages; prototypes reinstall what they need on their next run, which needs the network.
 - **App**: back up your files, or exit back to the launcher you came from.
 
 Nothing is checked online until you tap a button.
@@ -105,7 +104,7 @@ Each run gets its own `sys.argv`, environment and working directory (the script'
 
 The launcher installs your prototypes' dependencies from [PyPI](https://pypi.org) as pure-Python wheels. Packages with compiled (binary) parts need a wheel built specifically for iOS, which most projects don't publish yet. BeeWare tracks which packages have one in its [mobile wheels](https://beeware.org/mobile-wheels/) project. Projects build them with [cibuildwheel](https://cibuildwheel.pypa.io/), which supports iOS. Binary wheels can't be added to the app after it's built, so the useful ones are bundled with it.
 
-Where a pure-Python replacement exists, the launcher can use it instead. These **aliases** are listed on the About page:
+Where a pure-Python replacement exists, the launcher can use it instead. These **aliases** are listed on the Packages page in Setup:
 
 - **substitute**: install another package in its place. Built in: `pyyaml` → `pyyaml-pure`, which provides the same `yaml` module. By default it's only used when the original has no compatible wheel, and the version pin is ignored, because the two projects number their versions differently.
 - **bundled**: already provided by the app. Built in: `toga` → the bundled `toga-core`.

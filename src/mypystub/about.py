@@ -87,15 +87,32 @@ def collect_environment(
     user_site: Path,
     aliases: Mapping[str, Alias] | None = None,
     home_page: str | None = None,
+    packages: bool = True,
 ) -> list[Section]:
-    """Gather every section shown on the About page."""
+    """Gather the sections shown on the About page, or in a shared report.
+
+    The About page itself is about the app, and leaves the packages to Setup →
+    Packages (`packages=False`). The report people share for bug reports keeps
+    them (`packages=True`), since those are what a bug report needs.
+    """
     app: list[Row] = [("Name", app_name), ("Version", app_version or "unknown")]
     if source := source_url(home_page, app_version):
         app.append(("Source", source))
-    return [
+    sections: list[Section] = [
         ("App", app),
         ("Python", python_rows()),
         ("Paths", [(name, str(path)) for name, path in paths.items()]),
+    ]
+    if not packages:
+        sections.append(
+            (
+                "Packages",
+                [("Listed in", "Setup → Packages (with updates and app health)")],
+            )
+        )
+        return sections
+    return [
+        *sections,
         *package_sections(user_site),
         ("Package aliases", alias_rows({**ALIASES, **(aliases or {})})),
     ]

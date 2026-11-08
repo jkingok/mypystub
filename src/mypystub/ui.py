@@ -115,7 +115,8 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
         current: Any = self.tabs.current_tab  # an OptionContainer's tab, or ours
         return str(current.text)
 
-    def about_sections(self) -> list[about.Section]:
+    def about_sections(self, packages: bool = False) -> list[about.Section]:
+        """What About shows; `packages` adds them, as the shared report does."""
         paths = {
             "Documents": Path(self.data_path),
             "Data": Path(self.app.paths.data),
@@ -129,6 +130,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
             Path(self.cache_path) / "site_packages",
             aliases=self.configured_aliases(),
             home_page=self.app.home_page,
+            packages=packages,
         )
 
     @guarded
@@ -159,7 +161,9 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
     def handle_about_share(self, widget: toga.Button, **kwargs: Any) -> None:
         try:
             report = Path(self.cache_path) / "about.txt"
-            report.write_text(about.to_text(self.about_sections()), encoding="utf-8")
+            report.write_text(
+                about.to_text(self.about_sections(packages=True)), encoding="utf-8"
+            )
             open_share_sheet(widget, report)
         except Exception as e:  # noqa: BLE001
             asyncio.create_task(

@@ -5,6 +5,7 @@ and CSS live in ``resources/templates/page.html``.
 """
 
 import html
+import re
 from functools import cache
 from pathlib import Path
 from string import Template
@@ -128,3 +129,19 @@ def _page_template() -> Template:
 def html_page(body: str) -> str:
     """Wrap an HTML fragment in the page template used by the in-app web views."""
     return _page_template().substitute(body=body, code_css=code_css())
+
+
+# A heading at the very start of a page, and what it says
+_LEADING_HEADING = re.compile(r"\s*<h([1-3])>(.*?)</h\1>\s*", re.DOTALL)
+
+
+def without_title(body: str, title: str) -> str:
+    """`body` without its opening heading, if that only repeats `title`.
+
+    A page shown on its own screen already has the title in the window's
+    title bar, so the same words again at the top of the page are noise.
+    """
+    match = _LEADING_HEADING.match(body)
+    if match and html.unescape(match.group(2)).strip() == title.strip():
+        return body[match.end() :]
+    return body

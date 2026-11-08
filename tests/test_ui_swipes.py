@@ -126,7 +126,9 @@ def test_category_swipes(
     tabs = app.main_window.content
     run(app, proto.show_info(row(proto, "Examples")))
     assert app.main_window.title == "Examples"
-    assert "<h1>Examples</h1>" in proto.readme_page
+    # The README's "# Examples" only repeats the title bar, so it's dropped
+    assert "<h1>Examples</h1>" not in proto.readme_page
+    assert "<p>" in proto.readme_page
     proto.pop_screen()
     assert app.main_window.content is tabs
 
@@ -157,7 +159,8 @@ def test_script_info_page(
     assert messages == []
     assert app.main_window.title == "top"
     page = proto.readme_page
-    assert "<h1>top</h1>" in page and "<p>At the top.</p>" in page
+    assert "<h1>top</h1>" not in page  # the title bar already says "top"
+    assert "<p>At the top.</p>" in page
     assert "<h2>Source</h2>" in page and "top.py, 1 line." in page
     assert str(proto.data_path) not in page  # no local paths
     proto.pop_screen()

@@ -72,12 +72,25 @@ def test_setup_menu_opens_pages_with_back(
         assert proto.setup_page is None
 
 
-def test_setup_shows_user_packages(proto: ui.Prototype, site: Path) -> None:
+def fake_python(client: object, current: str) -> object:
+    """A python.org answer: nothing newer."""
+    from mypystub import maintenance
+
+    return maintenance.PythonStatus(Version(current), Version(current), None, None)
+
+
+def test_setup_shows_user_packages(
+    proto: ui.Prototype, app: toga.App, site: Path
+) -> None:
     """The Packages page counts and lists user packages."""
     proto.open_setup_page("packages")
     assert proto.packages_summary.startswith("1 user package (")
     assert "humanize" in proto.setup_html and "4.10.0" in proto.setup_html
     assert setup_pages.NOT_CHECKED in proto.setup_html
+    # The window's title says Packages; the page starts with its sections
+    assert app.main_window.title == "Packages"
+    assert "<h2>Packages</h2>" not in proto.setup_html
+    assert "<h3>Aliases</h3>" in proto.setup_html  # toga and pyyaml are built in
 
 
 def test_wipe_needs_confirmation(
@@ -105,7 +118,12 @@ def test_check_and_install_updates(
     found = [
         maintenance.Update("humanize", Version("4.10.0"), Version("4.12.0"), False)
     ]
-    monkeypatch.setattr(maintenance, "find_updates", lambda client, inv, **kw: found)
+    monkeypatch.setattr(
+        maintenance,
+        "find_updates",
+        lambda client, inv, **kw: [] if kw.get("critical") else found,
+    )
+    monkeypatch.setattr(maintenance, "check_python", fake_python)
     proto.open_setup_page("packages")
     assert not proto.update_all_button.enabled
     run(app, proto.handle_check_updates(proto.update_all_button))
@@ -134,17 +152,18 @@ def test_check_updates_offline_says_so(
         raise maintenance.MaintenanceError("Couldn't reach PyPI: offline")
 
     monkeypatch.setattr(maintenance, "find_updates", offline)
+    monkeypatch.setattr(maintenance, "check_python", fake_python)
     proto.open_setup_page("packages")
     run(app, proto.handle_check_updates(proto.update_all_button))
-    assert proto.setup_activity.text.text == "Couldn't reach PyPI: offline"
+    assert "Couldn't reach PyPI: offline" in proto.setup_activity.text.text
     assert "check: Couldn&#x27;t reach PyPI: offline" in proto.setup_html
     assert not proto.update_all_button.enabled
 
 
-def test_health_check_states(
-    proto: ui.Prototype, app: toga.App, monkeypatch: pytest.MonkeyPatch
+def test_one_check_covers_packages_and_app_health(
+    proto: ui.Prototype, app: toga.App, site: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Health shows a summary and details; offline it says so."""
+    """Check for updates asks about user packages and the app, on one page."""
     from mypystub import maintenance
 
     status = maintenance.PythonStatus(
@@ -152,19 +171,50 @@ def test_health_check_states(
     )
     monkeypatch.setattr(maintenance, "check_python", lambda client, current: status)
     monkeypatch.setattr(maintenance, "find_updates", lambda client, inv, **kw: [])
-    proto.open_setup_page("health")
+    proto.open_setup_page("packages")
     assert setup_pages.NOT_CHECKED in proto.setup_html
-    run(app, proto.handle_check_health(proto.update_all_button))
+    run(app, proto.handle_check_updates(proto.update_all_button))
+    assert "✓ Up to date" in proto.setup_html  # user packages
     assert "⚠ 1 update needs a new app build (TestFlight)" in proto.setup_html
     assert "Python 3.15.1 → 3.15.2 available" in proto.setup_html
+    assert "Packages up to date" in proto.setup_activity.text.text
+    assert "App: ⚠ 1 update needs" in proto.setup_activity.text.text
+
+
+def test_one_failed_check_does_not_hide_the_other(
+    proto: ui.Prototype, app: toga.App, site: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Offline for python.org still shows the user packages result, and says so."""
+    from mypystub import maintenance
 
     def offline(client: object, current: str) -> None:
         raise maintenance.MaintenanceError("Couldn't reach python.org: offline")
 
     monkeypatch.setattr(maintenance, "check_python", offline)
-    run(app, proto.handle_check_health(proto.update_all_button))
+    monkeypatch.setattr(maintenance, "find_updates", lambda client, inv, **kw: [])
+    proto.open_setup_page("packages")
+    run(app, proto.handle_check_updates(proto.update_all_button))
+    assert "✓ Up to date" in proto.setup_html
     assert "check (offline?)" in proto.setup_html
     assert "reach python.org: offline" in proto.setup_html
+
+
+def test_the_packages_page_shows_python_bundled_user_and_aliases(
+    proto: ui.Prototype, site: Path
+) -> None:
+    """Everything about packages is on the one page."""
+    proto.open_setup_page("packages")
+    html = proto.setup_html
+    assert "<h3>Python</h3>" in html and "Implementation" in html
+    assert "Bundled with the app" in html and "<details>" in html
+    assert "<h3>User packages</h3>" in html and "humanize" in html
+    assert "<h3>Aliases</h3>" in html and "pyyaml-pure" in html
+    assert "<h3>App health</h3>" in html
+
+
+def test_there_is_no_separate_app_health_page(proto: ui.Prototype) -> None:
+    """It was merged into Packages."""
+    assert "health" not in proto.SETUP_PAGES
 
 
 # ---------------------------------------------------------------------------
@@ -218,10 +268,10 @@ def test_help_page_is_not_loaded_twice(
     proto.help_selection.selection.value = "About"
     proto.show_help_page()
     proto.show_help_page()
-    assert len(loads) <= 2 and "Bundled packages" in loads[-1]
+    assert len(loads) <= 2 and "Setup → Packages" in loads[-1]
     proto.help_selection.selection.value = "Help"
     proto.show_help_page()
-    assert "Bundled packages" not in loads[-1]  # a different page does load
+    assert "Setup → Packages" not in loads[-1]  # a different page does load
 
 
 def test_setup_page_is_not_loaded_twice(
@@ -232,7 +282,7 @@ def test_setup_page_is_not_loaded_twice(
     monkeypatch.setattr(
         proto.setup_view._impl, "set_content", lambda root, html: loads.append(html)
     )
-    proto.open_setup_page("health")
+    proto.open_setup_page("packages")
     first = len(loads)
     proto.render_setup_page()
     proto.render_setup_page()

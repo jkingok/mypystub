@@ -14,6 +14,7 @@ import httpx2
 import toga
 
 from . import (
+    about,
     files_app,
     maintenance,
     permissions,
@@ -21,6 +22,7 @@ from . import (
 )
 from . import piplike as pip
 from .errors import guarded
+from .pages import without_title
 from .run_settings import quick_start_name
 from .run_with import RunWithForm
 from .ui_base import PrototypeBase
@@ -150,7 +152,6 @@ class SetupMixin(PrototypeBase):
 
     SETUP_PAGES: ClassVar[dict[str, str]] = {
         "packages": "Packages",
-        "health": "App health",
         "permissions": "Permissions",
     }
 
@@ -163,9 +164,18 @@ class SetupMixin(PrototypeBase):
                     pip.get_package_inventory(self.site_packages),
                     self.checked_updates,
                     self.update_error,
+                    python=[
+                        ("Version", platform.python_version()),
+                        ("Implementation", platform.python_implementation()),
+                        ("Platform", platform.platform()),
+                    ],
+                    bundled=pip.get_bundled_inventory(self.site_packages),
+                    aliases=about.alias_rows(
+                        {**pip.ALIASES, **self.configured_aliases()}
+                    ),
+                    health=self.health,
+                    health_error=self.health_error,
                 )
-            case "health":
-                return setup_pages.health_html(self.health, self.health_error)
             case _:
                 return setup_pages.permissions_html(permissions.status(self.app))
 
@@ -173,7 +183,9 @@ class SetupMixin(PrototypeBase):
         """Redraw the open Setup page, if there is one."""
         if self.setup_page is None:
             return
-        self.setup_html = self.setup_page_html(self.setup_page)
+        self.setup_html = without_title(
+            self.setup_page_html(self.setup_page), self.SETUP_PAGES[self.setup_page]
+        )
         self.load_page(self.setup_view, self.setup_html)
 
     def setup_actions(self, page: str) -> list[toga.Widget]:
@@ -186,10 +198,6 @@ class SetupMixin(PrototypeBase):
                     ),
                     self.update_all_button,
                     toga.Button("Wipe user packages…", on_press=self.handle_wipe_cache),
-                ]
-            case "health":
-                return [
-                    toga.Button("Check app health", on_press=self.handle_check_health)
                 ]
             case _:
                 return [
@@ -303,8 +311,21 @@ class SetupMixin(PrototypeBase):
 
     @guarded
     async def handle_check_updates(self, widget: toga.Widget, **kwargs: Any) -> None:
-        """Ask PyPI whether user packages have newer versions."""
-        self.setup_activity.update("Checking PyPI for updates")
+        """Check user packages on PyPI, and the app's Python and bundled packages.
+
+        The two checks are independent: if one can't be made (offline), the
+        other's result is still shown.
+        """
+        self.setup_activity.update("Checking PyPI and python.org")
+        user_message = await self.check_user_packages()
+        health_message = await self.check_app_health()
+        self.render_setup_page()
+        self.setup_activity.update(
+            "; ".join(m for m in (user_message, health_message) if m), on=False
+        )
+
+    async def check_user_packages(self) -> str:
+        """Ask PyPI whether user packages have newer versions; a status line."""
         inventory = pip.get_package_inventory(self.site_packages)
         try:
             updates = await asyncio.to_thread(
@@ -314,16 +335,32 @@ class SetupMixin(PrototypeBase):
             self.pending_updates = []
             self.update_error = str(e)
             self.update_all_button.enabled = False
-            self.render_setup_page()
-            self.setup_activity.update(str(e), on=False)
-            return
+            return str(e)
         self.pending_updates = updates
         self.checked_updates = updates
         self.update_error = None
         self.update_all_button.enabled = bool(updates)
-        self.render_setup_page()
-        found = f"{len(updates)} update(s) available" if updates else "Up to date"
-        self.setup_activity.update(found, on=False)
+        return f"{len(updates)} package update(s)" if updates else "Packages up to date"
+
+    async def check_app_health(self) -> str:
+        """Compare Python and bundled packages with python.org and PyPI."""
+        bundled = pip.get_bundled_inventory(self.site_packages)
+
+        def check(client: httpx2.Client) -> maintenance.Health:
+            python = maintenance.check_python(client, platform.python_version())
+            updates = maintenance.find_updates(
+                client, bundled, critical=maintenance.APP_CRITICAL
+            )
+            return maintenance.Health(python, updates)
+
+        try:
+            health = await asyncio.to_thread(self.with_client, check)
+        except maintenance.MaintenanceError as e:
+            self.health_error = str(e)
+            return ""
+        self.health = health
+        self.health_error = None
+        return f"App: {health.summary}"
 
     @guarded
     async def handle_update_all(self, widget: toga.Widget, **kwargs: Any) -> None:
@@ -347,31 +384,6 @@ class SetupMixin(PrototypeBase):
         self.refresh_packages()
         self.render_setup_page()
         self.setup_activity.update("Packages updated", on=False)
-
-    @guarded
-    async def handle_check_health(self, widget: toga.Widget, **kwargs: Any) -> None:
-        """Compare Python and bundled packages with python.org and PyPI."""
-        self.setup_activity.update("Checking python.org and PyPI")
-        bundled = pip.get_bundled_inventory(self.site_packages)
-
-        def check(client: httpx2.Client) -> maintenance.Health:
-            python = maintenance.check_python(client, platform.python_version())
-            updates = maintenance.find_updates(
-                client, bundled, critical=maintenance.APP_CRITICAL
-            )
-            return maintenance.Health(python, updates)
-
-        try:
-            health = await asyncio.to_thread(self.with_client, check)
-        except maintenance.MaintenanceError as e:
-            self.health_error = str(e)
-            self.render_setup_page()
-            self.setup_activity.update(on=False)
-            return
-        self.health = health
-        self.health_error = None
-        self.render_setup_page()
-        self.setup_activity.update(on=False)
 
     def setup_sections(self) -> list[toga.Widget]:
         """The Setup tab: a short menu; details open on their own pages."""
