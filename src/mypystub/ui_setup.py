@@ -275,6 +275,7 @@ class SetupMixin(PrototypeBase):
         if not permissions.open_app_settings():
             self.setup_activity.update("Settings can only be opened on iOS", on=False)
 
+    @guarded
     async def handle_open_files(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Open the Documents folder in the Files app (#181)."""
         folder = self.category_dirs()["Documents"]

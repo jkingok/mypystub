@@ -70,6 +70,17 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
 
     @guarded
     def tab_changed(self, widget: toga.Widget) -> None:
+        """A tab was selected: refresh what it shows, once it is showing.
+
+        toga_iOS reports the selection from ``tabBar:didSelectItem:``, before
+        the tab bar has switched, so ``current_tab`` is still the tab being
+        left. Acting on the next turn of the loop sees the new one everywhere.
+        """
+        self.app.loop.call_soon(self.refresh_tab, widget)
+
+    @guarded
+    def refresh_tab(self, widget: toga.Widget) -> None:
+        """Load the current tab's content: the list, the logs or the Help page."""
         if t := widget.current_tab:
             match t.text:
                 case "List":
@@ -186,6 +197,15 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
             )
         return scroll
 
+    def logs_scroll(self) -> toga.ScrollContainer:
+        """The Logs tab's text, laid out again once the tab has its width."""
+        scroll = toga.ScrollContainer(
+            horizontal=False, content=self.log_text, style=Pack(flex=1)
+        )
+        if sys.platform == "ios":
+            refresh_on_new_width(scroll._impl.document_container, self.log_text.refresh)
+        return scroll
+
     def _script_tab(self) -> toga.Widget:
         """The Script tab's content; the launcher keeps hold of the boxes it moves."""
         self.keyboard_box = toga.Box(style=Pack(flex=0))
@@ -217,11 +237,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
                     "Logs",
                     toga.Column(
                         children=[
-                            toga.ScrollContainer(
-                                horizontal=False,
-                                content=self.log_text,
-                                style=Pack(flex=1),
-                            ),
+                            self.logs_scroll(),
                             toga.Row(
                                 children=[
                                     toga.Button(
