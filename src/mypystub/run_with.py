@@ -120,12 +120,14 @@ class RunWithForm:
         screen_title: str | None = None,
         on_quick_start: Callable[[], Awaitable[bool]] | None = None,
         is_quick_start: bool = False,
+        on_share: Callable[[], None] | None = None,
     ) -> None:
         """Build the form; call :meth:`open` to show it.
 
         `on_quick_start`, for a runnable thing, makes it the one offered at
         launch; it returns whether it is now the Quick Start. `is_quick_start`
-        is whether it already is.
+        is whether it already is. `on_share`, if given, adds a Share button that
+        calls it (the share sheet is iOS only, so it is left out elsewhere).
         """
         self.title = title
         self.screen_title = screen_title or f"Setup · {title}"
@@ -139,8 +141,10 @@ class RunWithForm:
         self.tell = tell
         self.ask_fields = ask_fields
         self.on_quick_start = on_quick_start
+        self.on_share = on_share
         self._is_quick_start = is_quick_start
         self._qs_button: toga.Button | None = None
+        self.share_button: toga.Button | None = None
         self.arg_index: int | None = None
         self.env_name: str | None = None
         self._refreshing = False
@@ -209,9 +213,23 @@ class RunWithForm:
             self.env_empty,
             self.env_note,
         ]
+        if self.on_share is not None:
+            children.append(
+                # Labels don't wrap on iOS, so the break is explicit
+                toga.Label(
+                    "Share sends the file or project only,\n"
+                    "not your saved arguments or variables.",
+                    margin=(0, 8),
+                )
+            )
         bottom: list[toga.Widget] = [toga.Box(flex=1)]
         if self.on_quick_start is not None:
             bottom.append(self._quick_start_button())
+        if self.on_share is not None:
+            self.share_button = toga.Button(
+                "Share", on_press=self._press_share, margin=GAP
+            )
+            bottom.append(self.share_button)
         bottom.append(toga.Button("Done", on_press=self.done, margin=GAP))
         children.append(toga.Row(margin=4, children=bottom))
         return toga.Column(flex=1, children=children)
@@ -225,6 +243,11 @@ class RunWithForm:
             enabled=not self._is_quick_start,
         )
         return self._qs_button
+
+    @guarded
+    def _press_share(self, widget: toga.Widget | None = None, **_: Any) -> None:
+        if self.on_share is not None:
+            self.on_share()
 
     @guarded
     def _press_quick_start(self, widget: toga.Widget | None = None, **_: Any) -> None:

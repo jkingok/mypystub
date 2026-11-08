@@ -13,11 +13,13 @@ from . import (
     info_pages,
     row_info,
     scan,
+    share_items,
 )
 from .errors import guarded
 from .pages import html_page, readme_html
 from .run_settings import RunSettings, quick_start_name
 from .run_with import RunWithForm
+from .ui_helpers import open_share_sheet
 from .ui_rowsettings import RowSettingsMixin
 
 
@@ -144,6 +146,22 @@ class SwipeMixin(RowSettingsMixin):
         await self.info(f"{title} will be offered when the app opens.", "Quick Start")
         return True
 
+    @guarded
+    async def share_row(self, row: Any) -> None:
+        """Share a script or zipapp as it is, or a project as a zip (#147)."""
+        source = self.row_path(row)
+        if source is None:
+            await self.info("There is nothing here to share.", "Share")
+            return
+        try:
+            shared = await asyncio.to_thread(
+                share_items.prepare_share, source, Path(self.app.paths.cache)
+            )
+        except OSError as error:
+            await self.error(f"Couldn't prepare {source.name} to share: {error}")
+            return
+        open_share_sheet(self.script_list, shared)
+
     def open_run_with(self, row: Any) -> RunWithForm:
         """Open the Setup form for a runnable row or a package.
 
@@ -159,6 +177,9 @@ class SwipeMixin(RowSettingsMixin):
         def save(settings: RunSettings) -> None:
             self.settings.set_run_with(key, settings, with_args=runs)
 
+        def start_share() -> None:
+            asyncio.ensure_future(self.share_row(row))
+
         form = RunWithForm(
             title,
             args=saved.args if runs else None,
@@ -173,6 +194,7 @@ class SwipeMixin(RowSettingsMixin):
                 (lambda: self.make_quick_start(key, title)) if runs else None
             ),
             is_quick_start=runs and self.settings.get_quick_start() == key,
+            on_share=start_share if share_items.share_available() else None,
         )
         form.open()
         self.run_with_form = form
