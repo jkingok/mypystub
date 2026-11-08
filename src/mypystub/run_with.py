@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import textwrap
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Protocol
 
@@ -21,7 +22,9 @@ from mypystub.errors import guarded
 from mypystub.prompts import Field
 from mypystub.run_settings import (
     MOVES,
+    SYSTEM,
     EnvRow,
+    EnvValue,
     Layer,
     Move,
     RunSettings,
@@ -41,11 +44,13 @@ MOVE_LABELS: dict[Move, str] = {
     "down": "↓",
     "bottom": "⤓",
 }
-ADD, EDIT, DELETE = "+", "✎", "⌫"
+ADD, EDIT, DELETE, UNSET, VIEW = "+", "✎", "⌫", "⊘", "ⓘ"
 # Space between toolbar buttons, so their labels don't run together
 GAP = (0, 6)
 # Symbols are small at the default size
 SYMBOL_SIZE = 22
+# Labels don't wrap on iOS, so notes are broken to fit an iPhone SE
+NOTE_WIDTH = 40
 
 
 class Screens(Protocol):
@@ -109,7 +114,7 @@ class RunWithForm:
         title: str,
         *,
         args: Sequence[str] | None,
-        env: dict[str, str],
+        env: dict[str, EnvValue],
         inherited: Sequence[Layer] = (),
         screens: Screens,
         on_save: Callable[[RunSettings], None],
@@ -120,13 +125,18 @@ class RunWithForm:
         screen_title: str | None = None,
         on_quick_start: Callable[[], Awaitable[bool]] | None = None,
         is_quick_start: bool = False,
+        show_inherited: bool = False,
+        on_show_inherited: Callable[[bool], None] | None = None,
         on_share: Callable[[], None] | None = None,
     ) -> None:
         """Build the form; call :meth:`open` to show it.
 
         `on_quick_start`, for a runnable thing, makes it the one offered at
         launch; it returns whether it is now the Quick Start. `is_quick_start`
-        is whether it already is. `on_share`, if given, adds a Share button that
+        is whether it already is. Inherited variables (the system's alone can be
+        dozens, with long values) are hidden unless `show_inherited`; the switch
+        that shows them calls `on_show_inherited`, so other screens can follow.
+        `on_share`, if given, adds a Share button that
         calls it (the share sheet is iOS only, so it is left out elsewhere).
         """
         self.title = title
@@ -141,6 +151,8 @@ class RunWithForm:
         self.tell = tell
         self.ask_fields = ask_fields
         self.on_quick_start = on_quick_start
+        self.show_inherited = show_inherited
+        self.on_show_inherited = on_show_inherited
         self.on_share = on_share
         self._is_quick_start = is_quick_start
         self._qs_button: toga.Button | None = None
@@ -164,7 +176,19 @@ class RunWithForm:
         self.env_buttons = {
             "edit": self._tool(EDIT, self.edit_env),
             "delete": self._tool(DELETE, self.delete_env),
+            "unset": self._tool(UNSET, self.unset_env),
+            "view": self._tool(VIEW, self.view_env),
         }
+        self.inherited_switch: toga.Switch | None = (
+            toga.Switch(
+                "Show inherited variables",
+                value=show_inherited,
+                on_change=self._toggle_inherited,
+                margin=(0, 8),
+            )
+            if self.inherited
+            else None
+        )
         keep_selection(self.args_list)
         keep_selection(self.env_list)
         self.content = self._build(args_note)
@@ -191,8 +215,7 @@ class RunWithForm:
             children=[
                 toga.Label(label, font_weight="bold", flex=1),
                 self._tool(ADD, add),
-                buttons["edit"],
-                buttons["delete"],
+                *buttons.values(),
             ],
         )
 
@@ -209,6 +232,7 @@ class RunWithForm:
             children.append(toga.Label(args_note, margin=(8, 8, 0, 8)))
         children += [
             self._header("Environment (A–Z)", self.add_env, self.env_buttons),
+            *([self.inherited_switch] if self.inherited_switch is not None else []),
             self.env_list,
             self.env_empty,
             self.env_note,
@@ -275,6 +299,33 @@ class RunWithForm:
         """The variables in effect here, alphabetised, inherited ones marked."""
         return effective_rows(self.inherited, self.env)
 
+    def visible_rows(self) -> list[EnvRow]:
+        """The variables the list shows: inherited ones only if they're switched on.
+
+        A variable this layer sets or unsets itself always shows, even when it
+        overrides an inherited one.
+        """
+        rows = self.env_rows()
+        if self.show_inherited:
+            return rows
+        return [row for row in rows if not row.inherited]
+
+    def subtitle(self, row: EnvRow) -> str:
+        """A row's second line: an inherited one says where it comes from first.
+
+        The origin leads because the value can be long (PATH) and is cut off.
+        A variable set here is just its value.
+        """
+        value = "(unset)" if row.unset else shown(row.value)
+        return f"from {row.source} · {value}" if row.inherited else value
+
+    @guarded
+    def _toggle_inherited(self, widget: toga.Switch, **kwargs: Any) -> None:
+        self.show_inherited = bool(widget.value)
+        if self.on_show_inherited is not None:
+            self.on_show_inherited(self.show_inherited)
+        self.refresh()
+
     def selected_env(self) -> EnvRow | None:
         """The selected environment row, if any."""
         return next((r for r in self.env_rows() if r.name == self.env_name), None)
@@ -292,14 +343,9 @@ class RunWithForm:
                 {"title": shown(value), "subtitle": f"Argument {i + 1}"}
                 for i, value in enumerate(self.args)
             ]
-            rows = self.env_rows()
+            rows = self.visible_rows()
             self.env_list.data = [
-                {
-                    "title": row.name,
-                    "subtitle": shown(row.value)
-                    + (f" · from {row.source}" if row.source else ""),
-                }
-                for row in rows
+                {"title": row.name, "subtitle": self.subtitle(row)} for row in rows
             ]
         finally:
             self._refreshing = False
@@ -326,19 +372,42 @@ class RunWithForm:
         row = self.selected_env()
         self.env_buttons["edit"].enabled = row is not None
         self.env_buttons["delete"].enabled = row is not None and not row.inherited
-        self.env_empty.style.visibility = "hidden" if self.env_rows() else "visible"
-        if row is not None and row.inherited:
-            self.env_note.text = (
+        self.env_buttons["unset"].enabled = row is not None and not row.unset
+        hidden = len(self.env_rows()) - len(self.visible_rows())
+        if self.inherited_switch is not None:
+            self.inherited_switch.text = "Show inherited variables" + (
+                f" ({hidden} hidden)" if hidden and not self.show_inherited else ""
+            )
+        self.env_empty.text = (
+            f"{hidden} inherited variables hidden"
+            if hidden and not self.visible_rows()
+            else "No environment variables"
+        )
+        self.env_empty.style.visibility = "hidden" if self.visible_rows() else "visible"
+        self.env_buttons["view"].enabled = row is not None
+        if row is not None and row.inherited and row.source == SYSTEM:
+            note = (
+                f"{row.name} comes from the system. Edit it to override it here"
+                f" (even to blank), or use {UNSET} to unset it."
+            )
+        elif row is not None and row.inherited:
+            note = (
                 f"{row.name} is set in {row.source}. Edit it to override it here,"
-                f" or change it in {row.source}."
+                f" use {UNSET} to unset it, or change it in {row.source}."
+            )
+        elif row is not None and row.unset:
+            note = (
+                f"{row.name} is unset here: it won't exist when this runs. Edit it"
+                " to give it a value, or delete this to use the inherited value."
             )
         elif row is not None and any(row.name in layer.env for layer in self.inherited):
-            self.env_note.text = (
+            note = (
                 f"{row.name} overrides an inherited value. Delete it to use that"
                 " value again."
             )
         else:
-            self.env_note.text = ""
+            note = ""
+        self.env_note.text = textwrap.fill(note, NOTE_WIDTH)
 
     @guarded
     def _arg_selected(self, widget: toga.DetailedList, **kwargs: Any) -> None:
@@ -415,6 +484,29 @@ class RunWithForm:
             await self._edit_env("Edit variable", row.name, row.value, original=row)
 
     @guarded
+    async def view_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+        """Show the selected variable in full: its value can be too long for the row."""
+        row = self.selected_env()
+        if row is None:
+            return
+        origin = f"From {row.source}." if row.inherited else "Set here."
+        value = (
+            "(unset: it won't exist when this runs)"
+            if row.unset
+            else (row.value or "(empty)")
+        )
+        await self.tell(row.name, f"{origin}\n\n{value}")
+
+    @guarded
+    def unset_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+        """Make the selected variable not exist when this runs."""
+        row = self.selected_env()
+        if row is None or row.unset:
+            return
+        self.env[row.name] = None
+        self.changed()
+
+    @guarded
     def delete_env(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Remove this layer's value; an inherited value shows again."""
         row = self.selected_env()
@@ -422,6 +514,11 @@ class RunWithForm:
             return
         del self.env[row.name]
         self.changed()
+
+    def shown_here(self, name: str) -> str:
+        """How this layer has a variable, for a question: set to “x”, or unset."""
+        value = self.env[name]
+        return "unset" if value is None else f"set to “{value}”"
 
     async def set_env(self, name: str, value: str, original: EnvRow | None) -> bool:
         """Store a variable from the editor; False if it was refused."""
@@ -435,7 +532,7 @@ class RunWithForm:
         if renamed and name in self.env:
             replace = await self.ask(
                 "Replace variable?",
-                f"{name} is already set here to “{self.env[name]}”. Replace it?",
+                f"{name} is already {self.shown_here(name)} here. Replace it?",
             )
             if not replace:
                 return False

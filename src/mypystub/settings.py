@@ -6,12 +6,20 @@ import tomlkit  # Pure-Python style-preserving library
 from toga.paths import Paths
 from tomlkit.toml_document import TOMLDocument
 
-from mypystub.run_settings import RunSettings, sorted_env, usable_env
+from mypystub.run_settings import (
+    EnvValue,
+    RunSettings,
+    sorted_env,
+    split_env,
+    usable_env,
+    with_unset,
+)
 
 DEFAULTS_NAME = "config.toml"
 CONFIG_NAME = "launcher.toml"
 RUN_WITH = "run_with"  # [run_with."<key>"]: settings saved per path
 ENVIRONMENT = "environment"  # [environment]: Setup's variables, inherited by all
+ENVIRONMENT_UNSET = "environment_unset"  # names Setup unsets for every run
 QUICK_START = "quick_start"  # the row key offered to run at launch, if any
 
 
@@ -82,6 +90,8 @@ class Settings:
         env = tomlkit.inline_table()
         env.update(table["env"])
         entry["env"] = env
+        if "unset" in table:
+            entry["unset"] = table["unset"]
         self.config_doc[RUN_WITH][key] = entry  # type: ignore[index]
         self._save()
 
@@ -100,15 +110,34 @@ class Settings:
             del self.config_doc[QUICK_START]
         self._save()
 
-    def get_environment(self) -> dict[str, str]:
-        """Setup's environment variables, which every run inherits."""
-        return usable_env(self.get_table(ENVIRONMENT))
+    def get_environment(self) -> dict[str, EnvValue]:
+        """Setup's environment variables, which every run inherits.
 
-    def set_environment(self, env: dict[str, str]) -> None:
-        """Save Setup's environment variables."""
+        A name mapped to None is unset for every run.
+        """
+        return with_unset(
+            usable_env(self.get_table(ENVIRONMENT)),
+            self.get_table_value(ENVIRONMENT_UNSET),
+        )
+
+    def get_table_value(self, k: str) -> Any:
+        """A top-level value as plain Python (None if absent)."""
+        self.config_doc = self._load()  # allow on disk changes
+        value = self.config_doc.get(k)
+        if value is None:
+            return None
+        return value.unwrap() if hasattr(value, "unwrap") else value
+
+    def set_environment(self, env: dict[str, EnvValue]) -> None:
+        """Save Setup's environment variables, and the names it unsets."""
         self.config_doc = self._load()
+        values, unset = split_env(env)
         table = tomlkit.table()
-        for name, value in sorted_env(env):
+        for name, value in sorted_env(values):
             table[name] = value
         self.config_doc[ENVIRONMENT] = table
+        if unset:
+            self.config_doc[ENVIRONMENT_UNSET] = unset
+        elif ENVIRONMENT_UNSET in self.config_doc:
+            del self.config_doc[ENVIRONMENT_UNSET]
         self._save()

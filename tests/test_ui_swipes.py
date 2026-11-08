@@ -37,6 +37,13 @@ from tests.support_ui import (
 Prompt = tuple[str, list[tuple[str, str]]]
 
 
+def show_inherited(form: Any) -> None:
+    """Switch on the listing of inherited variables, as the user would."""
+    assert form.inherited_switch is not None
+    form.inherited_switch.value = True
+    form._toggle_inherited(form.inherited_switch)
+
+
 def script_prompts(form: Any, *answers: list[str] | None) -> list[Prompt]:
     """Answer `form`'s next prompts with `answers` (None cancels).
 
@@ -209,8 +216,10 @@ def test_run_with_form_environment_is_sorted_and_inherits_setup(
     """Variables stay A–Z; Setup's show as inherited and can be overridden."""
     proto.settings.set_environment({"GREETING": "Hello"})
     form = proto.open_run_with(row(proto, "top"))
+    assert len(form.env_list.data) == 0  # inherited variables start hidden
+    show_inherited(form)
     assert [(r.title, r.subtitle) for r in form.env_list.data] == [
-        ("GREETING", "Hello · from Setup")
+        ("GREETING", "from Setup · Hello")
     ]
     select(form.env_list, form._env_selected, 0)
     assert form.env_buttons["edit"].enabled
@@ -232,7 +241,7 @@ def test_run_with_form_environment_is_sorted_and_inherits_setup(
     assert "overrides an inherited value" in form.env_note.text
     press(app, form.env_buttons["delete"])  # the inherited value is back
     assert form.env == {"zed": "", "Alpha": ""}
-    assert form.env_list.data[1].subtitle == "Hello · from Setup"
+    assert form.env_list.data[1].subtitle == "from Setup · Hello"
 
 
 def test_run_with_form_refuses_bad_names(
@@ -363,7 +372,7 @@ def test_run_with_toolbars_use_spaced_symbols(
 
     args_header, _, _, move_row, env_header = form.content.children[:5]
     assert labels(args_header) == ["+", "✎", "⌫"]
-    assert labels(env_header) == ["+", "✎", "⌫"]
+    assert labels(env_header) == ["+", "✎", "⌫", "⊘", "ⓘ"]  # ⊘ unsets, ⓘ shows it all
     assert labels(move_row) == ["⤒", "↑", "↓", "⤓"]
     for button in args_header.children[1:] + env_header.children[1:]:
         assert button.style.margin_left > 0 and button.style.margin_right > 0
@@ -534,10 +543,11 @@ def test_entry_inherits_setup_then_package_then_its_own(
     )
     tap(proto, "tools", monkeypatch, app)
     form = proto.open_run_with(row(proto, "echo"))
+    show_inherited(form)
     assert [(r.title, r.subtitle) for r in form.env_list.data] == [
-        ("GREETING", "Hello · from Setup"),
+        ("GREETING", "from Setup · Hello"),
         ("LEVEL", "2"),
-        ("WHO", "Ada · from tools"),
+        ("WHO", "from tools · Ada"),
     ]
     assert form.args == ["--loud"]
     form.done()

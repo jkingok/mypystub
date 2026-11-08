@@ -312,11 +312,14 @@ class RunContext:
         self,
         target: RunTarget,
         argv: Sequence[str] = (),
-        env: Mapping[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
         purge_roots: Iterable[Path] = (),
         user_site: Path | None = None,
     ) -> None:
-        """Prepare a run of `target` with extra `argv` and `env` entries."""
+        """Prepare a run of `target` with extra `argv` and `env` entries.
+
+        An `env` value of None unsets that variable for the run.
+        """
         self.target = target
         self.argv = [target.argv0 or str(target.path), *argv]
         self.env = dict(env or {})
@@ -342,7 +345,11 @@ class RunContext:
         if sys.stdin is not None:
             sys.stdin = StdinGuard(sys.stdin)  # type: ignore[assignment]
         sys.argv = list(self.argv)
-        os.environ.update(self.env)
+        for name, value in self.env.items():
+            if value is None:
+                os.environ.pop(name, None)  # unset for this run
+            else:
+                os.environ[name] = value
         os.chdir(self.target.workdir)
         # user_site first so import_root ends up ahead of it, as before
         if self.user_site is not None:

@@ -11,6 +11,7 @@ from . import (
     scan,
 )
 from .run_settings import (
+    EnvValue,
     Layer,
     RunSettings,
     merged_env,
@@ -70,21 +71,28 @@ class RowSettingsMixin(PrototypeBase):
         """Setup's environment variables, inherited by every run."""
         return Layer("Setup", self.settings.get_environment())
 
-    def inherited_layers(self, row: Any) -> list[Layer]:
-        """The environment layers a row inherits: Setup, then its package's."""
-        layers = [self.setup_layer()]
+    def inherited_layers(self, row: Any, *, system: bool = True) -> list[Layer]:
+        """The environment layers a row inherits, outermost first.
+
+        The system's, then Setup's, then its package's. The system layer is
+        for showing: it already is the process environment a run starts with,
+        so a run leaves it out (`system=False`).
+        """
+        layers = [self.system_layer()] if system else []
+        layers.append(self.setup_layer())
         if row_info.row_type(row) == "entry":
             package = self.settings.get_run_with(self.row_key(row, entry=False))
             layers.append(Layer(str(row.package_title), package.env))
         return layers
 
-    def run_settings_for(self, row: Any) -> tuple[RunSettings, dict[str, str]]:
-        """A runnable row's saved settings, and the environment it inherits.
+    def run_settings_for(self, row: Any) -> tuple[RunSettings, dict[str, EnvValue]]:
+        """A runnable row's saved settings, and the changes it makes to the environment.
 
-        Setup's variables, then its package's, then its own: inner ones win.
+        Setup's variables, then its package's, then its own: inner ones win. A
+        value of None means the variable is unset for the run.
         """
         own = self.settings.get_run_with(self.row_key(row))
-        layers = [layer.env for layer in self.inherited_layers(row)]
+        layers = [layer.env for layer in self.inherited_layers(row, system=False)]
         return own, merged_env([*layers, own.env])
 
     def resolve_quick_start(self) -> Any | None:

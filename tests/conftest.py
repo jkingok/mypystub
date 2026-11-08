@@ -51,6 +51,7 @@ def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prot
 
     monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
     p = ui.Prototype(host_app=app, on_done=lambda _: None)
+    p.system_env = {}  # not this machine's environment, which tests mustn't see
     fresh_stack(p)
     app.main_window.content = p.get_content()
     p.dialogs = []  # type: ignore[attr-defined]

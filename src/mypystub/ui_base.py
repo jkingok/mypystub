@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -21,6 +22,7 @@ from . import (
 from . import settings as s
 from .errors import guarded
 from .pages import html_page
+from .run_settings import SYSTEM, Layer, env_name_problem, env_value_problem
 from .ui_widgets import LabelledActivity
 from .widgets import OrientationBox
 
@@ -76,6 +78,15 @@ class PrototypeBase:
         self.icon_path = self.this_path / "resources" / "icons"
         self.template_path = self.this_path / "resources" / "templates"
         self.prototype_dir = self.data_path
+        # What iOS (or the OS) set before this app ran: the outermost layer of the
+        # environment Setup shows. Taken now, before any run changes os.environ.
+        # Whether Setup screens list inherited variables; they all follow this
+        self.show_inherited_env = False
+        self.system_env: dict[str, str] = {
+            name: value
+            for name, value in os.environ.items()
+            if env_name_problem(name) is None and env_value_problem(value) is None
+        }
         self.ask_text_fields: list[toga.TextInput] = []  # the fallback prompt's
         # The tabs, once get_content has built them
         self.tabs: Any = None
@@ -492,6 +503,15 @@ class PrototypeBase:
         except (ValueError, OSError) as e:
             print(f"Ignoring [aliases] in launcher.toml: {e}")
             return {}
+
+    @guarded
+    def set_show_inherited_env(self, shown: bool) -> None:
+        """Remember the choice to list inherited variables on every Setup screen."""
+        self.show_inherited_env = shown
+
+    def system_layer(self) -> Layer:
+        """The environment the app started with, which iOS (or the OS) set."""
+        return Layer(SYSTEM, self.system_env)
 
     @property
     def settings(self) -> s.Settings:

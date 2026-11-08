@@ -1,8 +1,14 @@
 """Saved per-thing Setup settings: command-line arguments and environment variables.
 
 Environment variables are inherited in layers, each overriding the one before:
-the process environment, then Setup, then the package, then the entry point or
-script. Arguments belong to one runnable thing and are not inherited.
+the system (the process environment), then Setup, then the package, then the
+entry point or script. Arguments belong to one runnable thing and are not
+inherited.
+
+A variable's value is a string, or ``None`` for *unset*: the variable is removed
+for the run. A layer can unset what an outer layer set, and an inner layer can
+set it again. In ``launcher.toml`` the unset names are an ``unset`` list beside
+the ``env`` table, so a variable can still be called anything.
 
 Kept free of Toga imports so it can be unit tested on desktop.
 """
@@ -17,6 +23,11 @@ from typing import Any, Literal
 
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
+# A variable's value in a layer: text, or None to unset it
+EnvValue = str | None
+# The layer the process environment forms, shown as "from the system"
+SYSTEM = "the system"
+
 Move = Literal["top", "up", "down", "bottom"]
 MOVES: tuple[Move, ...] = ("top", "up", "down", "bottom")
 
@@ -26,7 +37,7 @@ class RunSettings:
     """The arguments and environment variables saved for one thing."""
 
     args: list[str] = field(default_factory=list)
-    env: dict[str, str] = field(default_factory=dict)
+    env: dict[str, EnvValue] = field(default_factory=dict)
 
     @classmethod
     def from_table(cls, table: Mapping[str, Any] | None) -> RunSettings:
@@ -36,7 +47,10 @@ class RunSettings:
         env = table.get("env", {})
         return cls(
             args=[str(a) for a in args] if isinstance(args, list) else [],
-            env=usable_env(env) if isinstance(env, Mapping) else {},
+            env=with_unset(
+                usable_env(env) if isinstance(env, Mapping) else {},
+                table.get("unset", []),
+            ),
         )
 
     def to_table(self, *, with_args: bool = True) -> dict[str, Any]:
@@ -44,7 +58,10 @@ class RunSettings:
         table: dict[str, Any] = {}
         if with_args:
             table["args"] = list(self.args)
-        table["env"] = dict(sorted_env(self.env))
+        values, unset = split_env(self.env)
+        table["env"] = dict(sorted_env(values))
+        if unset:
+            table["unset"] = unset
         return table
 
 
@@ -94,7 +111,7 @@ def env_sort_key(name: str) -> tuple[str, str]:
     return (name.casefold(), name)
 
 
-def sorted_env(env: Mapping[str, str]) -> list[tuple[str, str]]:
+def sorted_env(env: Mapping[str, EnvValue]) -> list[tuple[str, EnvValue]]:
     """Environment variables as (name, value) pairs, alphabetised by name."""
     return sorted(env.items(), key=lambda item: env_sort_key(item[0]))
 
@@ -136,21 +153,46 @@ def usable_env(env: Mapping[Any, Any]) -> dict[str, str]:
     }
 
 
+def with_unset(env: Mapping[str, str], unset: Any) -> dict[str, EnvValue]:
+    """`env` plus the names in `unset` as unset (None); bad names are dropped.
+
+    A name both set and unset in a hand-edited file counts as unset: that is the
+    explicit one.
+    """
+    result: dict[str, EnvValue] = dict(env)
+    if isinstance(unset, list):
+        for name in unset:
+            if isinstance(name, str) and env_name_problem(name) is None:
+                result[name] = None
+    return result
+
+
+def split_env(env: Mapping[str, EnvValue]) -> tuple[dict[str, str], list[str]]:
+    """Separate set variables from the names of unset ones (sorted)."""
+    values = {name: value for name, value in env.items() if value is not None}
+    unset = sorted((n for n, v in env.items() if v is None), key=env_sort_key)
+    return values, unset
+
+
 @dataclass(frozen=True)
 class Layer:
     """One inherited layer of environment variables, named for the user."""
 
     source: str
-    env: Mapping[str, str]
+    env: Mapping[str, EnvValue]
 
 
 @dataclass(frozen=True)
 class EnvRow:
-    """A variable in effect at a layer: its own, or inherited from `source`."""
+    """A variable in effect at a layer: its own, or inherited from `source`.
+
+    `unset` rows have no value: the variable is removed for the run.
+    """
 
     name: str
     value: str
     source: str | None = None
+    unset: bool = False
 
     @property
     def inherited(self) -> bool:
@@ -158,7 +200,9 @@ class EnvRow:
         return self.source is not None
 
 
-def effective_rows(inherited: Sequence[Layer], own: Mapping[str, str]) -> list[EnvRow]:
+def effective_rows(
+    inherited: Sequence[Layer], own: Mapping[str, EnvValue]
+) -> list[EnvRow]:
     """The variables in effect at a layer, alphabetised.
 
     Inner layers override outer ones, and this layer's own values override all
@@ -167,15 +211,15 @@ def effective_rows(inherited: Sequence[Layer], own: Mapping[str, str]) -> list[E
     rows: dict[str, EnvRow] = {}
     for layer in inherited:
         for name, value in layer.env.items():
-            rows[name] = EnvRow(name, value, layer.source)
+            rows[name] = EnvRow(name, value or "", layer.source, value is None)
     for name, value in own.items():
-        rows[name] = EnvRow(name, value)
+        rows[name] = EnvRow(name, value or "", None, value is None)
     return [rows[name] for name in sorted(rows, key=env_sort_key)]
 
 
-def merged_env(layers: Iterable[Mapping[str, str]]) -> dict[str, str]:
-    """Merge layers outermost first, so inner values win."""
-    merged: dict[str, str] = {}
+def merged_env(layers: Iterable[Mapping[str, EnvValue]]) -> dict[str, EnvValue]:
+    """Merge layers outermost first, so inner values win; None stays "unset"."""
+    merged: dict[str, EnvValue] = {}
     for layer in layers:
         merged.update(layer)
     return merged

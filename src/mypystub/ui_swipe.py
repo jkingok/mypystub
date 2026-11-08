@@ -194,6 +194,8 @@ class SwipeMixin(RowSettingsMixin):
                 (lambda: self.make_quick_start(key, title)) if runs else None
             ),
             is_quick_start=runs and self.settings.get_quick_start() == key,
+            show_inherited=self.show_inherited_env,
+            on_show_inherited=self.set_show_inherited_env,
             on_share=start_share if share_items.share_available() else None,
         )
         form.open()
