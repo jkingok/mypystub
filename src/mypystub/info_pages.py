@@ -128,6 +128,16 @@ def script_info_html(path: Path, title: str) -> str:
         source = path.read_text(encoding="utf-8", errors="replace")
     except OSError as e:
         return f"<h1>{escape(title)}</h1>\n<p>Couldn't read the script: {escape(e)}</p>"
+    return script_info_from_source(source, title, path.name)
+
+
+def script_info_from_source(source: str, title: str, filename: str) -> str:
+    """The Info page for a script's source text, which needn't be a file yet.
+
+    The same page as :func:`script_info_html`, so that what is shown before
+    importing a script (Paste) is identical to what Info shows afterwards.
+    `filename` is the name it will have, shown beside the source.
+    """
     parts = [f"<h1>{escape(title)}</h1>"]
     try:
         docstring = ast.get_docstring(ast.parse(source))
@@ -154,7 +164,7 @@ def script_info_html(path: Path, title: str) -> str:
     parts.append(
         section(
             "Source",
-            f"<p>{escape(path.name)}, {lines} line{'s' if lines != 1 else ''}.</p>\n"
+            f"<p>{escape(filename)}, {lines} line{'s' if lines != 1 else ''}.</p>\n"
             + source_html(source),
         )
     )

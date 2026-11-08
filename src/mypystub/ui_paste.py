@@ -13,7 +13,7 @@ from zipfile import BadZipFile
 
 import toga
 
-from . import info_pages, paste_import, prompts
+from . import archive_preview, info_pages, paste_import, prompts
 from .errors import guarded
 from .ui_base import PrototypeBase
 
@@ -30,6 +30,9 @@ class PasteMixin(PrototypeBase):
         # What a shown preview would import, until Cancel or Import
         self._pending_import: tuple[str, str, Path] | None = None
         self._pending_suggestion: str | None = None  # the copied item's own name
+        # Pasted text's offered name, fixed when Paste was pressed, so the
+        # preview and the name prompt agree however long the preview stays up
+        self._pending_stem: str | None = None
         self.import_button: toga.Button | None = None
 
     def add_button_icon(
@@ -68,8 +71,9 @@ class PasteMixin(PrototypeBase):
     ) -> None:
         """Preview what's on the pasteboard, then Cancel or Import it (#36).
 
-        The preview is the Info of the thing being added: a pasted script's
-        source, a file's or zipapp's Info, or an archive's contents. Import
+        The preview is the Info page of the thing being added, exactly as Info
+        will show it afterwards: a script's (pasted text too), a zipapp's, or
+        what an archive unpacks to (a project's, or a folder's). Import
         then copies the file, extracts the archive into a new folder, or saves
         the text, asking for a file name only when one is needed (pasted text,
         or a name clash).
@@ -97,33 +101,39 @@ class PasteMixin(PrototypeBase):
             return
         kind, value = content
         folder = self.get_current_dir()
+        self._pending_suggestion = bridge.suggested_name() if kind == "text" else None
+        self._pending_stem = (
+            paste_import.suggested_stem(self._pending_suggestion, datetime.now())
+            if kind == "text"
+            else None
+        )
         screen_title, body, can_import = self.import_preview(kind, value)
         self._pending_import = (kind, value, folder)
-        self._pending_suggestion = bridge.suggested_name() if kind == "text" else None
         self.show_import_preview(screen_title, body, can_import)
 
     def import_preview(self, kind: str, value: str) -> tuple[str, str, bool]:
         """A paste's screen title, Info HTML, and whether it can be imported."""
         if kind != "file":
-            body = info_pages.section("Pasted Python", info_pages.source_html(value))
-            return "Paste", body, True
+            # The Info page the script will have once it is imported (#189)
+            stem = self.pasted_text_stem()
+            return (
+                "Paste",
+                info_pages.script_info_from_source(value, stem, f"{stem}.py"),
+                True,
+            )
         path = Path(value)
         name = path.name
         if paste_import.is_archive(name):
+            scratch = Path(self.app.paths.cache) / "paste_preview"
             try:
-                tops = paste_import.archive_top_level(path)
-            except (OSError, tarfile.TarError, BadZipFile):
+                body = archive_preview.archive_info_html(path, scratch)
+            except (OSError, tarfile.TarError, BadZipFile, ValueError):
                 body = (
                     f"<h1>{info_pages.escape(name)}</h1>\n"
                     "<p>This archive can't be read, so it can't be imported. It "
                     "may be damaged, or not really an archive.</p>"
                 )
                 return name, body, False
-            listing = info_pages.bullet_list(tops) if tops else "<p>(empty)</p>"
-            body = (
-                info_pages.section("Archive contents", listing)
-                + "<p>Import extracts these into a new folder here.</p>"
-            )
             return name, body, True
         if paste_import.is_plain_text(name):
             body = (
@@ -205,11 +215,20 @@ class PasteMixin(PrototypeBase):
             )
         return paste_import.import_file(source, folder, overwrite)
 
+    def pasted_text_stem(self) -> str:
+        """The name offered for pasted text: the one fixed when Paste was pressed.
+
+        Falls back to working it out now if Paste didn't fix one.
+        """
+        if self._pending_stem is None:
+            self._pending_stem = paste_import.suggested_stem(
+                self._pending_suggestion, datetime.now()
+            )
+        return self._pending_stem
+
     async def paste_text(self, text: str, folder: Path) -> Path | None:
         """Save pasted text, taken to be Python, under a name the user gives."""
-        suggestion = paste_import.suggested_stem(
-            self._pending_suggestion, datetime.now()
-        )
+        suggestion = self.pasted_text_stem()
         while True:
             typed = await self.ask_text(
                 "Paste", "Name for the pasted code (saved as .py)", suggestion

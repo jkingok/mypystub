@@ -236,4 +236,4 @@ def test_a_copied_file_loses_a_repeated_extension(tmp_path: Path) -> None:
 
 def test_an_archive_with_a_repeated_extension_names_its_folder_cleanly() -> None:
     """``a.zip.zip`` unpacks into ``a``, not ``a.zip``."""
-    assert paste_import._archive_stem("a.zip.zip") == "a"
+    assert paste_import.archive_stem("a.zip.zip") == "a"

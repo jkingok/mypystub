@@ -218,7 +218,7 @@ def _top_level(names: list[str]) -> set[str]:
     return tops
 
 
-def _archive_stem(name: str) -> str:
+def archive_stem(name: str) -> str:
     name = collapse_repeated_extension(name)
     return _split_name(name)[0] or name
 
@@ -256,6 +256,6 @@ def extract_archive(archive: Path, folder: Path) -> Path:
             target = unique_path(folder, content.name)
         else:
             content = staging
-            target = unique_path(folder, _archive_stem(archive.name))
+            target = unique_path(folder, archive_stem(archive.name))
         shutil.move(str(content), str(target))
     return target
