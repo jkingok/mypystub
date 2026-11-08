@@ -16,6 +16,7 @@ from . import hooks as h
 from . import piplike as pip
 from . import (
     prompts,
+    resume,
     runner,
     scan,
 )
@@ -56,6 +57,9 @@ ENTRY_ICONS = {
 }
 
 
+RESUME_SETTING = "resume"  # launcher.toml: false starts fresh every time
+
+
 class PrototypeBase:
     """Everything the feature mixins share: widgets, dialogs, folders, screens.
 
@@ -90,6 +94,13 @@ class PrototypeBase:
         self.ask_text_fields: list[toga.TextInput] = []  # the fallback prompt's
         # The tabs, once get_content has built them
         self.tabs: Any = None
+        # A script that is running: (settings key, title). If the app is ended
+        # while it is set, the next launch offers to run it again (#188).
+        self.resume_running: tuple[str, str] | None = None
+        # False until the saved state has been read: until then a snapshot of the
+        # freshly built launcher would overwrite what is about to be restored
+        self.resume_ready = False
+        self._resume_written: resume.Resume | None = None
         self.script_box = toga.Column()  # the Script tab; input boxes go on top
         self.keyboard_box = toga.Box(style=Pack(flex=0))  # pads for the keyboard
         self.new_project_name: toga.TextInput | None = None
@@ -281,6 +292,31 @@ class PrototypeBase:
         else:
             if negative:
                 negative()
+
+    def remember(self) -> None:
+        """Save where the user is (see ResumeMixin); does nothing in the base."""
+
+    @property
+    def resume_path(self) -> Path:
+        """Where the resume state is kept (#188): beside launcher.toml.
+
+        Not in the data folder, which on iOS is Documents, shown in Files.
+        """
+        return resume.state_path(Path(self.app.paths.config))
+
+    @property
+    def resume_enabled(self) -> bool:
+        """Whether the launcher resumes (the Setup switch; on by default)."""
+        return self.settings.get_flag(RESUME_SETTING, True)
+
+    def set_resume_enabled(self, enabled: bool) -> None:
+        """Turn resuming on or off; off also forgets what was saved."""
+        self.settings.set_flag(RESUME_SETTING, enabled)
+        self._resume_written = None
+        if enabled:
+            self.remember()
+        else:
+            resume.clear(self.resume_path)
 
     def close_keyboard(self, widget: toga.TextInput, **kwargs: Any) -> None:
         """Triggered when the user presses 'Return' or 'Done' on the iPad keyboard."""

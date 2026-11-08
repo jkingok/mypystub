@@ -95,6 +95,20 @@ class Settings:
         self.config_doc[RUN_WITH][key] = entry  # type: ignore[index]
         self._save()
 
+    def get_flag(self, name: str, default: bool) -> bool:
+        """A true/false setting at the top of launcher.toml, or `default`."""
+        self.config_doc = self._load()  # allow on disk changes
+        value: Any = self.config_doc.get(name)
+        if value is not None and hasattr(value, "unwrap"):
+            value = value.unwrap()
+        return value if isinstance(value, bool) else default
+
+    def set_flag(self, name: str, value: bool) -> None:
+        """Save a true/false setting."""
+        self.config_doc = self._load()
+        self.config_doc[name] = value
+        self._save()
+
     def get_quick_start(self) -> str | None:
         """The row key offered to run at launch, or None if none is set."""
         self.config_doc = self._load()  # allow on disk changes

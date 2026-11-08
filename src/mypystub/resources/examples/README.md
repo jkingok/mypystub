@@ -10,6 +10,7 @@ Small scripts and projects to learn from and copy. Tap a folder to open it, and 
     - `show_args.py`: list the arguments you set in **Setup**.
     - `show_env.py`: show the environment variables you name, or all of them.
     - `args_and_env.py`: greet each name given as an argument, using `$GREETING` if it's set.
+    - `resume_counter.py`: a counter that saves itself as it goes, so a run that was cut short (by going back, or by iOS ending the app) carries on from where it stopped next time. It shows how a script can resume, using nothing specific to MyPyStub.
     - `with_dependency.py`: needs a package from PyPI, which is installed the first time it runs.
     - `hello_project/`: a project folder with its own `pyproject.toml`, a package under `src/`, and a dependency. It appears in the list as one entry, "Hello Project".
 - `projects/`

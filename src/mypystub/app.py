@@ -189,11 +189,17 @@ class MyApp(toga.App):
                 getattr(mw, "content_stack", []).append((mw.title, mw.content))
             mw.title = t
             mw.content = p.get_content()
-            p.choose_start_tab()
+            tab = p.choose_start_tab()
             if fresh:
-                # Offer the Quick Start once the window is up (startup shows it
-                # in its finally), so its dialog has a window to open over.
-                app.loop.call_soon(lambda: app.loop.create_task(p.offer_quick_start()))
+                # Resume where the user was, or offer the Quick Start, once the
+                # window is up (startup shows it in its finally), so a dialog
+                # has a window to open over. A start that chose the Help tab
+                # itself (a new user, or a new version) doesn't resume.
+                app.loop.call_soon(
+                    lambda: app.loop.create_task(
+                        p.start_session(allow_resume=tab == "List")
+                    )
+                )
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             app.loop.create_task(mw.dialog(toga.ErrorDialog("Error Occurred", str(e))))

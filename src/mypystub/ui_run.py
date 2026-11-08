@@ -99,6 +99,8 @@ class RunMixin(RowSettingsMixin):
             print(f"Run {run_id} ended after run {self.run_id} started; ignored")
             return
         self.script_runner.end_run()
+        self.resume_running = None  # it ended, so there is nothing to offer again
+        self.remember()
         if error is None:
             self.end_script(run_id)
             return
@@ -245,6 +247,12 @@ class RunMixin(RowSettingsMixin):
             return
 
         self.script_activity.update(f"Running {title}")
+        try:
+            # If the app is ended while this runs, the next launch offers it again
+            self.resume_running = (self.row_key(selected_row), str(title))
+        except (AssertionError, ValueError):
+            self.resume_running = None
+        self.remember()
         self.app.loop.call_soon(lambda: self.start(context))
 
     def run_target(self, row: Any) -> runner.RunTarget:

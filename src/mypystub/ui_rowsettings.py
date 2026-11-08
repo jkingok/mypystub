@@ -104,18 +104,30 @@ class RowSettingsMixin(PrototypeBase):
         deleted script can never block launch.
         """
         key = self.settings.get_quick_start()
+        if not key or parse_settings_key(key) is None:
+            return None
+        row = self.row_for_key(key)
+        if row is None:
+            self.settings.set_quick_start(None)
+        return row
+
+    def row_for_key(self, key: str | None) -> Any | None:
+        """The runnable row a settings key names, rebuilt from disk, or None.
+
+        None if the key is empty or malformed, or the file or project is gone,
+        outside its category, not runnable, or no longer has that key. The list
+        is left where it is.
+        """
         parsed = parse_settings_key(key) if key else None
         if parsed is None:
             return None
         category, relative, entry = parsed
         dirs = self.category_dirs()
         if category not in dirs:
-            self.settings.set_quick_start(None)
             return None
         base = dirs[category].resolve()
         target = base if relative == PurePath() else base / relative.as_posix()
         if not target.resolve().is_relative_to(base) or not target.exists():
-            self.settings.set_quick_start(None)
             return None
         proto = self._scan_quick_start_target(target, entry)
         row = None if proto is None else SimpleNamespace(splash=None, **proto)
@@ -125,10 +137,7 @@ class RowSettingsMixin(PrototypeBase):
             matches = row is not None and self.row_key(row) == key
         finally:
             self.category = browsing
-        if not matches:
-            self.settings.set_quick_start(None)
-            return None
-        return row
+        return row if matches else None
 
     def open_quick_start_folder(self) -> None:
         """Move the list to the folder holding the Quick Start."""

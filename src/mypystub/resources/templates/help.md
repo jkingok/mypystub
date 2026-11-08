@@ -54,6 +54,7 @@ The Setup tab has these sections:
 
 - **Projects**: create a new project from the template (below).
 - **Environment**: environment variables every script and project inherits (see *Swipe right: Setup* above).
+- **Resume where I left off**: whether the app puts you back where you were after iOS ended it (see *Picking up where you left off*). On by default.
 - **Packages**: everything about the Python and packages in this app, on one page: the Python version, the packages built into the app, your user packages with their size, and the aliases in effect. *Check for updates* does two checks at once. It asks [PyPI](https://pypi.org) (through its [JSON API](https://docs.pypi.org/api/json/)) for newer versions of your user packages, and compares the app's Python with [python.org's releases](https://www.python.org/downloads/) (through its [downloads API](https://www.python.org/api/v2/downloads/release/?is_published=true)) and the built-in packages with PyPI. If one check can't be made, the other still shows. *Update all* installs the newer user packages. The app's own Python and packages can only be updated by a new build of the app. *Wipe user packages…* deletes the user packages; prototypes reinstall what they need on their next run, which needs the network.
 - **App**: back up your files, or exit back to the launcher you came from.
 
@@ -99,6 +100,14 @@ Ways a script can run, each with an example in the Examples category:
 - **Taking over the screen**: push onto `main_window.content_stack` and pop on Back; nested screens work too, and the run ends back at the launcher (`takeover/back_button.py`, `takeover/nested_takeover.py`).
 
 Each run gets its own `sys.argv`, environment and working directory (the script's folder, or the project folder), and they are restored afterwards. Your own modules are reloaded on the next run, so edits take effect without restarting the app.
+
+## Picking up where you left off
+
+iOS can end an app in the background whenever it likes, and the app isn't told. So MyPyStub saves *where you were* as you go, and puts you back there next time you open it: the tab, the folder you were browsing, the Setup page that was open, and which of Help, What's New or About was showing. If a folder has been deleted or renamed in Files, you go to the nearest folder above it that is still there. The content of the Script and Logs tabs isn't restored.
+
+If a script was running when the app was ended, you're asked once whether to run it again. It is never run without asking. After an update to a new version of the app, nothing is restored, since the app may behave differently. Turn it off with **Resume where I left off** in Setup.
+
+Your own scripts can do the same, in the same way, with nothing specific to MyPyStub: save the little you need to remember **as you go**, in a file in `toga.App.app.paths.data`, and look for it when the script starts. Finding it means the last run was cut short; not finding it means a fresh start. The script isn't told it was resumed. `basics/resume_counter.py` is a small example. Values you already keep in files or settings need nothing extra.
 
 ## Packages with compiled parts
 

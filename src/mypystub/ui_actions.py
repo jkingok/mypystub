@@ -66,6 +66,7 @@ class ActionsMixin(PasteMixin):
         """
         super().reload_menu(widget, **kwargs)
         self.update_list_actions()
+        self.remember()
 
     @guarded
     async def handle_new_folder(

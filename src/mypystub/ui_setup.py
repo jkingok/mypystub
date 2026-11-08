@@ -230,6 +230,7 @@ class SetupMixin(PrototypeBase):
         )
         self.push_screen(self.SETUP_PAGES[page], content)
         self.setup_page = page
+        self.remember()
         self.render_setup_page()
 
     @guarded
@@ -239,6 +240,7 @@ class SetupMixin(PrototypeBase):
         """Back: pop the Setup page and return to the tabs."""
         self.pop_screen()
         self.setup_page = None
+        self.remember()
 
     @staticmethod
     def menu_entry(button: toga.Button) -> toga.Box:
@@ -289,6 +291,11 @@ class SetupMixin(PrototypeBase):
         folder = self.category_dirs()["Documents"]
         if not files_app.open_in_files(folder):
             await self.info(f"Couldn't open {folder} in Files.", "Files")
+
+    @guarded
+    def handle_resume_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
+        """The switch for resuming where the user left off (#188)."""
+        self.set_resume_enabled(bool(widget.value))
 
     @guarded
     async def handle_wipe_cache(self, widget: toga.Widget, **kwargs: Any) -> None:
@@ -410,6 +417,12 @@ class SetupMixin(PrototypeBase):
             heading("App"),
             self.menu_entry(
                 toga.Button("Open Documents in Files", on_press=self.handle_open_files)
+            ),
+            toga.Switch(
+                "Resume where I left off",
+                value=self.resume_enabled,
+                on_change=self.handle_resume_toggle,
+                margin=(4, 8),
             ),
             self.menu_entry(
                 toga.Button("Clear Quick Start", on_press=self.handle_clear_quick_start)

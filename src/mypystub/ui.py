@@ -14,29 +14,35 @@ from toga.style import Pack
 from . import (
     about,
     first_run,
+    resume,
 )
 from .errors import guarded
 from .pages import help_html
+from .run_settings import quick_start_name
 from .ui_actions import ActionsMixin
 from .ui_helpers import (
     create_source_zip,
     is_ipad_from_window,
     open_share_sheet,
 )
+from .ui_resume import ResumeMixin
 from .ui_run import RunMixin
 from .ui_setup import SetupMixin
 from .ui_swipe import SwipeMixin
 from .ui_widgets import LabelledSelection, NotAnOptionContainer, refresh_on_new_width
 
+# The choices of the Help tab
+HELP_PAGES = ("Help", "What's New", "About")
 
-class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
+
+class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
     """The launcher's state and screens, built from the feature mixins."""
 
     def __init__(self, host_app: toga.App, on_done: Callable[[Any], None]) -> None:
         super().__init__(host_app, on_done)
         self.help_selection = LabelledSelection(
             "Show",
-            items=["Help", "What's New", "About"],
+            items=list(HELP_PAGES),
             on_change=self.show_help_page,
         )
         # Links (the About page's Source) open in the browser, not in place
@@ -89,6 +95,76 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
                     self.reload_logs(widget)
                 case "Help":
                     self.show_help_page()
+        self.remember()
+
+    def resume_extras(self) -> dict[str, str | None]:
+        """The Setup page open over the tabs, and which Help page is chosen."""
+        return {
+            "setup_page": self.setup_page,
+            "help_page": str(self.help_selection.value),
+        }
+
+    async def start_session(self, allow_resume: bool = True) -> None:
+        """At launch: look as if the app resumed (#188), else offer the Quick Start.
+
+        `allow_resume` is False when the start already chose a tab itself: the
+        Help tab for a user who has never run the app, or What's New after an
+        update. The saved state is for one version of the app and is ignored
+        for any other. If a script was running when the app was ended, ask
+        whether to run it again, once, and then skip the Quick Start question.
+        """
+        version = str(self.app.version or "")
+        state = None
+        if allow_resume and self.resume_enabled:
+            state = resume.load(self.resume_path, version)
+        asked = False
+        if state is not None:
+            self.apply_resume(state)
+        self.resume_ready = True
+        self.remember()  # this launch's state, without the running script
+        if state is not None and state.running:
+            asked = await self.offer_rerun(state)
+        if not asked:
+            await self.offer_quick_start()
+
+    def apply_resume(self, state: resume.Resume) -> None:
+        """Put the list, tab and pages back where `state` says they were."""
+        dirs = self.category_dirs()
+        if state.category in dirs:
+            base = dirs[state.category]
+            self.show_category(state.category)
+            folder = resume.nearest_existing(base, state.folder)
+            self.subfolder = Path(folder) if folder else Path()
+            if state.package and resume.nearest_existing(base, state.package) == (
+                state.package
+            ):
+                self.package_dir = base / state.package
+            self.reload_menu(self.script_list)
+        # A Script tab with nothing running is just empty: the list is better
+        tab = state.tab if state.tab in ("Logs", "Help", "Setup") else "List"
+        if state.help_page in HELP_PAGES:
+            self.help_selection.selection.value = state.help_page
+        self.tabs.current_tab = tab
+        if tab == "Help":
+            self.show_help_page()
+        elif tab == "Logs":
+            self.reload_logs(self.tabs)
+        elif tab == "Setup" and state.setup_page in self.SETUP_PAGES:
+            self.open_setup_page(str(state.setup_page))
+
+    async def offer_rerun(self, state: resume.Resume) -> bool:
+        """Ask whether to run again what was running when the app was ended."""
+        row = self.row_for_key(state.running)
+        if row is None:
+            return False
+        name = state.running_title or quick_start_name(state.running or "")
+        if not await self.ask(
+            "Resume",
+            f"The app was closed while {name} was running. Run it again?",
+        ):
+            return True
+        await self.run_row(row)
+        return True
 
     def choose_start_tab(self) -> str:
         """Choose the tab to open on from the version last run (#125, #126).
@@ -156,6 +232,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, SetupMixin):
         # The source-code button follows the Share button: shown only on About
         self.source_share.style.visibility = self.about_share.style.visibility
         self.load_page(self.help_view, body)
+        self.remember()
 
     @guarded
     def handle_about_share(self, widget: toga.Button, **kwargs: Any) -> None:
