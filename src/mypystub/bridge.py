@@ -18,6 +18,13 @@ from typing import Any
 
 from . import paste_import
 
+# UIKit constants, plain numbers that are the same wherever this is imported
+UIUserInterfaceIdiomPad = 1  # UIUserInterfaceIdiom.pad
+# A form sheet is a full-width sheet from the bottom on iPhone and a centred card
+# on iPad. Left to itself, iOS 26 shows the share sheet as a small corner panel.
+UIModalPresentationFormSheet = 2  # UIModalPresentationStyle.formSheet
+UIPopoverArrowDirectionDown = 2  # UIPopoverArrowDirection.down
+
 if sys.platform == "ios":
     from rubicon.objc import (  # pyright: ignore[reportMissingImports]
         ObjCClass,

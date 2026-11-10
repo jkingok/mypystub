@@ -124,11 +124,19 @@ class PlatformUtils(GenericUtils):
 
 
 if toga.platform.current_platform == "iOS":  # pyright: ignore[reportAttributeAccessIssue]
-    from rubicon.objc import ObjCClass  # pyright: ignore[reportMissingImports]
+    from rubicon.objc import (  # pyright: ignore[reportMissingImports]
+        NSMakeRect,
+        ObjCClass,
+    )
     from toga_iOS.libs import (  # pyright: ignore[reportMissingImports]
         NSURL,
         NSMutableArray,
     )
+
+    # UIKit constants. A form sheet is full width on iPhone and a centred card on
+    # iPad; left to itself, iOS 26 shows the share sheet as a small corner panel.
+    UIModalPresentationFormSheet = 2  # UIModalPresentationStyle.formSheet
+    UIPopoverArrowDirectionDown = 2  # UIPopoverArrowDirection.down
 
     # toga_iOS doesn't declare this one
     UIActivityViewController = ObjCClass("UIActivityViewController")
@@ -173,17 +181,21 @@ if toga.platform.current_platform == "iOS":  # pyright: ignore[reportAttributeAc
             # 4. Grab the native UIViewController backing your Toga Window
             presenting_vc = w.app.main_window._impl.native.rootViewController  # pyright: ignore[reportAttributeAccessIssue]
 
-            # 5. Handle iPad popover configurations safely to prevent crashes
-            if activity_vc.popoverPresentationController:
-                # Anchor the popover menu to the center or bounds of the current view frame
-                activity_vc.popoverPresentationController.sourceView = (
-                    presenting_vc.view
+            # 5. A form sheet: full width on iPhone, a centred card on iPad.
+            # Left to itself, iOS 26 shows a small panel in the corner.
+            activity_vc.modalPresentationStyle = UIModalPresentationFormSheet
+            # rubicon reads this as a method (UIKit declares it in a category),
+            # so call it. If iOS still uses a popover, point it at a small spot
+            # at the bottom centre: without a source view an iPad ends the app.
+            popover = activity_vc.popoverPresentationController()
+            if popover is not None:
+                view = presenting_vc.view
+                size = view.bounds.size
+                popover.sourceView = view
+                popover.sourceRect = NSMakeRect(
+                    size.width / 2, max(size.height - 1, 0), 0, 0
                 )
-                activity_vc.popoverPresentationController.sourceRect = (
-                    presenting_vc.view.bounds
-                )
-                # Optional: restrict arrow directions if needed
-                # activity_vc.popoverPresentationController.permittedArrowDirections = 0
+                popover.permittedArrowDirections = UIPopoverArrowDirectionDown
 
             # 6. Present the share sheet asynchronously over the top of the interface
             presenting_vc.presentViewController(
