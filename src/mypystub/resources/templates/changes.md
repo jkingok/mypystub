@@ -1,5 +1,20 @@
 # What's New
 
+## 2026.11.10.1 (2026-11-10)
+
+### New
+
+- The log is now emptied each time the app starts, so it can't keep growing in your Documents folder. If you want to keep it between launches, turn on **Preserve Logs** in Setup.
+- **Clear** on the Logs tab is now **Clear Now**. It empties the log immediately, without restarting the app, after asking first. It works whether or not Preserve Logs is on.
+- The Logs tab now scrolls to the newest line when it reloads, and has a **⤓** button to jump back to it from anywhere in the log. Its buttons are now quiet monochrome symbols: **↻** reloads, **⤓** goes to the newest line and **⌫** clears the log.
+- About's **Source** link now opens the GitHub Release for your build, which shows what changed in it, instead of the code. Each build's What's New text is also posted on its Release.
+- Pasting over a script, zipapp or project that is already there no longer asks to replace it. The new paste keeps the name, so saved settings still apply, and what it replaces is backed up in a `backups` folder beside it (a project folder is zipped). Swipe the row right for Setup and turn on Backup versions, then swipe a backup right to restore it or left to delete it. Pasting identical content changes nothing. A script's Setup screen now scrolls above its buttons, so they stay on screen, and each section (Arguments, Environment, Backup versions) folds away under its own switch.
+- Static web apps: a folder with an `index.html`, or a single `.html` file, now shows in the list and opens in the app, served from the device itself (the server is adapted from Toga's positron-static). Its description and icon come from the page, its web app manifest and its favicon, like a browser would find them; Info shows the details. Back returns to the list; links to other sites open in the browser. Examples include a tip calculator.
+
+### Fixed
+
+- Share sheets fill the width of an iPhone again on iOS 26 and later, instead of opening as a small panel in the corner, and sharing no longer ends the app on iPad. This includes the Share button in the Media Hub example.
+
 ## 2026.11.8.1 (2026-11-08)
 
 ### New
