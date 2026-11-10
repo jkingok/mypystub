@@ -19,6 +19,7 @@ from . import (
     resume,
     runner,
     scan,
+    web_meta,
 )
 from . import piplike as pip
 from . import settings as s
@@ -47,6 +48,7 @@ KIND_ICONS = {
     "package": "boxes.png",  # a project with several entry points
     "script": "file-code.png",
     "zipapp": "zipapp.png",
+    "web": "web.png",  # added later; a missing icon file is skipped
 }
 
 # Entry points inside a package, by kind. Placeholders until the icons are
@@ -78,6 +80,7 @@ class PrototypeBase:
         # in this process, and some set app.settings or reuse widget ids.
         self.launcher_settings = s.Settings(host_app.paths)
         self.cache_path = self.app.paths.cache
+        self.fetching_icons: set[str] = set()  # online web app icons being fetched
         self.data_path = getattr(self.app, "user_documents_dir", self.app.paths.data)
         print(f"Prototype initialized with data_path: {self.data_path}")
         self.this_path = Path(__file__).resolve().parent
@@ -396,6 +399,37 @@ class PrototypeBase:
             )
         return image
 
+    def web_icon_cache(self) -> Path:
+        """Where web apps' icons are kept, converted for the list (#150)."""
+        return Path(self.cache_path) / "web_icons"
+
+    def fetch_web_icons(self, rows: Any) -> None:
+        """Fetch the online icons of web app rows, then redraw the list.
+
+        Done once per icon, off the UI thread; a failure is remembered so a
+        dead link isn't tried on every redraw (see web_meta.fetch_remote).
+        """
+        urls = [
+            url
+            for row in rows
+            for url in row.get("icon_pending", [])
+            if url not in self.fetching_icons
+        ]
+        if not urls:
+            return
+        self.fetching_icons.update(urls)
+        cache = self.web_icon_cache()
+
+        async def fetch() -> None:
+            got = False
+            for url in urls:
+                got |= await asyncio.to_thread(web_meta.fetch_remote, url, cache)
+            self.fetching_icons.difference_update(urls)
+            if got:
+                self.reload_menu(self.script_list)
+
+        asyncio.ensure_future(fetch())
+
     @guarded
     def reload_menu(
         self, widget: toga.DetailedList | toga.Selection, **kwargs: Any
@@ -418,7 +452,10 @@ class PrototypeBase:
             return
 
         # 1. Gather all of our TOML configuration profiles
-        self.prototypes_data = scan.scan_all_prototypes(self.get_current_dir())
+        self.prototypes_data = scan.scan_all_prototypes(
+            self.get_current_dir(), self.web_icon_cache()
+        )
+        self.fetch_web_icons(self.prototypes_data)
 
         # 2. Format the records specifically for Toga's DetailedList expectations
         up = self.bundled_icon("arrow-small-left.png")
@@ -457,7 +494,9 @@ class PrototypeBase:
 
             # Toga ignores the custom keys (entry_point, folder, ...) for rendering,
             # but holds onto them for callbacks!
-            row = {k: v for k, v in proto.items() if k != "icon_path"}
+            row = {
+                k: v for k, v in proto.items() if k not in ("icon_path", "icon_pending")
+            }
             row["icon"] = row_icon
             row["splash"] = own_icon
             list_items.append(row)

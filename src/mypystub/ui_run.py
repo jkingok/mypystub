@@ -15,6 +15,7 @@ from . import (
     row_info,
     runner,
     scan,
+    webapps,
 )
 from .errors import guarded
 from .run_settings import quick_start_name
@@ -158,9 +159,42 @@ class RunMixin(RowSettingsMixin):
             self.reload_menu(widget)
             return
 
+        if row_info.row_type(selected_row) == "web":
+            self.open_web_app(selected_row)
+            return
+
         if not row_info.runnable(row_info.row_type(selected_row)):
             return
         await self.run_row(selected_row)
+
+    def open_web_app(self, row: Any) -> None:
+        """Serve a web app from 127.0.0.1 and show it over the launcher.
+
+        Back stops the server. Links to other sites open in the browser; only
+        the app's own pages load in the view.
+        """
+        try:
+            server = webapps.StaticServer(Path(row.web_root), str(row.web_page))
+            url = server.start()
+        except OSError as error:
+            asyncio.create_task(
+                self.error(f"Couldn't start the web app: {error}", "Web")
+            )
+            return
+
+        @guarded
+        def navigate(widget: toga.WebView, url: str, **kwargs: Any) -> bool:
+            if url.startswith("http://127.0.0.1:"):
+                return True
+            return self.open_external(widget, url=url)
+
+        def back(widget: toga.Widget | None = None, **kwargs: Any) -> None:
+            server.stop()
+            self.pop_screen()
+
+        view = toga.WebView(url=url, flex=1, on_navigation_starting=navigate)
+        top = toga.Row(children=[toga.Button("‹ Back", on_press=guarded(back))])
+        self.push_screen(str(row.title), toga.Column(children=[top, view]))
 
     @guarded
     async def offer_quick_start(self) -> None:

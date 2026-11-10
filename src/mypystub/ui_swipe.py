@@ -65,6 +65,10 @@ class SwipeMixin(RowSettingsMixin):
     def info_body(self, row: Any) -> str:
         """The Info page for a script, project, package or entry point (#99)."""
         title = str(getattr(row, "title", ""))
+        if row_info.row_type(row) == "web":
+            return info_pages.web_info_html(
+                Path(row.web_root), str(row.web_page), title
+            )
         if row_info.row_type(row) == "script":
             return info_pages.script_info_html(Path(row.entry_point), title)
         entry = getattr(row, "entry", None)

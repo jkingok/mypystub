@@ -18,6 +18,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from mypystub import web_meta
 from mypystub.pages import readme_html, safe_url
 from mypystub.scan import (
     EntryPoint,
@@ -423,4 +424,65 @@ def zipapp_info_html(
                 + source_html(main),
             )
         )
+    return "\n".join(p for p in parts if p)
+
+
+# -- Web apps ------------------------------------------------------------------
+
+
+def web_info_html(root: Path, page: str, title: str) -> str:
+    """The Info page for a web app: what its page and manifest say about it.
+
+    Read only. The facts come from the same places the row's subtitle and icon
+    do (see :mod:`web_meta`); a folder's README follows, as for other folders.
+    """
+    try:
+        source = (root / page).read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return f"<h1>{escape(title)}</h1>\n<p>Couldn't read {escape(page)}: {escape(e)}</p>"
+    meta = web_meta.parse_page(source)
+    manifest = web_meta.load_manifest(root, meta)
+    parts = [f"<h1>{escape(title)}</h1>"]
+    if description := web_meta.display_description(meta, manifest):
+        parts.append(f"<p>{escape(description)}</p>")
+    details: list[str] = []
+    name = web_meta.display_title(meta, manifest)
+    if name and name != title:
+        details.append(f"<b>Name</b>: {escape(name)}")
+    if meta.title and meta.title != name:
+        details.append(f"<b>Page title</b>: {escape(meta.title)}")
+    details.append(f"<b>Page</b>: <code>{escape(page)}</code>")
+    if meta.author:
+        details.append(f"<b>Author</b>: {escape(meta.author)}")
+    if meta.keywords:
+        details.append(f"<b>Keywords</b>: {escape(meta.keywords)}")
+    if meta.canonical:
+        details.append(f"<b>Home</b>: {link(meta.canonical)}")
+    if manifest:
+        if manifest.start_url:
+            details.append(
+                f"<b>Start page</b>: <code>{escape(manifest.start_url)}</code>"
+            )
+        if manifest.display:
+            details.append(f"<b>Display</b>: {escape(manifest.display)}")
+    if colour := (manifest.theme_color if manifest else None) or meta.theme_color:
+        details.append(f"<b>Theme colour</b>: {escape(colour)}")
+    parts.append(section("Details", bullet_list(details)))
+    if manifest:
+        parts.append(
+            "<p>Described by a web app manifest, so it can also be installed as a "
+            "PWA in a browser.</p>"
+        )
+    if page == "index.html" and (readme := find_file(root, ("readme",))):
+        parts.append(section("README", text_file_html(readme)))
+    lines = source.splitlines()
+    shown = "\n".join(lines[:SOURCE_PREVIEW_LINES])
+    more = (
+        f"\n… {len(lines) - SOURCE_PREVIEW_LINES} more lines"
+        if len(lines) > SOURCE_PREVIEW_LINES
+        else ""
+    )
+    parts.append(
+        section("Page source", f"<pre><code>{escape(shown + more)}</code></pre>")
+    )
     return "\n".join(p for p in parts if p)

@@ -24,6 +24,7 @@ dev = [
     "pre-commit>=4.7.0",
     "pyright>=1.1.414",
     "pytest>=9.2.0",
+    "resvg-py>=0.5.0",
     "ruff>=0.17.3",
     "toga-core>=0.5.7",
     # Toga's test backend, for UI tests without a device (tests/test_ui.py)
@@ -105,6 +106,9 @@ permission.photo_library = "Prototypes you run in MyPyStub may save images to yo
 [tool.briefcase.app.mypystub.macOS]
 requires = [
     "toga-cocoa~=0.5.7",
+    # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
+    # iOS section leaves it out and SVG icons are skipped there)
+    "resvg-py>=0.5.0",
     "std-nslog~=2.0.0; python_version < '3.14'",
 ]
 
@@ -113,6 +117,9 @@ icon = "assets/icons/icon"
 [tool.briefcase.app.mypystub.linux]
 requires = [
     "toga-gtk~=0.5.7",
+    # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
+    # iOS section leaves it out and SVG icons are skipped there)
+    "resvg-py>=0.5.0",
 ]
 
 [tool.briefcase.app.mypystub.linux.system.debian]
@@ -227,6 +234,9 @@ flatpak_sdk = "org.gnome.Sdk"
 [tool.briefcase.app.mypystub.windows]
 requires = [
     "toga-winforms~=0.5.7",
+    # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
+    # iOS section leaves it out and SVG icons are skipped there)
+    "resvg-py>=0.5.0",
 ]
 
 icon = "assets/icons/icon"
@@ -236,6 +246,8 @@ installer_icon = "assets/icons/icon"
 # Mobile deployments
 [tool.briefcase.app.mypystub.iOS]
 requires = [
+# resvg-py (SVG web app icons) is left out: there is no iOS wheel for it yet.
+# Add it once BeeWare's mobile wheels have one; without it SVG icons are skipped.
 # For the moment iOS needs bleeding edge packages
     "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
     "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
@@ -267,12 +279,18 @@ info."UIFileSharingEnabled" = true
 # Allow opening documents in place
 info."LSSupportsOpeningDocumentsInPlace" = true
 
+# Web apps are served from 127.0.0.1 and shown in a web view
+info."NSAppTransportSecurity" = { NSAllowsLocalNetworking = true }
+
 # Usage descriptions with no cross-platform Briefcase permission key
 info."NSLocalNetworkUsageDescription" = "Prototypes you run in MyPyStub may connect to devices on your local network."
 
 [tool.briefcase.app.mypystub.android]
 requires = [
     "toga-android~=0.5.7",
+    # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
+    # iOS section leaves it out and SVG icons are skipped there)
+    "resvg-py>=0.5.0",
 ]
 
 base_theme = "Theme.MaterialComponents.Light.DarkActionBar"

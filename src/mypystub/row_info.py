@@ -19,6 +19,7 @@ RowType = Literal[
     "script",
     "project",
     "zipapp",
+    "web",
     "package",
     "entry",
     "other",
@@ -40,7 +41,7 @@ def row_type(row: Any) -> RowType:
     if getattr(row, "category", None):
         return "category"
     kind = getattr(row, "kind", None)
-    if kind in ("folder", "script", "project", "zipapp", "package", "entry"):
+    if kind in ("folder", "script", "project", "zipapp", "web", "package", "entry"):
         return kind
     return "other"
 
@@ -85,6 +86,8 @@ def run_with_message(kind: RowType, title: str, where: str = "") -> str:
             )
         case "up":
             return f"This row goes back to {where}, so there's nothing to run."
+        case "web":
+            return f"{title} is a web app. Tap it to open it; there's nothing to set."
         case _:
             return f"{title} can't be run, so there's nothing to set."
 

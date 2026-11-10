@@ -33,7 +33,7 @@ class RowSettingsMixin(PrototypeBase):
                 return Path(row.folder)
             case "script":
                 return Path(row.entry_point)
-            case "project" | "zipapp" | "package" | "entry":
+            case "project" | "zipapp" | "web" | "package" | "entry":
                 return Path(row.project_dir)
             case _:
                 return None

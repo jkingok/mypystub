@@ -1,0 +1,4 @@
+body { font-family: system-ui, sans-serif; margin: 1.5rem; }
+label { display: block; margin: 1rem 0; }
+input { font-size: 1.2rem; width: 6rem; }
+#out { font-size: 1.5rem; font-weight: bold; }

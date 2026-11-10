@@ -21,6 +21,7 @@ from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
 from . import versions
+from . import webapps
 from .piplike import parse_aliases
 
 PEP723_BLOCK = re.compile(
@@ -223,6 +224,7 @@ SUMMARY_KINDS = {
     "subfolder": "📁",
     "package": "📦",  # projects and zipapps, which run as one entry
     "script": "🐍",
+    "web app": "🌐",
     "other file": "📄",
 }
 
@@ -329,7 +331,8 @@ def folder_counts(folder: Path) -> dict[str, int] | None:
     """Count what the list would show inside `folder`, without parsing files.
 
     Hidden entries, caches and launcher files aren't counted. A ``.pyz``
-    zipapp counts as a package, like a project folder. None if the folder
+    zipapp counts as a package, like a project folder, and an HTML page or
+    a folder with an ``index.html`` as a web app. None if the folder
     can't be read. This lists one directory per folder row, so it is cheap but
     not free.
     """
@@ -344,6 +347,8 @@ def folder_counts(folder: Path) -> dict[str, int] | None:
         if child.is_dir():
             if (child / "pyproject.toml").exists():
                 counts["package"] += 1
+            elif webapps.is_web_folder(child):
+                counts["web app"] += 1
             elif child.name not in SKIPPED_FOLDERS:
                 counts["subfolder"] += 1
         elif child.suffix == ".py":
@@ -351,6 +356,8 @@ def folder_counts(folder: Path) -> dict[str, int] | None:
                 counts["script"] += 1
         elif child.suffix == ".pyz":
             counts["package"] += 1
+        elif webapps.is_web_page(child):
+            counts["web app"] += 1
         else:
             counts["other file"] += 1
     return counts
@@ -394,12 +401,15 @@ def scan_folder(item: Path) -> dict[str, Any]:
     }
 
 
-def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
+def scan_all_prototypes(
+    base_dir: Path, icon_cache: Path | None = None
+) -> Iterable[Mapping[str, Any]]:
     """List the prototypes and sub-folders directly inside ``base_dir``.
 
     Folders come first, then scripts and project folders, each sorted by name.
     Folders with a ``pyproject.toml`` are runnable projects; other folders are
-    returned with a ``folder`` key so the launcher can drill into them.
+    returned with a ``folder`` key so the launcher can drill into them. Web
+    apps' icons are converted into `icon_cache`, if given.
     """
     folders: list[Mapping[str, Any]] = []
     prototypes: list[Mapping[str, Any]] = []
@@ -424,6 +434,10 @@ def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
             # --- CASE A2: A zipapp (.pyz), trusted as it is ---
             elif item.is_file() and item.suffix == ".pyz":
                 prototypes.append(scan_zipapp(item))
+
+            # --- CASE A3: A static web app (.html page, or index.html folder) ---
+            elif webapps.is_web_page(item) or webapps.is_web_folder(item):
+                prototypes.append(webapps.scan_web(item, icon_cache))
 
             # --- CASE B: The "Full Project" (Folder with pyproject.toml) ---
             elif item.is_dir() and (item / "pyproject.toml").exists():
