@@ -33,6 +33,13 @@ from .ui_setup import SetupMixin
 from .ui_swipe import SwipeMixin
 from .ui_widgets import LabelledSelection, NotAnOptionContainer, refresh_on_new_width
 
+# The Logs tab's buttons: monochrome symbols, like the Setup toolbars, so the
+# row looks quiet (Help says what each does). Reload, jump to the newest line,
+# and clear the log
+LOG_RELOAD, LOG_BOTTOM, LOG_CLEAR = "↻", "⤓", "⌫"
+# Symbols are small at the default size (as run_with.SYMBOL_SIZE)
+SYMBOL_SIZE = 22
+
 # The choices of the Help tab
 HELP_PAGES = ("Help", "What's New", "About")
 
@@ -63,9 +70,18 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
 
     @guarded
     def reload_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
-        if log_path := getattr(sys.stdout, "path", None):
-            logs = log_path.read_text()
-            self.log_text.value = logs
+        """Show the log's current text, scrolled to its newest line (#199)."""
+        redirector = logfile.current()
+        log_path = redirector.path if redirector else getattr(sys.stdout, "path", None)
+        if log_path:
+            self.log_text.value = log_path.read_text()
+            # The new text isn't laid out yet: scroll once it is
+            self.app.loop.call_soon(self.log_text.scroll_to_bottom)
+
+    @guarded
+    def jump_to_log_bottom(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Go to the newest line of the log from wherever it is scrolled to."""
+        self.log_text.scroll_to_bottom()
 
     @guarded
     async def handle_clear_now(self, widget: toga.Widget, **kwargs: Any) -> None:
@@ -77,11 +93,11 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
         """
         redirector = logfile.current()
         if redirector is None:
-            await self.info("There is no log file in this run to clear.", "Clear Now")
+            await self.info("There is no log file in this run to clear.", "Clear Log")
             return
         size = maintenance.human_size(redirector.size())
         if not await self.confirm(
-            f"Delete the log ({size})? This can't be undone.", "Clear Now"
+            f"Delete the log ({size})? This can't be undone.", "Clear Log"
         ):
             return
         freed = redirector.truncate()
@@ -339,12 +355,22 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
                             toga.Row(
                                 children=[
                                     toga.Button(
-                                        "Reload", on_press=self.reload_logs, flex=1
+                                        LOG_RELOAD,
+                                        on_press=self.reload_logs,
+                                        flex=1,
+                                        font_size=SYMBOL_SIZE,
                                     ),
                                     toga.Button(
-                                        "Clear Now",
+                                        LOG_BOTTOM,
+                                        on_press=self.jump_to_log_bottom,
+                                        flex=1,
+                                        font_size=SYMBOL_SIZE,
+                                    ),
+                                    toga.Button(
+                                        LOG_CLEAR,
                                         on_press=self.handle_clear_now,
                                         flex=1,
+                                        font_size=SYMBOL_SIZE,
                                     ),
                                 ]
                             ),

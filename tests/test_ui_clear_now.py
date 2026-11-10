@@ -65,16 +65,20 @@ def buttons(widgets: list[toga.Widget]) -> list[toga.Button]:
 def clear_button(proto: ui.Prototype) -> toga.Button:
     """The Logs tab's Clear Now button."""
     logs = next(item for item in proto.tabs.content if item.text == "Logs")
-    return next(b for b in buttons([logs.content]) if b.text == "Clear Now")
+    return next(b for b in buttons([logs.content]) if b.text == ui.LOG_CLEAR)
 
 
 def test_clear_now_is_on_the_logs_tab_and_always_enabled(proto: ui.Prototype) -> None:
     """Beside Reload; the Preserve Logs switch never disables it."""
     logs = next(item for item in proto.tabs.content if item.text == "Logs")
-    assert [b.text for b in buttons([logs.content])] == ["Reload", "Clear Now"]
+    assert [b.text for b in buttons([logs.content])] == [
+        ui.LOG_RELOAD,
+        ui.LOG_BOTTOM,
+        ui.LOG_CLEAR,
+    ]
     assert clear_button(proto).enabled is True
     assert not hasattr(proto, "clear_logs")
-    assert "Clear Now" not in [b.text for b in buttons(proto.setup_sections())]
+    assert ui.LOG_CLEAR not in [b.text for b in buttons(proto.setup_sections())]
 
 
 def test_clearing_empties_the_log_and_the_tab_and_logging_goes_on(
