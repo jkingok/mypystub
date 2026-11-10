@@ -200,20 +200,35 @@ class PasteMixin(PrototypeBase):
             return
         if added is not None:
             self.reload_menu(self.script_list)
-            await self.info(f"Added {added.name}.", "Pasted")
+            await self.info(self.pasted_message(added), "Pasted")
 
-    async def paste_file(self, source: Path, folder: Path) -> Path | None:
-        """Copy a pasted file, or extract a pasted archive into a new folder."""
-        if paste_import.is_archive(source.name):
-            return paste_import.extract_archive(source, folder)
-        name = paste_import.collapse_repeated_extension(source.name)
-        overwrite = False
-        if paste_import.would_overwrite(folder, name):
-            overwrite = await self.ask(
-                "Replace existing file?",
-                f"{name} already exists. Replace it? Choose No to keep both.",
+    @staticmethod
+    def pasted_message(added: paste_import.Imported) -> str:
+        """What to tell the user about an import: added, replaced, or unchanged.
+
+        Nothing is ever lost to a paste: what it replaces is kept as a
+        backup, which the row's Setup lists (#182).
+        """
+        name = added.path.name
+        if added.unchanged:
+            return f"{name} is already exactly this, so nothing was changed."
+        if added.previous is not None:
+            return (
+                f"Added {name}. The version it replaced is kept as a backup: "
+                "swipe the row right for Setup, then Backup versions."
             )
-        return paste_import.import_file(source, folder, overwrite)
+        return f"Added {name}."
+
+    async def paste_file(
+        self, source: Path, folder: Path
+    ) -> paste_import.Imported | None:
+        """Copy a pasted file, or extract a pasted archive into a folder.
+
+        Whatever is already there is kept as a backup, so nothing asks.
+        """
+        if paste_import.is_archive(source.name):
+            return paste_import.store_archive(source, folder)
+        return paste_import.import_file(source, folder)
 
     def pasted_text_stem(self) -> str:
         """The name offered for pasted text: the one fixed when Paste was pressed.
@@ -226,7 +241,7 @@ class PasteMixin(PrototypeBase):
             )
         return self._pending_stem
 
-    async def paste_text(self, text: str, folder: Path) -> Path | None:
+    async def paste_text(self, text: str, folder: Path) -> paste_import.Imported | None:
         """Save pasted text, taken to be Python, under a name the user gives."""
         suggestion = self.pasted_text_stem()
         while True:
@@ -239,10 +254,4 @@ class PasteMixin(PrototypeBase):
             if name is not None:
                 break
             await self.info("Enter a file name.", "Paste")
-        overwrite = False
-        if paste_import.would_overwrite(folder, name):
-            overwrite = await self.ask(
-                "Replace existing file?",
-                f"{name} already exists. Replace it? Choose No to keep both.",
-            )
-        return paste_import.import_text(text, name, folder, overwrite)
+        return paste_import.import_text(text, name, folder)

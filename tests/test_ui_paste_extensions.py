@@ -17,28 +17,29 @@ from mypystub import ui
 from tests.support_ui import run
 
 
-def test_a_clash_is_asked_about_under_the_cleaned_name(
+def test_a_clash_is_kept_as_a_version_under_the_cleaned_name(
     proto: ui.Prototype,
     app: toga.App,
     docs: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``x.csv.csv`` is written as ``x.csv``, so that is the name that can clash."""
+    """``x.csv.csv`` is written as ``x.csv``, so that is the name that is kept."""
     asked: list[str] = []
 
     async def ask(title: str, text: str) -> bool:
         asked.append(text)
-        return True  # replace it
+        return True
 
     monkeypatch.setattr(proto, "ask", ask)
     (docs / "x.csv").write_text("old")
     source = tmp_path / "copied"
     source.mkdir()
     (source / "x.csv.csv").write_text("new")
-    written = run(app, proto.paste_file(source / "x.csv.csv", docs))
-    assert written == docs / "x.csv" and written.read_text() == "new"
-    assert asked == ["x.csv already exists. Replace it? Choose No to keep both."]
+    imported = run(app, proto.paste_file(source / "x.csv.csv", docs))
+    assert imported.path == docs / "x.csv" and imported.path.read_text() == "new"
+    assert asked == []  # nothing is replaced for good, so nothing is asked
+    assert imported.previous is not None and imported.previous.read_text() == "old"
     assert not (docs / "x.csv.csv").exists()
 
 

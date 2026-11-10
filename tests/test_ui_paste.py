@@ -105,20 +105,20 @@ def test_paste_text_can_be_cancelled(
     assert answers["info"] == []
 
 
-def test_paste_text_does_not_overwrite_unless_told(
+def test_paste_text_over_an_existing_script_keeps_the_old_one_as_a_version(
     proto: ui.Prototype, app: toga.App, docs: Path, pasteboard: dict, answers: dict
 ) -> None:
-    """A clash asks; No keeps both with an incrementing name."""
+    """No question: the new one has the name, the old is kept beside it (#182)."""
     (docs / "top.py").write_text("old")
     pasteboard["content"] = ("text", "new")
     answers["name"] = "top.py"
-    answers["yes_no"] = [False]
     paste(proto, app)
-    assert (docs / "top.py").read_text() == "old"
-    assert (docs / "top_2.py").read_text() == "new"
-    answers["yes_no"] = [True]
-    paste(proto, app)
+    assert answers["asked"] == []
     assert (docs / "top.py").read_text() == "new"
+    (older,) = list((docs / "backups").iterdir())
+    assert older.read_text() == "old"
+    assert "Backup versions" in answers["info"][-1][1]
+    assert "top" in titles(proto) and "backups" not in titles(proto)
 
 
 def test_paste_a_file_keeps_it_as_it_is(

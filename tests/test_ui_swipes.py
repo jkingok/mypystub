@@ -355,10 +355,9 @@ def test_setup_forms_finish_with_done(proto: ui.Prototype, config: Path) -> None
         proto.open_setup_environment(): ["Done"],
     }
     for form, want in expected.items():
+        assert form.content.children[-1] is form.button_row
         buttons = [
-            w.text
-            for w in form.content.children[-1].children
-            if isinstance(w, toga.Button)
+            w.text for w in form.button_row.children if isinstance(w, toga.Button)
         ]
         assert buttons == want
         form.done()
@@ -373,11 +372,18 @@ def test_run_with_toolbars_use_spaced_symbols(
     def labels(box: toga.Widget) -> list[str]:
         return [w.text for w in box.children if isinstance(w, toga.Button)]
 
-    args_header, _, _, move_row, env_header = form.content.children[:5]
+    args_header, move_row, env_header = form.args_tools, form.move_row, form.env_tools
+    # The moves share the arguments' row, at its left
+    assert args_header.children[0] is move_row
     assert labels(args_header) == ["+", "✎", "⌫"]
     assert labels(env_header) == ["+", "✎", "⌫", "⊘", "ⓘ"]  # ⊘ unsets, ⓘ shows it all
     assert labels(move_row) == ["⤒", "↑", "↓", "⤓"]
-    for button in args_header.children[1:] + env_header.children[1:]:
+    tools = [
+        w
+        for w in [*args_header.children, *move_row.children, *env_header.children]
+        if isinstance(w, toga.Button)
+    ]
+    for button in tools:
         assert button.style.margin_left > 0 and button.style.margin_right > 0
     form.done()
 

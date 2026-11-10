@@ -20,6 +20,7 @@ from typing import Any
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
+from . import versions
 from .piplike import parse_aliases
 
 PEP723_BLOCK = re.compile(
@@ -338,7 +339,7 @@ def folder_counts(folder: Path) -> dict[str, int] | None:
     except OSError:
         return None
     for child in children:
-        if child.name.startswith("."):
+        if child.name.startswith(".") or child.name == versions.BACKUPS:
             continue
         if child.is_dir():
             if (child / "pyproject.toml").exists():
@@ -408,8 +409,9 @@ def scan_all_prototypes(base_dir: Path) -> Iterable[Mapping[str, Any]]:
         return prototypes
 
     for item in sorted(base_dir.iterdir(), key=lambda x: x.name.lower()):
-        # Skip hidden files/folders (like .DS_Store or system bits)
-        if item.name.startswith("."):
+        # Skip hidden files/folders (like .DS_Store or system bits), and the
+        # backups of pasted things, which Setup lists (#182)
+        if item.name.startswith(".") or item.name == versions.BACKUPS:
             continue
 
         try:

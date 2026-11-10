@@ -14,8 +14,12 @@ import shutil
 import tarfile
 import tempfile
 import zipfile
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+
+from . import versions
 
 # Unpacked on request. A .pyz is a program that runs as it is, so it isn't here.
 ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz")
@@ -151,11 +155,6 @@ def unique_path(folder: Path, name: str) -> Path:
     return candidate
 
 
-def would_overwrite(folder: Path, name: str) -> bool:
-    """Whether a file or folder called `name` is already in `folder`."""
-    return (folder / name).exists()
-
-
 def is_archive(name: str) -> bool:
     """Whether `name` is an archive to offer to extract."""
     return name.lower().endswith(ARCHIVE_SUFFIXES)
@@ -166,28 +165,79 @@ def archive_top_level(archive: Path) -> list[str]:
     return sorted(_top_level(_members(archive)))
 
 
-def _target(folder: Path, name: str, overwrite: bool) -> Path:
-    return folder / name if overwrite else unique_path(folder, name)
+@dataclass(frozen=True)
+class Imported:
+    """What importing did.
+
+    `previous` is where the version it replaced was kept (None if nothing was
+    there). `unchanged` means what was pasted is exactly what was already there,
+    so nothing was written.
+    """
+
+    path: Path
+    previous: Path | None = None
+    unchanged: bool = False
 
 
-def import_file(source: Path, folder: Path, overwrite: bool = False) -> Path:
+def _replace_file(
+    write: Callable[[Path], object], target: Path, now: datetime
+) -> Path | None:
+    """Back up `target` if it is there, then write the new content to it."""
+    previous = versions.back_up(target, now) if target.exists() else None
+    write(target)
+    return previous
+
+
+def import_file(source: Path, folder: Path, now: datetime | None = None) -> Imported:
     """Copy `source` into `folder` under its own name, as it is.
 
     A repeated final extension in the name (``x.txt.txt``) is reduced to one.
-
-    An existing file is replaced only with ``overwrite``; otherwise the copy
-    gets an incrementing name. Returns the path written.
+    A file that is already there is backed up first (see :mod:`versions`),
+    unless it is identical, and the newest keeps the name.
     """
-    target = _target(folder, collapse_repeated_extension(source.name), overwrite)
-    shutil.copyfile(source, target)
-    return target
+    target = folder / collapse_repeated_extension(source.name)
+    if target.is_file() and versions.same_content(target, source):
+        return Imported(target, unchanged=True)
+    previous = _replace_file(
+        lambda t: shutil.copyfile(source, t), target, now or datetime.now()
+    )
+    return Imported(target, previous)
 
 
-def import_text(text: str, name: str, folder: Path, overwrite: bool = False) -> Path:
+def import_text(
+    text: str, name: str, folder: Path, now: datetime | None = None
+) -> Imported:
     """Write pasted `text` to `name` in `folder`; see :func:`import_file`."""
-    target = _target(folder, name, overwrite)
-    target.write_text(text, encoding="utf-8")
-    return target
+    target = folder / name
+    if target.is_file() and target.read_bytes() == text.encode("utf-8"):
+        return Imported(target, unchanged=True)
+    previous = _replace_file(
+        lambda t: t.write_text(text, encoding="utf-8"), target, now or datetime.now()
+    )
+    return Imported(target, previous)
+
+
+def store_archive(archive: Path, folder: Path, now: datetime | None = None) -> Imported:
+    """Unpack `archive` as a folder in `folder`; a folder already there is zipped.
+
+    The unpacked folder gets the name the archive says (see
+    :func:`extract_archive`). One already called that is backed up as a zip
+    and replaced, unless its content is identical.
+    """
+    with tempfile.TemporaryDirectory(dir=folder, prefix=".stage_") as staging:
+        unpacked = extract_archive(archive, Path(staging))
+        target = folder / unpacked.name
+        previous = None
+        if target.is_dir():
+            if versions.same_content(target, unpacked):
+                return Imported(target, unchanged=True)
+            previous = versions.back_up(target, now or datetime.now())
+            shutil.rmtree(target)
+        elif target.exists():
+            previous = versions.back_up(target, now or datetime.now())
+            target.unlink()
+        shutil.move(str(unpacked), str(target))
+    return Imported(target, previous)
 
 
 # -- Archives -------------------------------------------------------------------

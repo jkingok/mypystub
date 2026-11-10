@@ -94,7 +94,7 @@ def handler_names() -> set[tuple[str, str]]:
 
 def test_every_launcher_handler_is_guarded() -> None:
     """Every method wired as a handler shows its errors (Toga only logs them)."""
-    from mypystub import run_with, ui
+    from mypystub import run_backups, run_with, ui
 
     # Toga's own plumbing, or handlers that cannot fail in a way worth a dialog
     exempt = {"close_keyboard", "swap_in"}  # swap_in: a widget's own
@@ -102,7 +102,7 @@ def test_every_launcher_handler_is_guarded() -> None:
     for file, name in sorted(handler_names()):
         if name in exempt:
             continue
-        for cls in (ui.Prototype, run_with.RunWithForm):
+        for cls in (ui.Prototype, run_with.RunWithForm, run_backups.BackupsSection):
             method = getattr(cls, name, None)
             if method is not None:
                 break

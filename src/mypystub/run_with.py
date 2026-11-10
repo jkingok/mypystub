@@ -6,6 +6,9 @@ same way: a tap selects a row and the buttons act on it. Arguments keep their
 order, which the move buttons change; environment variables are always
 alphabetised, because their order doesn't matter. Every change is saved as it
 is made, so the form only needs Done; running is left to a tap on the row.
+
+The sections scroll above a fixed row of buttons, so the buttons stay on screen
+however long the sections get, and each section folds away under a switch.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from mypystub.run_settings import (
     env_value_problem,
     move,
 )
+from mypystub.ui_widgets import refresh_on_new_width
 
 # Toolbar-style buttons use symbols to fit a phone's width; the Help page
 # says what each one does. Not colour emoji: iOS greys out a disabled button
@@ -51,6 +55,11 @@ GAP = (0, 6)
 SYMBOL_SIZE = 22
 # Labels don't wrap on iOS, so notes are broken to fit an iPhone SE
 NOTE_WIDTH = 40
+# A list can't flex inside a ScrollContainer, so it is sized to its rows (a
+# DetailedList row with a subtitle is about this tall), up to a few rows; a
+# longer list scrolls within that
+ROW_HEIGHT = 60
+MOST_ROWS = 5
 
 
 class Screens(Protocol):
@@ -100,6 +109,45 @@ def shown(value: str) -> str:
     return value if value else "(empty)"
 
 
+def list_height(rows: int) -> int:
+    """The height of a list showing `rows` rows, at most MOST_ROWS of them."""
+    return max(1, min(rows, MOST_ROWS)) * ROW_HEIGHT
+
+
+def fit_list(rows_list: toga.DetailedList, rows: int) -> None:
+    """Size a list to its rows, or hide it when it has none.
+
+    The section's title gives the count, so an empty list needs no label.
+    """
+    rows_list.style.height = list_height(rows)
+    rows_list.style.display = "pack" if rows else "none"
+
+
+def collapsible(
+    title: str,
+    children: Sequence[toga.Widget],
+    *,
+    open: bool,
+    on_change: Callable[..., Any],
+) -> tuple[toga.Switch, toga.Box]:
+    """A section's switch, and the box of `children` it shows or hides.
+
+    The caller's `on_change` should call :func:`show_body`, after anything else
+    it does.
+    """
+    switch = toga.Switch(
+        title, value=open, on_change=on_change, margin=(8, 8, 0, 8), font_weight="bold"
+    )
+    body = toga.Column(children=list(children))
+    show_body(switch, body)
+    return switch, body
+
+
+def show_body(switch: toga.Switch, body: toga.Widget, has_rows: bool = True) -> None:
+    """Show `body` while its switch is on (and it has anything to show)."""
+    body.style.display = "pack" if switch.value and has_rows else "none"
+
+
 class RunWithForm:
     """Edit the arguments and own environment variables of one thing.
 
@@ -128,6 +176,7 @@ class RunWithForm:
         show_inherited: bool = False,
         on_show_inherited: Callable[[bool], None] | None = None,
         on_share: Callable[[], None] | None = None,
+        backups: toga.Widget | None = None,
     ) -> None:
         """Build the form; call :meth:`open` to show it.
 
@@ -136,8 +185,9 @@ class RunWithForm:
         is whether it already is. Inherited variables (the system's alone can be
         dozens, with long values) are hidden unless `show_inherited`; the switch
         that shows them calls `on_show_inherited`, so other screens can follow.
-        `on_share`, if given, adds a Share button that
-        calls it (the share sheet is iOS only, so it is left out elsewhere).
+        `backups`, if given, is the backup versions section (see
+        :mod:`run_backups`), put above the buttons. `on_share`, if given, adds a
+        Share button that calls it (the share sheet is iOS only, so it is left out elsewhere).
         """
         self.title = title
         self.screen_title = screen_title or f"Setup · {title}"
@@ -154,6 +204,7 @@ class RunWithForm:
         self.show_inherited = show_inherited
         self.on_show_inherited = on_show_inherited
         self.on_share = on_share
+        self.backups = backups  # the backup versions section, if there are any to show
         self._is_quick_start = is_quick_start
         self._qs_button: toga.Button | None = None
         self.share_button: toga.Button | None = None
@@ -161,8 +212,7 @@ class RunWithForm:
         self.env_name: str | None = None
         self._refreshing = False
 
-        self.args_list = toga.DetailedList(on_select=self._arg_selected, flex=1)
-        self.args_empty = toga.Label("No arguments", margin=(0, 8))
+        self.args_list = toga.DetailedList(on_select=self._arg_selected)
         self.arg_buttons = {
             "edit": self._tool(EDIT, self.edit_arg),
             "delete": self._tool(DELETE, self.delete_arg),
@@ -170,8 +220,7 @@ class RunWithForm:
         self.move_buttons: dict[Move, toga.Button] = {
             where: self._move_button(where) for where in MOVES
         }
-        self.env_list = toga.DetailedList(on_select=self._env_selected, flex=1)
-        self.env_empty = toga.Label("No environment variables", margin=(0, 8))
+        self.env_list = toga.DetailedList(on_select=self._env_selected)
         self.env_note = toga.Label("", margin=(0, 8))
         self.env_buttons = {
             "edit": self._tool(EDIT, self.edit_env),
@@ -191,6 +240,10 @@ class RunWithForm:
         )
         keep_selection(self.args_list)
         keep_selection(self.env_list)
+        # Each section's switch and the box it shows or hides, by name
+        self.sections: dict[str, tuple[toga.Switch, toga.Box]] = {}
+        self.button_row = toga.Row()
+        self.scroll = toga.ScrollContainer()
         self.content = self._build(args_note)
         self.refresh()
 
@@ -200,7 +253,7 @@ class RunWithForm:
         return toga.Button(
             MOVE_LABELS[where],
             on_press=lambda w: self.move_arg(where),
-            flex=1,
+            margin=GAP,
             font_size=SYMBOL_SIZE,
         )
 
@@ -208,55 +261,89 @@ class RunWithForm:
     def _tool(symbol: str, on_press: Callable[..., Any]) -> toga.Button:
         return toga.Button(symbol, on_press=on_press, margin=GAP, font_size=SYMBOL_SIZE)
 
-    def _header(self, label: str, add: Callable[..., Any], buttons: dict) -> toga.Box:
+    def _toolbar(
+        self,
+        add: Callable[..., Any],
+        buttons: dict,
+        lead: Sequence[toga.Widget] = (),
+    ) -> toga.Box:
+        """A section's buttons under its switch: `lead` at the left, the rest right.
+
+        An empty box flexes between them, pushing each group to its side.
+        """
         return toga.Row(
             align_items="center",
-            margin=(8, 4, 0, 8),
+            margin=(0, 4),
             children=[
-                toga.Label(label, font_weight="bold", flex=1),
+                *lead,
+                toga.Box(flex=1),
                 self._tool(ADD, add),
                 *buttons.values(),
             ],
         )
 
+    def _section(
+        self, name: str, title: str, children: Sequence[toga.Widget]
+    ) -> list[toga.Widget]:
+        """A section that its switch folds away; open when the form opens."""
+        switch, body = collapsible(
+            title, children, open=True, on_change=self._toggle_section
+        )
+        self.sections[name] = (switch, body)
+        return [switch, body]
+
     def _build(self, args_note: str) -> toga.Widget:
         children: list[toga.Widget] = []
         if self.with_args:
-            children += [
-                self._header("Arguments", self.add_arg, self.arg_buttons),
-                self.args_list,
-                self.args_empty,
-                toga.Row(margin=(0, 4), children=list(self.move_buttons.values())),
-            ]
+            # One row saves space: moves at the left, add/edit/delete at the right
+            self.move_row = toga.Row(children=list(self.move_buttons.values()))
+            self.args_tools = self._toolbar(
+                self.add_arg, self.arg_buttons, lead=[self.move_row]
+            )
+            children += self._section(
+                "args", "Arguments", [self.args_tools, self.args_list]
+            )
         else:
             children.append(toga.Label(args_note, margin=(8, 8, 0, 8)))
-        children += [
-            self._header("Environment (A–Z)", self.add_env, self.env_buttons),
-            *([self.inherited_switch] if self.inherited_switch is not None else []),
-            self.env_list,
-            self.env_empty,
-            self.env_note,
-        ]
-        if self.on_share is not None:
-            children.append(
-                # Labels don't wrap on iOS, so the break is explicit
-                toga.Label(
-                    "Share sends the file or project only,\n"
-                    "not your saved arguments or variables.",
-                    margin=(0, 8),
-                )
-            )
-        bottom: list[toga.Widget] = [toga.Box(flex=1)]
+        self.env_tools = self._toolbar(self.add_env, self.env_buttons)
+        children += self._section(
+            "env",
+            "Environment",
+            [
+                self.env_tools,
+                *([self.inherited_switch] if self.inherited_switch is not None else []),
+                self.env_list,
+                self.env_note,
+            ],
+        )
+        if self.backups is not None:
+            children.append(self.backups)
+        self.scroll = toga.ScrollContainer(
+            horizontal=False, flex=1, content=toga.Column(children=children)
+        )
+        if sys.platform == "ios":
+            content = self.scroll.content
+            assert content is not None
+            refresh_on_new_width(self.scroll._impl.document_container, content.refresh)
+
+        # The buttons share the row's width and stay put below the scrolling part
+        bottom: list[toga.Widget] = []
         if self.on_quick_start is not None:
             bottom.append(self._quick_start_button())
         if self.on_share is not None:
             self.share_button = toga.Button(
-                "Share", on_press=self._press_share, margin=GAP
+                "Share", on_press=self._press_share, margin=GAP, flex=1
             )
             bottom.append(self.share_button)
-        bottom.append(toga.Button("Done", on_press=self.done, margin=GAP))
-        children.append(toga.Row(margin=4, children=bottom))
-        return toga.Column(flex=1, children=children)
+        bottom.append(toga.Button("Done", on_press=self.done, margin=GAP, flex=1))
+        self.button_row = toga.Row(margin=4, children=bottom)
+        return toga.Column(flex=1, children=[self.scroll, self.button_row])
+
+    @guarded
+    def _toggle_section(self, widget: toga.Switch, **kwargs: Any) -> None:
+        for switch, body in self.sections.values():
+            if switch is widget:
+                show_body(switch, body)
 
     def _quick_start_button(self) -> toga.Button:
         """The button that makes this thing the launch Quick Start."""
@@ -264,6 +351,7 @@ class RunWithForm:
             "Quick Start ✓" if self._is_quick_start else "Make Quick Start",
             on_press=self._press_quick_start,
             margin=GAP,
+            flex=1,
             enabled=not self._is_quick_start,
         )
         return self._qs_button
@@ -367,7 +455,9 @@ class RunWithForm:
             button.enabled = has_arg
         for where, button in self.move_buttons.items():
             button.enabled = can_move(len(self.args), self.arg_index, where)
-        self.args_empty.style.visibility = "hidden" if self.args else "visible"
+        fit_list(self.args_list, len(self.args))
+        if "args" in self.sections:
+            self.sections["args"][0].text = f"Arguments ({len(self.args)})"
 
         row = self.selected_env()
         self.env_buttons["edit"].enabled = row is not None
@@ -378,12 +468,12 @@ class RunWithForm:
             self.inherited_switch.text = "Show inherited variables" + (
                 f" ({hidden} hidden)" if hidden and not self.show_inherited else ""
             )
-        self.env_empty.text = (
-            f"{hidden} inherited variables hidden"
-            if hidden and not self.visible_rows()
-            else "No environment variables"
-        )
-        self.env_empty.style.visibility = "hidden" if self.visible_rows() else "visible"
+        visible = len(self.visible_rows())
+        fit_list(self.env_list, visible)
+        if "env" in self.sections:
+            # The rows listed; they are still sorted A–Z
+            self.sections["env"][0].text = f"Environment ({visible})"
+        self.env_note.style.display = "pack" if row is not None else "none"
         self.env_buttons["view"].enabled = row is not None
         if row is not None and row.inherited and row.source == SYSTEM:
             note = (

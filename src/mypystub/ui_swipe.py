@@ -17,6 +17,7 @@ from . import (
 )
 from .errors import guarded
 from .pages import html_page, readme_html, without_title
+from .run_backups import BackupsSection
 from .run_settings import RunSettings, quick_start_name
 from .run_with import RunWithForm
 from .ui_helpers import open_share_sheet
@@ -180,6 +181,17 @@ class SwipeMixin(RowSettingsMixin):
         def start_share() -> None:
             asyncio.ensure_future(self.share_row(row))
 
+        backups = None
+        if row_info.row_type(row) in ("script", "project", "zipapp"):
+            item = self.row_path(row)
+            if item is not None:
+                backups = BackupsSection(
+                    item,
+                    ask=self.ask,
+                    tell=self.tell,
+                    on_change=lambda: self.reload_menu(self.script_list),
+                ).content
+
         form = RunWithForm(
             title,
             args=saved.args if runs else None,
@@ -197,6 +209,7 @@ class SwipeMixin(RowSettingsMixin):
             show_inherited=self.show_inherited_env,
             on_show_inherited=self.set_show_inherited_env,
             on_share=start_share if share_items.share_available() else None,
+            backups=backups,
         )
         form.open()
         self.run_with_form = form

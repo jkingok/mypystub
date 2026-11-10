@@ -88,20 +88,29 @@ def test_files_are_copied_as_they_are(tmp_path: Path) -> None:
     source.write_bytes(b"PK\x03\x04binary")
     dest = tmp_path / "out"
     dest.mkdir()
-    result = paste_import.import_file(source, dest)
+    result = paste_import.import_file(source, dest).path
     assert result == dest / "tool.pyz" and result.read_bytes() == b"PK\x03\x04binary"
 
 
-def test_existing_files_are_not_overwritten_by_default(tmp_path: Path) -> None:
-    """A clash gets an incrementing name unless overwriting was chosen."""
+def test_a_clash_keeps_the_new_name_and_the_old_as_a_version(tmp_path: Path) -> None:
+    """The newest has the right name; what it replaced is kept beside it (#182)."""
     (tmp_path / "tool.py").write_text("old")
-    assert paste_import.would_overwrite(tmp_path, "tool.py")
-    first = paste_import.import_text("new", "tool.py", tmp_path)
-    assert first == tmp_path / "tool_2.py" and first.read_text() == "new"
-    assert (tmp_path / "tool.py").read_text() == "old"
-    replaced = paste_import.import_text("newer", "tool.py", tmp_path, overwrite=True)
-    assert replaced == tmp_path / "tool.py" and replaced.read_text() == "newer"
-    assert not paste_import.would_overwrite(tmp_path, "other.py")
+    now = datetime(2026, 11, 5, 14, 32, 7)
+    imported = paste_import.import_text("new", "tool.py", tmp_path, now)
+    assert imported.path == tmp_path / "tool.py" and imported.path.read_text() == "new"
+    assert imported.previous == tmp_path / "backups" / "tool.2026-11-05T143207.py"
+    assert imported.previous.read_text() == "old"
+    assert not imported.unchanged
+    fresh = paste_import.import_text("x", "other.py", tmp_path, now)
+    assert fresh.previous is None
+
+
+def test_pasting_what_is_already_there_changes_nothing(tmp_path: Path) -> None:
+    """Identical content makes no new version."""
+    (tmp_path / "tool.py").write_text("same")
+    imported = paste_import.import_text("same", "tool.py", tmp_path)
+    assert imported.unchanged and imported.previous is None
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["tool.py"]  # no backups/
 
 
 def make_zip(path: Path, members: dict[str, str]) -> Path:
@@ -230,7 +239,7 @@ def test_a_copied_file_loses_a_repeated_extension(tmp_path: Path) -> None:
     (source / "x.txt.txt").write_text("hello")
     folder = tmp_path / "docs"
     folder.mkdir()
-    written = paste_import.import_file(source / "x.txt.txt", folder)
+    written = paste_import.import_file(source / "x.txt.txt", folder).path
     assert written.name == "x.txt" and written.read_text() == "hello"
 
 

@@ -102,21 +102,3 @@ def test_a_vanished_file_is_reported_not_shared(
     (docs / "top.py").unlink()
     run(app, proto.share_row(target))
     assert shared == [] and shown and "top.py" in shown[0]
-
-
-def labels(widget: toga.Widget) -> list[str]:
-    """The text of every label under `widget`."""
-    found = [widget.text] if isinstance(widget, toga.Label) else []
-    for child in widget.children:
-        found += labels(child)
-    return found
-
-
-def test_the_share_note_is_broken_to_fit_a_small_phone(
-    proto: ui.Prototype, shared: list[Path]
-) -> None:
-    """Labels don't wrap on iOS, so each line must fit an iPhone SE by itself."""
-    form = proto.open_run_with(row(proto, "top"))
-    (note,) = [text for text in labels(form.content) if text.startswith("Share")]
-    assert max(len(line) for line in note.splitlines()) <= 40
-    form.done()

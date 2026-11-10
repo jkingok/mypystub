@@ -38,7 +38,8 @@ def test_inherited_variables_start_hidden_with_a_count(
     assert rows(form) == []
     assert form.inherited_switch is not None
     assert form.inherited_switch.text == "Show inherited variables (2 hidden)"
-    assert form.env_empty.text == "2 inherited variables hidden"
+    # The switch says how many are hidden, and the section how many are listed
+    assert form.sections["env"][0].text == "Environment (0)"
     form.done()
 
 
