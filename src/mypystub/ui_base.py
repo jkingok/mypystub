@@ -13,13 +13,14 @@ import toga
 from toga.style import Pack
 
 from . import hooks as h
-from . import piplike as pip
 from . import (
+    logfile,
     prompts,
     resume,
     runner,
     scan,
 )
+from . import piplike as pip
 from . import settings as s
 from .errors import guarded
 from .pages import html_page
@@ -57,6 +58,7 @@ ENTRY_ICONS = {
 }
 
 
+PRESERVE_LOGS_SETTING = "preserve_logs"  # launcher.toml: keep the log
 RESUME_SETTING = "resume"  # launcher.toml: false starts fresh every time
 
 
@@ -292,6 +294,21 @@ class PrototypeBase:
         else:
             if negative:
                 negative()
+
+    @property
+    def preserve_logs(self) -> bool:
+        """Whether the log is kept between launches (Setup's Preserve Logs)."""
+        return self.settings.get_flag(PRESERVE_LOGS_SETTING, False)
+
+    def set_preserve_logs(self, preserve: bool) -> None:
+        """Turn Preserve Logs on or off. Off only matters at the next start."""
+        self.settings.set_flag(PRESERVE_LOGS_SETTING, preserve)
+
+    def apply_log_policy(self) -> None:
+        """At launch, empty the log unless Preserve Logs is on."""
+        redirector = logfile.current()
+        if redirector is not None and not self.preserve_logs:
+            redirector.truncate()
 
     def remember(self) -> None:
         """Save where the user is (see ResumeMixin); does nothing in the base."""

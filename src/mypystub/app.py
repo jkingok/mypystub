@@ -2,7 +2,7 @@
 Application initialization and log redirection.
 
 Manages application startup (`MyApp`) and redirects standard output/error to
-disk (`LogRedirector`).
+disk (see :mod:`logfile`).
 """
 
 import asyncio
@@ -17,52 +17,7 @@ from typing import Any, cast
 
 import toga
 
-from . import hooks, ui
-
-
-class LogRedirector:
-    """
-    Redirects Python stdout and stderr streams to both standard output and a persistent file log.
-
-    :param log_path: Path to target log file on disk.
-    :type log_path: str | Path
-    """
-
-    def __init__(self, log_path: Path):
-        """
-        Creates the log redirector that will duplicate output to the given log_path.
-        """
-        self.log_path = log_path or Path("./app_runtime.log")
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.log_file = self.log_path.open(mode="a", buffering=1, encoding="utf-8")
-        self.terminal = sys.__stdout__  # both out and err end up in out
-
-    def isatty(self) -> bool:
-        # Hopefully this only prevents fancy not all input!
-        return False
-
-    @property
-    def path(self) -> Path:
-        return self.log_path
-
-    def write(self, message: str) -> None:
-        """
-        Writes a message string to terminal stdout and log file simultaneously.
-
-        :param message: String output message.
-        :type message: str
-        """
-        if self.terminal:
-            self.terminal.write(message)
-        self.log_file.write(message)
-
-    def flush(self) -> None:
-        """
-        Flushes terminal and log file buffers.
-        """
-        if self.terminal:
-            self.terminal.flush()
-        self.log_file.flush()
+from . import hooks, logfile, ui
 
 
 class MyApp(toga.App):
@@ -189,6 +144,8 @@ class MyApp(toga.App):
                 getattr(mw, "content_stack", []).append((mw.title, mw.content))
             mw.title = t
             mw.content = p.get_content()
+            if fresh:
+                p.apply_log_policy()  # Preserve Logs off: start with an empty log
             tab = p.choose_start_tab()
             if fresh:
                 # Resume where the user was, or offer the Quick Start, once the
@@ -283,9 +240,7 @@ def bootstrap_application() -> Any:
 
     log_path = user_documents_dir / "app_runtime.log"
 
-    redirector = LogRedirector(log_path)
-    sys.stdout = redirector
-    sys.stderr = redirector
+    logfile.install(log_path)
 
     export_ssl_cert_bundle()
 

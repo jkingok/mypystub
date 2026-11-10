@@ -293,6 +293,11 @@ class SetupMixin(PrototypeBase):
             await self.info(f"Couldn't open {folder} in Files.", "Files")
 
     @guarded
+    def handle_preserve_logs_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
+        """The switch for keeping the log between launches (#198)."""
+        self.set_preserve_logs(bool(widget.value))
+
+    @guarded
     def handle_resume_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
         """The switch for resuming where the user left off (#188)."""
         self.set_resume_enabled(bool(widget.value))
@@ -417,6 +422,12 @@ class SetupMixin(PrototypeBase):
             heading("App"),
             self.menu_entry(
                 toga.Button("Open Documents in Files", on_press=self.handle_open_files)
+            ),
+            toga.Switch(
+                "Preserve Logs",
+                value=self.preserve_logs,
+                on_change=self.handle_preserve_logs_toggle,
+                margin=(4, 8),
             ),
             toga.Switch(
                 "Resume where I left off",

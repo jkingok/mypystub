@@ -48,12 +48,15 @@ Everything the script writes to standard output (`print()`, `sys.stdout`) appear
 This is the Python log messages especially from the startup. You can see a lot of errors from in here, though you may need to click Reload first.
 Clear can be used when the log gets too long.
 
+The log is emptied each time the app starts, so it can't grow without limit. Turn on **Preserve Logs** in the Setup tab to keep it between launches (it is then only emptied when you clear it).
+
 ## Settings
 
 The Setup tab has these sections:
 
 - **Projects**: create a new project from the template (below).
 - **Environment**: environment variables every script and project inherits (see *Swipe right: Setup* above).
+- **Preserve Logs**: keep the log between launches instead of starting each launch with an empty one. Off by default.
 - **Resume where I left off**: whether the app puts you back where you were after iOS ended it (see *Picking up where you left off*). On by default.
 - **Packages**: everything about the Python and packages in this app, on one page: the Python version, the packages built into the app, your user packages with their size, and the aliases in effect. *Check for updates* does two checks at once. It asks [PyPI](https://pypi.org) (through its [JSON API](https://docs.pypi.org/api/json/)) for newer versions of your user packages, and compares the app's Python with [python.org's releases](https://www.python.org/downloads/) (through its [downloads API](https://www.python.org/api/v2/downloads/release/?is_published=true)) and the built-in packages with PyPI. If one check can't be made, the other still shows. *Update all* installs the newer user packages. The app's own Python and packages can only be updated by a new build of the app. *Wipe user packages…* deletes the user packages; prototypes reinstall what they need on their next run, which needs the network.
 - **App**: back up your files, or exit back to the launcher you came from.
