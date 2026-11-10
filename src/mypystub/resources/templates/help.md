@@ -46,9 +46,8 @@ Everything the script writes to standard output (`print()`, `sys.stdout`) appear
 ## Logs
 
 This is the Python log messages especially from the startup. You can see a lot of errors from in here, though you may need to click Reload first.
-Clear can be used when the log gets too long.
 
-The log is emptied each time the app starts, so it can't grow without limit. Turn on **Preserve Logs** in the Setup tab to keep it between launches (it is then only emptied when you clear it).
+The log is emptied each time the app starts, so it can't grow without limit. Turn on **Preserve Logs** in the Setup tab to keep it between launches; **Clear Now**, beside Reload on this tab, empties the log whenever you like, whichever way that switch is set. It doesn't need a restart.
 
 ## Settings
 

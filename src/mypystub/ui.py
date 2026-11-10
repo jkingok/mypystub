@@ -14,6 +14,8 @@ from toga.style import Pack
 from . import (
     about,
     first_run,
+    logfile,
+    maintenance,
     resume,
 )
 from .errors import guarded
@@ -66,13 +68,28 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
             self.log_text.value = logs
 
     @guarded
-    def clear_logs(self, widget: toga.Widget, **kwargs: Any) -> None:
-        if log_path := getattr(sys.stdout, "path", None):
-            log_path.unlink()
-            self.log_text.value = ""
-            asyncio.create_task(
-                self.info("You will need to close and re-open the app.", "Logs Cleared")
-            )
+    async def handle_clear_now(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Empty the log now, in place and without a restart (#200).
+
+        Always available: it uses the redirector's own truncate(), which does
+        not look at the Preserve Logs setting. That switch only decides what
+        happens at the next launch.
+        """
+        redirector = logfile.current()
+        if redirector is None:
+            await self.info("There is no log file in this run to clear.", "Clear Now")
+            return
+        size = maintenance.human_size(redirector.size())
+        if not await self.confirm(
+            f"Delete the log ({size})? This can't be undone.", "Clear Now"
+        ):
+            return
+        freed = redirector.truncate()
+        self.log_text.value = ""
+        await self.info(
+            f"The log is empty now ({maintenance.human_size(freed)} freed).",
+            "Log cleared",
+        )
 
     @guarded
     def tab_changed(self, widget: toga.Widget) -> None:
@@ -325,7 +342,9 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
                                         "Reload", on_press=self.reload_logs, flex=1
                                     ),
                                     toga.Button(
-                                        "Clear", on_press=self.clear_logs, flex=1
+                                        "Clear Now",
+                                        on_press=self.handle_clear_now,
+                                        flex=1,
                                     ),
                                 ]
                             ),
