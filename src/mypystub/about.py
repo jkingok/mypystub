@@ -20,17 +20,19 @@ RELEASE_VERSION = re.compile(r"\d{4}\.[1-9]\d?\.[1-9]\d?\.[1-9]\d*")
 
 
 def source_url(home_page: str | None, version: str | None) -> str | None:
-    """Where this build's source code is published.
+    """Where this build is published.
 
-    Release builds are tagged with their version, and the tag is mirrored to
-    the public repository with ``main``, so they link to that tag. Other runs
-    (``briefcase dev``, the placeholder version) link to the repository.
+    Release builds are tagged with their version, the tag is mirrored to the
+    public repository with ``main``, and each gets a GitHub Release with its
+    What's New text, so they link to that Release page (which also leads to the
+    code at the tag). Other runs (``briefcase dev``, the placeholder version)
+    link to the repository.
     """
     if not home_page or not home_page.startswith("https://"):
         return None
     home = home_page.rstrip("/")
     if version and RELEASE_VERSION.fullmatch(version):
-        return f"{home}/tree/{version}"
+        return f"{home}/releases/tag/{version}"
     return home
 
 

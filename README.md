@@ -88,3 +88,25 @@ Fastlane sets the version, so do not edit it by hand. Before Briefcase runs, it 
 Runs straight from the source tree (`briefcase dev`, tests) show the placeholder version in `pyproject.toml`.
 
 After a successful upload, `share` tags the commit with the Python version (for example `2026.11.2.3`) and pushes the tag. The `mirror` lane copies `main` and the release tags on `main` to the public repository, and the About page links to the tag of the running build ("Source"). Tags on commits that aren't on `main` stay private, so share from `main`; a build from a branch that is later squash-merged keeps a private tag, and the lane warns about it. Build numbers count both TestFlight and these tags, so a number is never reused.
+
+### GitHub Releases
+
+After the tag is mirrored, `share` creates a **GitHub Release** for it on the public repository (`PUBLIC_REPOSITORY`, default `jkingok/mypystub`). Its title is the version and its body is that build's *What's New* text, the same Markdown the app shows (`scripts/collect_changes.py --release-notes <version>`). The About page's *Source* link opens that Release page, which also leads to the code at the tag.
+
+Creating a Release needs `GITHUB_RELEASE_TOKEN`, a token allowed to write Releases on the public repository. Keep it in the environment with the App Store Connect keys, never in the repository. (Fastlane's `set_github_release` takes it as its `api_token` argument; its own environment variable would be `FL_GITHUB_RELEASE_API_TOKEN`, but this repository reads `GITHUB_RELEASE_TOKEN` and passes it in.) Without it `share` warns and skips the Release, since the upload has already happened; make it later with:
+
+```bash
+bundle exec fastlane release version:2026.11.8.1
+```
+
+#### Making a token (desktop or CI)
+
+Use a fine-grained personal access token limited to the public repository:
+
+1. GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token.
+2. Resource owner `jkingok`; **Only select repositories**: `jkingok/mypystub`.
+3. Repository permissions: **Contents: Read and write** (what creating a Release needs; Metadata read-only is added for you).
+4. Pick an expiry, generate, and copy the token (it is shown once).
+5. On the Mac, `export GITHUB_RELEASE_TOKEN=...` in the shell profile or keychain-backed secrets, then run the `release` lane above. In CI, store it as a repository secret.
+
+A classic token with the `public_repo` scope also works but reaches all your public repositories. Check GitHub's [managing personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) page for the current steps; these were written from memory.

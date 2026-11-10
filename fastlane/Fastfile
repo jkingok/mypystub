@@ -60,6 +60,39 @@ def mirror_to_public
   end
 end
 
+# The public repository holds the tags and the GitHub Releases the app links to
+PUBLIC_REPOSITORY = ENV["PUBLIC_REPOSITORY"] || "jkingok/mypystub"
+
+# Creates (or updates) the GitHub Release for a build on the public repository.
+# Its title is the version and its body is that build's What's New text, the
+# same Markdown the app shows (scripts/collect_changes.py --release-notes). The
+# tag has to be there already: mirror_to_public pushes it.
+#
+# Needs GITHUB_RELEASE_TOKEN, a token allowed to write Releases on the public
+# repository. It comes from the environment, never from this repository. Without
+# it the Release is skipped with a warning, since the TestFlight upload has
+# already happened; run `bundle exec fastlane release version:<version>` later.
+def publish_release(version)
+  token = ENV["GITHUB_RELEASE_TOKEN"].to_s
+  if token.empty?
+    UI.important(
+      "GITHUB_RELEASE_TOKEN isn't set, so no GitHub Release was made for #{version}. " \
+      "Set it and run: bundle exec fastlane release version:#{version}"
+    )
+    return
+  end
+  notes = sh("uv --directory .. run scripts/collect_changes.py --release-notes #{version}", log: false).strip
+  set_github_release(
+    repository_name: PUBLIC_REPOSITORY,
+    api_token: token,
+    tag_name: version,
+    name: version,
+    description: notes,
+    is_draft: false,
+    is_prerelease: false
+  )
+end
+
 default_platform(:ios)
 
 platform :ios do
@@ -309,6 +342,10 @@ platform :ios do
     # tag (and main, which holds the build's release notes) must be there
     # before the build reaches testers.
     mirror_to_public
+
+    # 8. A GitHub Release for the tag, with this build's What's New text, which
+    # the About page's Source link opens.
+    publish_release(python_version)
     #pilot(
     #  api_key: api_key,
     #  ipa: ipa_path,
@@ -321,4 +358,11 @@ end
 desc "Mirror main and its release tags to the public repository"
 lane :mirror do
   mirror_to_public
+end
+
+desc "Create the GitHub Release for a version already tagged and mirrored"
+lane :release do |options|
+  version = options[:version]
+  UI.user_error!("Give the version: bundle exec fastlane release version:2026.11.8.1") if version.to_s.empty?
+  publish_release(version)
 end

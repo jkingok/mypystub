@@ -143,8 +143,8 @@ REPO = "https://github.com/jkingok/mypystub"
 @pytest.mark.parametrize(
     ("home", "version", "url"),
     [
-        (REPO, "2026.11.2.3", f"{REPO}/tree/2026.11.2.3"),
-        (REPO + "/", "2026.11.2.3", f"{REPO}/tree/2026.11.2.3"),
+        (REPO, "2026.11.2.3", f"{REPO}/releases/tag/2026.11.2.3"),
+        (REPO + "/", "2026.11.2.3", f"{REPO}/releases/tag/2026.11.2.3"),
         (REPO, "0.0.2", REPO),  # a dev run: no release tag, so the repository
         (REPO, None, REPO),
         (None, "2026.11.2.3", None),
@@ -154,7 +154,7 @@ REPO = "https://github.com/jkingok/mypystub"
 def test_source_url_points_at_the_release_tag(
     home: str | None, version: str | None, url: str | None
 ) -> None:
-    """Release builds link to their tag; other runs to the repository."""
+    """Release builds link to their Release page; other runs to the repository."""
     assert about.source_url(home, version) == url
 
 
@@ -167,7 +167,7 @@ def test_source_row_appears_with_a_home_page(tmp_path: Path) -> None:
         tmp_path / "site",
         home_page=REPO,
     )
-    assert ("Source", f"{REPO}/tree/2026.11.2.3") in section(sections, "App")
+    assert ("Source", f"{REPO}/releases/tag/2026.11.2.3") in section(sections, "App")
     without = about.collect_environment("MyPyStub", "1", {}, tmp_path / "site")
     assert [key for key, _ in section(without, "App")] == ["Name", "Version"]
 

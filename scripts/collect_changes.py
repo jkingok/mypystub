@@ -18,6 +18,7 @@ Usage::
 
     uv run scripts/collect_changes.py 2026.11.3.1
     uv run scripts/collect_changes.py --notes 2026.11.3.1
+    uv run scripts/collect_changes.py --release-notes 2026.11.3.1
 
 The second form prints that build's section as plain text, for TestFlight's
 "What to Test". It prints nothing if the build has no section.
@@ -98,6 +99,23 @@ def notes_for(text: str, version: str) -> str:
     return "\n".join(lines).strip()
 
 
+NO_CHANGES = "No user-facing changes."
+
+
+def release_notes_for(text: str, version: str) -> str:
+    """Markdown for a GitHub Release: `version`'s section of What's New.
+
+    The same text the app shows, without its ``## <version> (<date>)`` heading,
+    since a Release already has a title. A build with no section of its own
+    (nothing a user would notice) gets one line saying so.
+    """
+    sections = parse(text)
+    if not sections or sections[0].version != version:
+        return NO_CHANGES
+    lines = sections[0].render().splitlines()[1:]  # drop the section heading
+    return "\n".join(lines).strip() or NO_CHANGES
+
+
 def read_fragments(folder: Path) -> list[tuple[str, str, str]]:
     """(number, type, text) for each fragment, ordered by number."""
     found = []
@@ -166,6 +184,11 @@ def main(argv: list[str] | None = None) -> None:
         help="print the build's notes as plain text instead of collecting",
     )
     parser.add_argument(
+        "--release-notes",
+        action="store_true",
+        help="print the build's notes as Markdown for a GitHub Release",
+    )
+    parser.add_argument(
         "--root",
         type=Path,
         default=Path(__file__).resolve().parent.parent,
@@ -175,10 +198,11 @@ def main(argv: list[str] | None = None) -> None:
         "--today", type=date.fromisoformat, default=None, help="YYYY-MM-DD"
     )
     args = parser.parse_args(argv)
-    if args.notes:
+    if args.notes or args.release_notes:
         path = args.root / WHATS_NEW
         text = path.read_text(encoding="utf-8") if path.exists() else ""
-        print(notes_for(text, args.version))
+        notes = release_notes_for if args.release_notes else notes_for
+        print(notes(text, args.version))
         return
     count = collect(args.root, args.version, args.today or date.today())
     print(f"Collected {count} change{'' if count == 1 else 's'} for {args.version}")
