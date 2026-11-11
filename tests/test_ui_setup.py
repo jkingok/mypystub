@@ -237,7 +237,7 @@ def test_open_settings_button(
 
     proto.open_setup_page("permissions")
     proto.handle_open_settings(proto.update_all_button)
-    assert proto.setup_activity.text.text == "Settings can only be opened on iOS"
+    assert proto.setup_activity.text.text == "Settings couldn't be opened"
 
     opened: list[bool] = []
     monkeypatch.setattr(

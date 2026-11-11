@@ -79,6 +79,14 @@ def test_permissions_page_lists_each_status() -> None:
     assert "Open Settings" in page
 
 
+def test_local_network_note_only_when_it_is_listed() -> None:
+    """The iOS-only local network note shows only with that row (not on Android)."""
+    listed = setup_pages.permissions_html({"Local network": "Unknown"})
+    assert "iOS has no way to ask about local network access" in listed
+    android = setup_pages.permissions_html({"Location": "Allowed"})
+    assert "local network" not in android
+
+
 def test_text_is_escaped() -> None:
     """Package names, versions and errors can't inject HTML."""
     page = setup_pages.packages_html("<b>", {"<x>": "1"}, None, "<script>")

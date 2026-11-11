@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from mypystub import permissions
 
 
@@ -29,6 +31,18 @@ def test_status_lists_every_declared_permission() -> None:
         "Camera": "Not allowed (or not asked yet)",
         "Photo library": "Unknown",
         "Local network": "Unknown",
+    }
+
+
+def test_android_shows_only_location_and_camera(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Android lists just what the examples use; the other rows are iOS-only."""
+    monkeypatch.setattr(permissions.sys, "platform", "android")
+    status = permissions.status(fake_app(location=True, camera=False))
+    assert status == {
+        "Location": "Allowed",
+        "Camera": "Not allowed (or not asked yet)",
     }
 
 

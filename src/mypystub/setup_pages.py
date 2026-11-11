@@ -163,6 +163,10 @@ def permissions_html(statuses: Mapping[str, str]) -> str:
         + "<p>Changed your mind? A permission appears in the Settings app once a "
         "prototype has asked for it. <b>Open Settings</b> goes to this app's page "
         "there.</p>"
-        "<p>iOS has no way to ask about local network access, so it always shows "
-        "as Unknown.</p>"
+        + (
+            "<p>iOS has no way to ask about local network access, so it always shows "
+            "as Unknown.</p>"
+            if "Local network" in statuses
+            else ""
+        )
     )

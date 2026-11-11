@@ -286,9 +286,9 @@ class SetupMixin(PrototypeBase):
 
     @guarded
     def handle_open_settings(self, widget: toga.Widget, **kwargs: Any) -> None:
-        """Open this app's page in the iOS Settings app."""
+        """Open this app's page in the Settings app (iOS) or system settings (Android)."""
         if not permissions.open_app_settings():
-            self.setup_activity.update("Settings can only be opened on iOS", on=False)
+            self.setup_activity.update("Settings couldn't be opened", on=False)
 
     @guarded
     async def handle_open_files(self, widget: toga.Widget, **kwargs: Any) -> None:

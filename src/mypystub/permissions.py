@@ -11,6 +11,9 @@ from typing import Any
 # The permissions the app declares (see pyproject.toml and #69), in display order
 DECLARED = ("Location", "Camera", "Photo library", "Local network")
 
+# What Android shows: the permissions the examples use (Location and Camera)
+ANDROID_SHOWN = ("Location", "Camera")
+
 UNKNOWN = "Unknown"
 
 # PHAuthorizationStatus, in value order
@@ -48,19 +51,27 @@ def status(app: Any) -> dict[str, str]:
     Location and camera come from Toga, the photo library from PHPhotoLibrary.
     iOS has no way to ask about local network access, so it's always Unknown.
     """
-    return {
+    statuses = {
         "Location": toga_status(getattr(app, "location", None)),
         "Camera": toga_status(getattr(app, "camera", None)),
         "Photo library": photo_status(),
         "Local network": UNKNOWN,
     }
+    if sys.platform == "android":
+        # Internet is granted at install, and Android has no local network or
+        # photo prompt that the examples use, so only Location and Camera show.
+        return {name: statuses[name] for name in ANDROID_SHOWN}
+    return statuses
 
 
 def open_app_settings() -> bool:
     """Open this app's page in the iOS Settings app. False off iOS.
 
-    Must be called on the main thread.
+    Must be called on the main thread. On Android the app's page is opened with
+    ``ACTION_APPLICATION_DETAILS_SETTINGS``.
     """
+    if sys.platform == "android":
+        return _open_android_settings()
     if sys.platform != "ios":
         return False
     from toga_iOS.libs import NSURL
@@ -69,4 +80,22 @@ def open_app_settings() -> bool:
 
     url = NSURL.URLWithString_(app_settings_url())
     shared_application().openURL_options_completionHandler_(url, {}, None)
+    return True
+
+
+def _open_android_settings() -> bool:
+    """Start the system page for this app. False if it couldn't be started."""
+    try:
+        from java import jclass  # type: ignore[import-not-found]  # Chaquopy
+
+        # Briefcase's MainActivity keeps itself in a static field for this
+        activity = jclass("org.beeware.android.MainActivity").singletonThis
+        intent_class = jclass("android.content.Intent")
+        settings = jclass("android.provider.Settings")
+        uri = jclass("android.net.Uri")
+        intent = intent_class(settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        intent.setData(uri.fromParts("package", activity.getPackageName(), None))
+        activity.startActivity(intent)
+    except Exception:  # noqa: BLE001  (no Chaquopy, or no such activity)
+        return False
     return True
