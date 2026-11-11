@@ -1,5 +1,12 @@
 # What's New
 
+## 2026.11.12.1 (2026-11-12)
+
+### New
+
+- Check for updates now first asks GitHub whether you are running the latest build of the app. If a newer build is out you're told straight away, with a link to what's new in it; otherwise it goes on to compare Python and the bundled packages as before.
+- Builds for Android are now automated, though they are functionally very incomplete.
+
 ## 2026.11.10.1 (2026-11-10)
 
 ### New
