@@ -9,12 +9,14 @@ Sources (also linked from the Help page):
 - Package versions: the PyPI JSON API, ``PYPI_JSON_URL``.
 """
 
+from __future__ import annotations
+
 import re
 import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx2
 from packaging.utils import canonicalize_name
@@ -31,6 +33,10 @@ APP_CRITICAL = frozenset(
 )
 
 RELEASE_NAME = re.compile(r"Python (\d+\.\d+\.\d+\S*)")
+
+
+if TYPE_CHECKING:
+    from .release_check import BuildStatus
 
 
 class MaintenanceError(Exception):
@@ -210,20 +216,32 @@ def upgrade_requirements(updates: Iterable[Update]) -> list[str]:
 
 @dataclass(frozen=True)
 class Health:
-    """Things that only a new app build (TestFlight) can update."""
+    """Things that only a new app build (TestFlight) can update.
 
-    python: PythonStatus
+    `build` is how this build compares with the newest GitHub Release (see
+    ``release_check``); if a newer build exists the Python and package checks
+    are skipped (`python` is None), since the new build is what fixes them.
+    """
+
+    python: PythonStatus | None
     bundled_updates: list[Update] = field(default_factory=list)
+    build: BuildStatus | None = None
 
     @property
     def count(self) -> int:
         """How many updates need a new app build."""
-        python = int(self.python.patch_behind) + int(bool(self.python.newer_stable))
-        return python + len(self.bundled_updates)
+        python = self.python
+        found = 0
+        if python is not None:
+            found = int(python.patch_behind) + int(bool(python.newer_stable))
+        newer = int(self.build is not None and self.build.newer)
+        return found + len(self.bundled_updates) + newer
 
     @property
     def summary(self) -> str:
         """One line for the Setup view."""
+        if self.build is not None and self.build.newer:
+            return f"⚠ A newer build, {self.build.latest}, is available (TestFlight)"
         if not self.count:
             return "✓ Up to date"
         noun = "update needs" if self.count == 1 else "updates need"
@@ -232,13 +250,21 @@ class Health:
     def details(self) -> list[str]:
         """One line per finding, most important first."""
         lines: list[str] = []
+        if self.build is not None:
+            lines += self.build.lines()
         python = self.python
-        if python.patch_behind:
-            lines.append(f"Python {python.current} → {python.latest_patch} available")
-        if python.newer_stable is not None:
-            lines.append(f"Python {python.newer_stable} is out")
-        if python.upcoming is not None:
-            lines.append(f"Python {python.upcoming} is in pre-release")
+        if python is None:
+            if self.build is not None and self.build.newer:
+                lines.append("Python and package checks skipped: update the app first.")
+        else:
+            if python.patch_behind:
+                lines.append(
+                    f"Python {python.current} → {python.latest_patch} available"
+                )
+            if python.newer_stable is not None:
+                lines.append(f"Python {python.newer_stable} is out")
+            if python.upcoming is not None:
+                lines.append(f"Python {python.upcoming} is in pre-release")
         for update in sorted(self.bundled_updates, key=lambda u: not u.critical):
             note = " (app-critical)" if update.critical else ""
             lines.append(f"{update.name} {update.installed} → {update.latest}{note}")

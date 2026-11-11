@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from html import escape
 
 from .maintenance import Health, Update
+from .pages import readme_html
 
 NOT_CHECKED = "Not checked yet."
 
@@ -29,9 +30,42 @@ def details(summary: str, body: str) -> str:
     return f"<details><summary>{escape(summary)}</summary>{body}</details>"
 
 
-def health_section(health: Health | None, error: str | None = None) -> str:
-    """App health: things only a new app build can update."""
+def build_notes(health: Health) -> str:
+    """For a newer build: a link to its Release and a fold with its What's New."""
+    build = health.build
+    if build is None or not build.newer:
+        return ""
+    parts = []
+    if build.url.startswith("https://"):
+        parts.append(
+            f'<p><a href="{escape(build.url)}">What\'s new in {escape(build.latest)}</a></p>'
+        )
+    if build.notes:
+        parts.append(
+            # A Release's body is Markdown (#208). It comes from GitHub, so it is
+            # rendered as an untrusted README: raw HTML as text, safe links only
+            "<details><summary>What's new</summary>"
+            f"{readme_html(build.notes, 'notes.md')}</details>"
+        )
+    return "".join(parts)
+
+
+def health_section(
+    health: Health | None,
+    error: str | None = None,
+    build_error: str | None = None,
+) -> str:
+    """App health: things only a new app build can update.
+
+    `build_error` is why the check for a newer build failed, if it did; the
+    other checks can still have a result.
+    """
     parts = ["<h3>App health</h3>"]
+    if build_error is not None:
+        parts.append(
+            "<p>Couldn't check for a newer build "
+            f"(offline? rate-limited?): {escape(build_error)}</p>"
+        )
     if error is not None:
         parts.append(f"<p>Couldn't check (offline?)</p><p>{escape(error)}</p>")
     elif health is None:
@@ -45,6 +79,7 @@ def health_section(health: Health | None, error: str | None = None) -> str:
         if found:
             items = "".join(f"<li>{escape(line)}</li>" for line in found)
             parts.append(f"<ul>{items}</ul>")
+        parts.append(build_notes(health))
     parts.append(
         "<p>The app's own Python and bundled packages can only be updated by a "
         "new app build (TestFlight), so there's nothing to do about them here "
@@ -64,6 +99,7 @@ def packages_html(
     aliases: Sequence[tuple[str, str]] = (),
     health: Health | None = None,
     health_error: str | None = None,
+    build_error: str | None = None,
 ) -> str:
     """The Packages page: everything about the Python and packages in this app.
 
@@ -76,6 +112,7 @@ def packages_html(
     :param aliases: Package aliases in effect, as (name, how) rows.
     :param health: The app health result from the last check, if any.
     :param health_error: Why the last health check failed, if it did.
+    :param build_error: Why checking for a newer build failed, if it did.
     """
     parts = ["<h2>Packages</h2>"]
     if python:
@@ -104,7 +141,7 @@ def packages_html(
         rows = [(u.name, f"{u.installed} → {u.latest}") for u in updates]
         parts.append(table(rows, ("Package", "Update")))
         parts.append("<p><b>Update all</b> installs these versions.</p>")
-    parts.append(health_section(health, health_error))
+    parts.append(health_section(health, health_error, build_error))
     if aliases:
         parts.append(
             "<h3>Aliases</h3>"

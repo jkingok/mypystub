@@ -18,6 +18,7 @@ from . import (
     files_app,
     maintenance,
     permissions,
+    release_check,
     setup_pages,
 )
 from . import piplike as pip
@@ -40,7 +41,9 @@ class SetupMixin(PrototypeBase):
         super().__init__(host_app, on_done)
         # Setup view (#77): a menu of sections, each opening a detail page (a
         # WebView, since Labels don't wrap) with native buttons for its actions
-        self.setup_view = toga.WebView(flex=1)
+        self.setup_view = toga.WebView(
+            flex=1, on_navigation_starting=self.open_external
+        )
         self.setup_page: str | None = None
         self.setup_html = ""
         self.update_all_button = toga.Button(
@@ -54,6 +57,7 @@ class SetupMixin(PrototypeBase):
         self.update_error: str | None = None
         self.health: maintenance.Health | None = None
         self.health_error: str | None = None
+        self.build_error: str | None = None  # why the newer-build check failed
 
     def new_project_field(self) -> toga.TextInput:
         """The New Project name field, which the launcher keeps hold of."""
@@ -175,6 +179,7 @@ class SetupMixin(PrototypeBase):
                     ),
                     health=self.health,
                     health_error=self.health_error,
+                    build_error=self.build_error,
                 )
             case _:
                 return setup_pages.permissions_html(permissions.status(self.app))
@@ -355,7 +360,24 @@ class SetupMixin(PrototypeBase):
         return f"{len(updates)} package update(s)" if updates else "Packages up to date"
 
     async def check_app_health(self) -> str:
-        """Compare Python and bundled packages with python.org and PyPI."""
+        """Is this the latest build? If so, check Python and the bundled packages.
+
+        GitHub's Releases are asked first: one cheap request. If a newer build
+        exists it is what fixes everything else, so python.org and PyPI are not
+        asked. If GitHub can't be reached the other checks still run.
+        """
+        build = None
+        self.build_error = None
+        try:
+            build = await asyncio.to_thread(
+                self.with_client, release_check.check_build, self.app.version
+            )
+        except maintenance.MaintenanceError as e:
+            self.build_error = str(e)
+        if build is not None and build.newer:
+            self.health = maintenance.Health(None, [], build)
+            self.health_error = None
+            return f"App: {self.health.summary}"
         bundled = pip.get_bundled_inventory(self.site_packages)
 
         def check(client: httpx2.Client) -> maintenance.Health:
@@ -363,7 +385,7 @@ class SetupMixin(PrototypeBase):
             updates = maintenance.find_updates(
                 client, bundled, critical=maintenance.APP_CRITICAL
             )
-            return maintenance.Health(python, updates)
+            return maintenance.Health(python, updates, build)
 
         try:
             health = await asyncio.to_thread(self.with_client, check)
