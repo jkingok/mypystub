@@ -8,7 +8,12 @@ done = threading.Event()
 
 
 def do_work():
-    raise ValueError("You still don't meet my values")
+    try:
+        raise ValueError("You still don't meet my values")
+    finally:
+        # The error is still reported. Without this the script would wait for
+        # ever, because nothing else sets `done`, and so would never end.
+        done.set()
 
 
 if toga.App.app:

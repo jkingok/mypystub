@@ -46,9 +46,14 @@ def docs(tmp_path: Path) -> Path:
 @pytest.fixture
 def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prototype:
     """A launcher opened on Documents, with dialogs recorded instead of shown."""
+    import asyncio
+
     from mypystub import ui
     from tests.support_ui import fresh_stack, tap
 
+    # A test that used asyncio.run() leaves no current loop, and the app's loop
+    # is shared by the whole run: make it current again
+    asyncio.set_event_loop(app.loop)
     monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
     p = ui.Prototype(host_app=app, on_done=lambda _: None)
     p.system_env = {}  # not this machine's environment, which tests mustn't see
