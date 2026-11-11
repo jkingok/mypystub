@@ -1,13 +1,13 @@
 # MyPyStub
 
-Is a *Python* engine for your iPhone or iPad.
+Is a *Python* engine for your iPhone, iPad or Android phone or tablet.
 
 You can run _basic_ Python scripts in an environment where it will allow you answer `input()` and `print()` as
 appears in basic examples.
 
 Or a more sophisticated UI using BeeWare's *Toga* can be used.
 
-_There are some important steps to integrating your own Toga script within the limitations of iOS, so I recommend you start with my template._
+_There are some important steps to integrating your own Toga script within the limitations of iOS and Android, so I recommend you start with my template._
 
 Simple scripts _might_ work but long running ones can detect the Toga environment and understand that they are initially on a background thread.
 They can return to the main thread via the `asyncio` features. To gracefully hold control back rather than exiting the background thread early,
@@ -20,7 +20,7 @@ The app is made up of the following views:
 The list opens on two categories:
 
 - **Examples**: sample prototypes built into the app.
-- **Documents**: your own scripts and projects, from the *On My* (iPhone/iPad) section of *Files* under *MyPyStub*.
+- **Documents**: your own scripts and projects. On iPhone and iPad they're in the *On My* (iPhone/iPad) section of *Files* under *MyPyStub*; on Android, in the app's folder in your device's file browser.
 
 Each row previews what's inside. Tap a folder to open it, and `..` to go back up. Tap a script or project to run it.
 
@@ -31,11 +31,11 @@ Swipe a row for more:
 
 Rows with nothing to show or run say why.
 
-**Paste** (on iPhone and iPad) adds what you copied to the folder you're looking at in **Documents**. It first shows a preview of what will be added, which is the same page *Info* will show for it afterwards: a script's description, dependencies and source (pasted text too), a zipapp's details, or, for an archive, what it unpacks to (a project's details or a folder's README) followed by its contents. **Cancel** and **Import** are at the top. Import then copies the file, extracts an archive (`.zip`, `.tar`, `.tar.gz`) into one folder, or saves pasted Python, asking for a file name when one is needed. Copied text is always saved as a `.py` script. A plain text file (`.txt`) can't be imported. The newest paste always has the right name, so saved settings still apply. If something with that name is already there (a script, a zipapp or a project folder), it is backed up first, in a `backups` folder beside it (a script or zipapp is copied; a project folder is zipped), which the Files app shows but the list hides. A backup is stamped with the time the new version was pasted, so it is the version that was installed before then. To see backups, swipe the row right for *Setup* and turn on **Backup versions**. Swipe a backup right to restore it, or left to delete it (both ask first); restoring keeps what is current as another backup. *Info* only reads. Pasting exactly what is already there (the same content, folders too) changes nothing.
+**Paste** (on iPhone and iPad) adds what you copied to the folder you're looking at in **Documents**. It first shows a preview of what will be added, which is the same page *Info* will show for it afterwards: a script's description, dependencies and source (pasted text too), a zipapp's details, or, for an archive, what it unpacks to (a project's details or a folder's README) followed by its contents. **Cancel** and **Import** are at the top. Import then copies the file, extracts an archive (`.zip`, `.tar`, `.tar.gz`) into one folder, or saves pasted Python, asking for a file name when one is needed. Copied text is always saved as a `.py` script. A plain text file (`.txt`) can't be imported. The newest paste always has the right name, so saved settings still apply. If something with that name is already there (a script, a zipapp or a project folder), it is backed up first, in a `backups` folder beside it (a script or zipapp is copied; a project folder is zipped), which the device's file browser shows but the list hides. A backup is stamped with the time the new version was pasted, so it is the version that was installed before then. To see backups, swipe the row right for *Setup* and turn on **Backup versions**. Swipe a backup right to restore it, or left to delete it (both ask first); restoring keeps what is current as another backup. *Info* only reads. Pasting exactly what is already there (the same content, folders too) changes nothing.
 
 **Web apps**: a folder with an `index.html` (and no `pyproject.toml`), or a single `.html` file, shows in the list with a 🌐 and opens in the app: it is served from the device itself, and **Back** closes it. Its row takes its description from the page (the manifest of a PWA first, then the `description` or `og:description` meta, else the `<title>`) and its icon the way a browser would: the manifest's icons, `<link rel="icon">` or `apple-touch-icon`, then `/favicon.ico`. Icons are converted to PNG for the list (an SVG is drawn by resvg, where the app has it: not on iPhone or iPad yet, which then use the next icon); an online one is fetched once and kept. Info shows the same details. Links to other sites open in the browser.
 
-Environment variables are inherited. Those set on the Setup tab's **Environment** page reach every run, and a script or project can override them, or add its own, with its own *Setup* (swipe right). A project with several entry points has its own Setup too, with variables but no arguments, which its entry points inherit and can override in turn. Inherited variables are hidden to keep the screen short (the system alone sets dozens): turn on **Show inherited variables** to list them, and the choice carries to every Setup screen. A row says where its value comes from first, such as "from Setup" or "from the system" (the variables iOS already sets for this app); select a row and tap **ⓘ** to see the whole value, which can be too long for the row (a PATH, for instance); editing one sets an override here (blank is allowed, and is different from unsetting), and deleting the override uses the inherited value again. The **⊘** button *unsets* a variable, so it doesn't exist at all when the script runs; a later layer can set it again, and deleting the unset brings back the inherited value.
+Environment variables are inherited. Those set on the Setup tab's **Environment** page reach every run, and a script or project can override them, or add its own, with its own *Setup* (swipe right). A project with several entry points has its own Setup too, with variables but no arguments, which its entry points inherit and can override in turn. Inherited variables are hidden to keep the screen short (the system alone sets dozens): turn on **Show inherited variables** to list them, and the choice carries to every Setup screen. A row says where its value comes from first, such as "from Setup" or "from the system" (the variables the system already sets for this app); select a row and tap **ⓘ** to see the whole value, which can be too long for the row (a PATH, for instance); editing one sets an override here (blank is allowed, and is different from unsetting), and deleting the override uses the inherited value again. The **⊘** button *unsets* a variable, so it doesn't exist at all when the script runs; a later layer can set it again, and deleting the unset brings back the inherited value.
 
 ## Script
 
@@ -58,7 +58,7 @@ The Setup tab has these sections:
 - **Projects**: create a new project from the template (below).
 - **Environment**: environment variables every script and project inherits (see *Swipe right: Setup* above).
 - **Preserve Logs**: keep the log between launches instead of starting each launch with an empty one. Off by default.
-- **Resume where I left off**: whether the app puts you back where you were after iOS ended it (see *Picking up where you left off*). On by default.
+- **Resume where I left off**: whether the app puts you back where you were after the system ended it (see *Picking up where you left off*). On by default.
 - **Packages**: everything about the Python and packages in this app, on one page: the Python version, the packages built into the app, your user packages with their size, and the aliases in effect. *Check for updates* does two checks at once, and starts the second with a quick question to GitHub: is this the latest released build of the app? If a newer build is out you're told so first, with what's new in it, and the Python and bundled-package comparison is skipped, because the new build is what updates them. A development run isn't compared. It asks [PyPI](https://pypi.org) (through its [JSON API](https://docs.pypi.org/api/json/)) for newer versions of your user packages, and compares the app's Python with [python.org's releases](https://www.python.org/downloads/) (through its [downloads API](https://www.python.org/api/v2/downloads/release/?is_published=true)) and the built-in packages with PyPI. If one check can't be made, the other still shows. *Update all* installs the newer user packages. The app's own Python and packages can only be updated by a new build of the app. *Wipe user packages…* deletes the user packages; prototypes reinstall what they need on their next run, which needs the network.
 - **App**: back up your files, or exit back to the launcher you came from.
 
@@ -68,9 +68,9 @@ Here is the tool which generates a new "Project" or module for you to edit. If I
 a good enough example that can be built standalone using *Briefcase* into an app standalone via a Mac.
 
 Notice that the template contains a way of building a navigation stack and allowing the user to return back to the launcher.
-There is no "real" exit on iOS, except for manually throwing it away from the switcher.
+On iPhone and iPad there is no "real" exit, except for manually throwing the app away from the switcher.
 
-This launcher will introspect the `pyproject.toml` to look for a name, description, icon and its dependencies. It will attempt to download pure-Python wheels from [PyPI](https://pypi.org) for any dependencies. _It cannot download iOS-specific wheels yet for packages that have binary extensions._
+This launcher will introspect the `pyproject.toml` to look for a name, description, icon and its dependencies. It will attempt to download pure-Python wheels from [PyPI](https://pypi.org) for any dependencies. _It cannot yet download wheels for packages with binary extensions on iPhone, iPad or Android._
 
 A single-file script can do the same in its [inline script metadata](https://packaging.python.org/en/latest/specifications/inline-script-metadata/) block. Its first docstring line is used as the description if it doesn't set one:
 
@@ -107,7 +107,7 @@ Each run gets its own `sys.argv`, environment and working directory (the script'
 
 ## Picking up where you left off
 
-iOS can end an app in the background whenever it likes, and the app isn't told. So MyPyStub saves *where you were* as you go, and puts you back there next time you open it: the tab, the folder you were browsing, the Setup page that was open, and which of Help, What's New or About was showing. If a folder has been deleted or renamed in Files, you go to the nearest folder above it that is still there. The content of the Script and Logs tabs isn't restored.
+The system can end an app in the background whenever it likes, and the app isn't told. So MyPyStub saves *where you were* as you go, and puts you back there next time you open it: the tab, the folder you were browsing, the Setup page that was open, and which of Help, What's New or About was showing. If a folder has been deleted or renamed in the file browser (Files on iPhone and iPad), you go to the nearest folder above it that is still there. The content of the Script and Logs tabs isn't restored.
 
 If a script was running when the app was ended, you're asked once whether to run it again. It is never run without asking. After an update to a new version of the app, nothing is restored, since the app may behave differently. Turn it off with **Resume where I left off** in Setup.
 
@@ -115,7 +115,7 @@ Your own scripts can do the same, in the same way, with nothing specific to MyPy
 
 ## Packages with compiled parts
 
-The launcher installs your prototypes' dependencies from [PyPI](https://pypi.org) as pure-Python wheels. Packages with compiled (binary) parts need a wheel built specifically for iOS, which most projects don't publish yet. BeeWare tracks which packages have one in its [mobile wheels](https://beeware.org/mobile-wheels/) project. Projects build them with [cibuildwheel](https://cibuildwheel.pypa.io/), which supports iOS. Binary wheels can't be added to the app after it's built, so the useful ones are bundled with it.
+The launcher installs your prototypes' dependencies from [PyPI](https://pypi.org) as pure-Python wheels. Packages with compiled (binary) parts need a wheel built specifically for iOS or Android, which most projects don't publish yet. BeeWare tracks which packages have one in its [mobile wheels](https://beeware.org/mobile-wheels/) project. Projects build them with [cibuildwheel](https://cibuildwheel.pypa.io/), which supports iOS and Android. Binary wheels can't be added to the app after it's built, so the useful ones are bundled with it.
 
 Where a pure-Python replacement exists, the launcher can use it instead. These **aliases** are listed on the Packages page in Setup:
 
@@ -133,9 +133,9 @@ somepackage = { kind = "substitute", target = "somepackage-pure", when = "always
 
 ## Hardware
 
-Prototypes can use your **location**, **camera**, **photo library** (to save images) and **local network**. iOS asks for permission the first time a prototype uses each one, and you can change your answer later in the Settings app. The Examples' `hardware/` folder has a script for each.
+Prototypes can use your **location**, **camera**, **photo library** (to save images) and **local network**. The system asks for permission the first time a prototype uses each one, and you can change your answer later in the system's app settings. The Examples' `hardware/` folder has a script for each.
 
-**Changed your mind about a permission?** iOS only asks once. To change your answer, tap *Open Settings* in the Setup tab (its Permissions section shows what's allowed), or go to the Settings app → MyPyStub. A permission only appears there after a prototype has asked for it. The hardware examples offer to open Settings when a permission was declined.
+**Changed your mind about a permission?** The system only asks once. To change your answer, tap *Open Settings* in the Setup tab (its Permissions section shows what's allowed), or go to the Settings app → MyPyStub (on Android, the app's permissions page in system settings). A permission only appears there after a prototype has asked for it. The hardware examples offer to open Settings when a permission was declined.
 
 ## Help
 

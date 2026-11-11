@@ -4,9 +4,9 @@
 
 My first application for prototyping with iDevices and Python
 
-This application is only tested on iPhone and iPad. It uses the iOS limited subset of *Toga*. It is intended to act as a stub to enable you to install an up-to-date Python interpreter to your device for free. (Apple allows any account to become a Developer account for free that can install up to three apps that are re-deployed once every seven days.)
+This application is mainly tested on iPhone and iPad, and uses the iOS limited subset of *Toga*. Android is experimental: it builds and runs on Android devices and emulators, but is tested less. It is intended to act as a stub to enable you to install an up-to-date Python interpreter to your device for free. (Apple allows any account to become a Developer account for free that can install up to three apps that are re-deployed once every seven days.)
 
-If you compile and deploy this app, it will create a "MyPyStub" folder in your Files app under "On My iPhone" (or "On My iPad").
+If you compile and deploy this app on iOS, it will create a "MyPyStub" folder in your Files app under "On My iPhone" (or "On My iPad"). On Android, the app's folder appears in your device's file browser.
 
 You may place Python scripts in there. Either place bare scripts, or place modules in folders. Modules should have a `pyproject.toml` file to nominate any pure-Python dependencies that will attempt to be downloaded from PyPI at runtime.
 
