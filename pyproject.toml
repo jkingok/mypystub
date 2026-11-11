@@ -258,15 +258,20 @@ requires = [
 # See: https://beeware.org/mobile-wheels/
     "charset-normalizer>=3.5.0",
     "cffi>=2.1.0",
-    "aiohttp>=3.14.0",
+    "markupsafe>=3.0.4",
     "pillow>=11.3.0",
+    "multidict>=6.8.0",
+    "aiohttp>=3.14.0",
+    "coverage>=7.17.0",
+    "kiwisolver>=1.5.1",
     "xxhash>=3.7.0",
     "mmh3>=5.2.0",
+    "backports.zstd>=1.3.0; python_version < '3.14'",
     "pybase64>=1.4.2",
     "maxminddb>=2.8.2",
+    "cytoolz>=1.1.0",
 # optree bundles an executable
 #    "optree>=0.17.0",
-    "cytoolz>=1.1.0",
     "lru-dict>=1.4.1; python_version < '3.15'",
 ]
 
@@ -286,17 +291,42 @@ info."NSAppTransportSecurity" = { NSAllowsLocalNetworking = true }
 info."NSLocalNetworkUsageDescription" = "Prototypes you run in MyPyStub may connect to devices on your local network."
 
 [tool.briefcase.app.mypystub.android]
+#android_abis = ["arm64-v8a"]
 requires = [
-    "toga-android~=0.5.7",
+    "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
+    "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
+    "toga-android @ git+https://github.com/beeware/toga.git#subdirectory=android",
     # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
     # iOS section leaves it out and SVG icons are skipped there)
     "resvg-py>=0.5.0",
+# Since Android does not allow binaries to be added after the fact
+# we build in some for convenience
+# See: https://beeware.org/mobile-wheels/
+    "charset-normalizer>=3.5.0; python_version < '3.15'",
+    "markupsafe>=3.0.4",
+    "multidict>=6.8.0",
+    "aiohttp>=3.14.0",
+    "coverage>=7.17.0",
+    "xxhash>=3.7.0",
+    "pyzmq>=27.0.1",
+# Blocked because Chaquopy builds for AMD64 for which wheels don't exist
+#    "pypdfium2>=5.2.0",
+    "mmh3>=5.2.0",
+    "backports.zstd>=1.3.0; python_version < '3.14'",
+    "dulwich>=0.24.4",
+# Blocked by missing cffi
+#    "curl-cffi>=0.15.0",
+    "pybase64>=1.4.2",
+    "maxminddb>=2.8.2",
+    "resvg_py>=0.3.1",
+# Blocked because Chaquopy builds for ARM for which wheels don't exist
+#    "cytoolz>=1.2.0",
+# Blocked because Chaquopy builds for AMD64 for which wheels don't exist
+#    "optree>=0.18.0",
+    "lru-dict>=1.4.1; python_version < '3.14'",
 ]
 
 base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
-
-# Tell Briefcase to include custom Java source files in the Gradle build tree
-build_vars = { "extra_java_sources" = ["assets/android/java"] }
 
 # Inject the provider into AndroidManifest.xml
 android_manifest_application_extra_content = """
@@ -317,20 +347,29 @@ build_gradle_dependencies = [
     # Needed for DetailedList
     "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0",
     # Needed for MapView
-    # "org.osmdroid:osmdroid-android:6.1.20",
+    "org.osmdroid:osmdroid-android:6.1.20",
     # Needed for WebView
     "androidx.webkit:webkit:1.15.0",
 ]
 
-# Needed for WebView
+# Needed for WebView, and to compile our custom Java sources (assets/android/java)
+# as a Gradle source set. Briefcase has no option for the latter, so the
+# directory is added here. app/ sits five levels below the repo root in
+# build/mypystub/android/gradle/.
 build_gradle_extra_content="""
 chaquopy.defaultConfig.staticProxy("toga_android.widgets.internal.webview")
+
+android {
+    sourceSets {
+        main {
+            java.srcDirs += file("$projectDir/../../../../../assets/android/java")
+        }
+    }
+}
 """
 
 icon = "assets/icons/android/icon"
 
 # Web deployments
 [tool.briefcase.app.mypystub.web]
-requires = [
-    "toga-web~=0.5.7",
-]
+supported = false

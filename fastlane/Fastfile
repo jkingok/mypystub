@@ -34,8 +34,12 @@ def xcode_project_path
   File.join("build", AppConfig::BRIEFCASE_SLUG, "iOS", "Xcode", "#{AppConfig::APP_NAME}.xcodeproj")
 end
 
+def current_git_branch
+  sh("git -C .. rev-parse --abbrev-ref HEAD", log: false).strip
+end
+
 # Copies main, and the release tags on main, to the public repository. Release
-# tags (YYYY.M.D.N) are added by the share lane; the About page links to the tag
+# tags (YYYY.M.D.N) are added by the share lanes; the About page links to the tag
 # of the running build. Tags on commits that aren't on main are never copied, so
 # unmerged work stays private. Run it after merging, from a clone with push
 # access to the public repository:
@@ -70,8 +74,8 @@ PUBLIC_REPOSITORY = ENV["PUBLIC_REPOSITORY"] || "jkingok/mypystub"
 #
 # Needs GITHUB_RELEASE_TOKEN, a token allowed to write Releases on the public
 # repository. It comes from the environment, never from this repository. Without
-# it the Release is skipped with a warning, since the TestFlight upload has
-# already happened; run `bundle exec fastlane release version:<version>` later.
+# it the Release is skipped with a warning, since the uploads have already
+# happened; run `bundle exec fastlane release version:<version>` later.
 def publish_release(version)
   token = ENV["GITHUB_RELEASE_TOKEN"].to_s
   if token.empty?
@@ -93,56 +97,59 @@ def publish_release(version)
   )
 end
 
-default_platform(:ios)
+# This release's "What's New" text for the store or tester notes. Falls back to a
+# one-line note when the release has no user-facing changes.
+def release_notes(python_version)
+  notes = sh("uv --directory .. run scripts/collect_changes.py --notes #{python_version}", log: false).strip
+  notes.empty? ? "Build #{python_version}. No user-facing changes." : notes
+end
 
-platform :ios do
+# Android signing and distribution settings come from the environment, never from
+# this repository. Checked before anything is built or uploaded.
+ANDROID_ENV = %w[
+  FIREBASE_APP_ID
+  FIREBASE_SERVICE_CREDENTIALS_FILE
+  ANDROID_KEYSTORE
+  ANDROID_KEY_ALIAS
+  ANDROID_KEYSTORE_PASSWORD
+  ANDROID_KEY_PASSWORD
+].freeze
 
-  desc "Preps the environment (bootstraps uv if missing, runs uv script & briefcase) then builds"
-  private_lane :bootstrap do
-    default_platform(:ios)
-    
-    UI.message("--- Step 1: Checking and bootstrapping uv if necessary ---")
-    
-    # Define local/fallback path for uv if not globally installed
-    local_bin_path = File.expand_path("~/.local/bin")
-    uv_executable = system("which uv > /dev/null 2>&1") ? "uv" : "#{local_bin_path}/uv"
+def check_android_env
+  missing = ANDROID_ENV.select { |name| ENV[name].to_s.empty? }
+  UI.user_error!("Set these before an Android release: #{missing.join(', ')}") unless missing.empty?
+end
 
-    unless File.exist?(uv_executable) || system("which uv > /dev/null 2>&1")
-      UI.important("uv not found on PATH. Bootstrapping uv locally...")
-      
-      # Ensure local bin directory exists
-      FileUtils.mkdir_p(local_bin_path)
-      
-      # Download and run Astral's official standalone installer script
-      install_success = system("curl -LsSf https://astral.sh/uv/install.sh | sh")
-      
-      if install_success
-        UI.success("Successfully bootstrapped uv!")
-      else
-        UI.user_error!("Failed to download and install uv automatically.")
-      end
-    end
+# Briefcase 0.4.x doesn't sign Android packages, so the APK is signed here, with
+# the newest build-tools' apksigner in the Android SDK.
+def apksigner_path
+  sdk = ENV["ANDROID_HOME"] || File.expand_path("~/Library/Android/sdk")
+  found = Dir.glob(File.join(sdk, "build-tools", "*", "apksigner"))
+  UI.user_error!("apksigner not found under #{sdk}/build-tools; set ANDROID_HOME") if found.empty?
+  found.max_by { |path| Gem::Version.new(File.basename(File.dirname(path))) }
+end
 
-    # Ensure local bin path is temporarily appended to ENV['PATH'] for this execution context
-    unless ENV['PATH'].include?(local_bin_path)
-      ENV['PATH'] = "#{local_bin_path}:#{ENV['PATH']}"
-    end
+# Pushes main before anything is uploaded, so a rejected push stops the release
+# early. Releases only come from main: on any other branch this stops before
+# anything is uploaded, since the tag and the public mirror only cover main.
+private_lane :push_main do
+  branch = current_git_branch
+  UI.user_error!("Release from main, not #{branch}: the tag and the public mirror only cover main") unless branch == "main"
+  sh("git -C .. push origin main")
+end
 
-    UI.message("--- Step 2: Running Python script using uv ---")
-    # uv will handle dependency resolution (e.g. via PEP 723 inline metadata) automatically
-    sh("uv --directory .. run generate_icons.py")
+# Decides the calver and build number, then stamps pyproject.toml (#61). Memoised
+# per run, so every lane in one run shares the same number. With testflight: false
+# (Android only) it doesn't need App Store Connect.
+#
+# Builds are numbered per day: 1 to 99. Android's versionCode is built from the
+# build number with two digits, so 100 would break it.
+private_lane :decide_version do |options|
+  next if lane_context[:PYTHON_VERSION]
+  testflight = (options || {}).fetch(:testflight, true)
 
-    UI.message("--- Step 3: Running BeeWare Briefcase ---")
-    # Triggers your BeeWare packaging/build step (e.g. generating the Xcode project files)
-    # Start from a fresh Xcode project: Briefcase only writes Info.plist (permission
-    # usage descriptions, info.* keys) on create, and create skips an existing project
-    sh("rm", "-rf", File.join("..", "build", AppConfig::BRIEFCASE_SLUG, "iOS"))
-    sh("uvx --python 3.15 --directory .. briefcase create ios --no-input")
-    sh("uvx --python 3.15 --directory .. briefcase update ios --update-requirements --update-support --update-stub  --update-resources --no-input")
-  end
-
-  desc "Decides the calver and build number, then stamps pyproject.toml (#61)"
-  private_lane :decide_version do
+  latest_build = 0
+  if testflight
     # Authenticate via App Store Connect API Key
     api_key = app_store_connect_api_key(
       key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
@@ -152,100 +159,276 @@ platform :ios do
     )
     lane_context[:API_KEY] = api_key
 
-    # YYYY.M.D without leading zeros, so Xcode's CFBundleShortVersionString is
-    # also exactly the PEP 440 base version in the app's Python metadata
-    date_version = Time.now.strftime("%Y.%-m.%-d")
-
     # Builds on the same day are numbered after the latest one on TestFlight
     latest_build = latest_testflight_build_number(
-      version: date_version,
+      version: Time.now.strftime("%Y.%-m.%-d"),
       app_identifier: bundle_id,
       initial_build_number: 0
     )
+  end
 
-    # Release tags (YYYY.M.D.N, added by the share lane) count too, so a build
-    # is never numbered at or below one that was already tagged
-    sh("git -C .. fetch --tags --quiet origin", error_callback: lambda { |_|
-      UI.important("Couldn't fetch tags; numbering from TestFlight alone")
+  # YYYY.M.D without leading zeros, so Xcode's CFBundleShortVersionString is
+  # also exactly the PEP 440 base version in the app's Python metadata
+  date_version = Time.now.strftime("%Y.%-m.%-d")
+
+  # Release tags (YYYY.M.D.N, added by the share lanes) count too, so a build
+  # is never numbered at or below one that was already tagged
+  sh("git -C .. fetch --tags --quiet origin", error_callback: lambda { |_|
+    UI.important("Couldn't fetch tags; numbering from TestFlight alone")
+  })
+  tagged = sh("git -C .. tag --list '#{date_version}.*'", log: false)
+    .lines.map { |tag| tag.strip.split(".")[3].to_i }
+  build_number = ([latest_build] + tagged).max + 1
+  UI.user_error!("Build #{build_number} would be past 99 today; Android needs two digits per build") if build_number > 99
+
+  # Python sees <calver>.<build>, e.g. 2026.11.2.3: four numbers, no words
+  output = sh("uv --directory .. run scripts/set_version.py #{date_version} #{build_number}")
+  python_version = output.lines.last.strip
+  UI.success("Python version #{python_version}; #{date_version} (#{build_number})")
+
+  lane_context[:DATE_VERSION] = date_version
+  lane_context[:BUILD_NUMBER] = build_number
+  lane_context[:PYTHON_VERSION] = python_version
+end
+
+# Writes the decided version into pyproject.toml. Each platform calls this before
+# it builds, because the iOS steps restore pyproject.toml when they finish.
+private_lane :stamp_version do
+  sh("uv --directory .. run scripts/set_version.py #{lane_context[:DATE_VERSION]} #{lane_context[:BUILD_NUMBER]}")
+end
+
+# Turn the change fragments in changes/ into this release's "What's New"
+# section, and commit them, so the build (and its tag) contains its own notes.
+# Only the notes are committed: the stamped pyproject.toml is restored later.
+private_lane :collect_changes do
+  python_version = lane_context[:PYTHON_VERSION]
+  sh("uv --directory .. run scripts/collect_changes.py #{python_version}")
+  paths = ["changes", "src/mypystub/resources/templates/changes.md"]
+  # git add fails on a path that doesn't exist, and the archive appears only
+  # once something is old enough to go in it
+  paths << "changes-archive.md" if File.exist?("../changes-archive.md")
+  sh("git -C .. add -A #{paths.join(' ')}")
+  if system("git -C .. diff --cached --quiet")
+    UI.message("No user-facing changes to record for #{python_version}")
+  else
+    sh("git -C .. commit -m 'Release notes for #{python_version}'")
+    sh("git -C .. push origin HEAD", error_callback: lambda { |_|
+      UI.important("Couldn't push the release notes commit; push it before the next build")
     })
-    tagged = sh("git -C .. tag --list '#{date_version}.*'", log: false)
-      .lines.map { |tag| tag.strip.split(".")[3].to_i }
-    build_number = ([latest_build] + tagged).max + 1
-
-    # Python sees <calver>.<build>, e.g. 2026.11.2.3: four numbers, no words
-    output = sh("uv --directory .. run scripts/set_version.py #{date_version} #{build_number}")
-    python_version = output.lines.last.strip
-    UI.success("Python version #{python_version}; Xcode #{date_version} (#{build_number})")
-
-    lane_context[:DATE_VERSION] = date_version
-    lane_context[:BUILD_NUMBER] = build_number
-    lane_context[:PYTHON_VERSION] = python_version
   end
+end
 
-  # Turn the change fragments in changes/ into this release's "What's New"
-  # section, and commit them, so the build (and its tag) contains its own notes.
-  # Only the notes are committed: the stamped pyproject.toml is restored later.
-  private_lane :collect_changes do
-    python_version = lane_context[:PYTHON_VERSION]
-    sh("uv --directory .. run scripts/collect_changes.py #{python_version}")
-    paths = ["changes", "src/mypystub/resources/templates/changes.md"]
-    # git add fails on a path that doesn't exist, and the archive appears only
-    # once something is old enough to go in it
-    paths << "changes-archive.md" if File.exist?("../changes-archive.md")
-    sh("git -C .. add -A #{paths.join(' ')}")
-    if system("git -C .. diff --cached --quiet")
-      UI.message("No user-facing changes to record for #{python_version}")
+private_lane :tag_release do
+  tag = lane_context[:PYTHON_VERSION]
+  add_git_tag(tag: tag, message: "Release #{tag}")
+  push_git_tags(tag: tag)
+  sh("git -C .. fetch --quiet origin main")
+  unless system("git -C .. merge-base --is-ancestor HEAD origin/main")
+    UI.important(
+      "#{tag} tags a commit that isn't on main. The public repository only " \
+      "gets tags on main, so the About page's Source link won't work until " \
+      "this commit is merged into main as is (not squashed). Release from main " \
+      "to avoid this."
+    )
+  end
+end
+
+# The steps after the uploads, shared by every release lane: push main, tag the
+# commit, mirror main and its tags to the public repository, and create the GitHub
+# Release that the About page links to.
+private_lane :finish_release do
+  python_version = lane_context[:PYTHON_VERSION]
+  push_main
+  tag_release
+  mirror_to_public
+  publish_release(python_version)
+end
+
+# ---- iOS building blocks (shared by the ios lanes and both) ----
+
+private_lane :ios_bootstrap do
+  UI.message("--- Step 1: Checking and bootstrapping uv if necessary ---")
+
+  # Define local/fallback path for uv if not globally installed
+  local_bin_path = File.expand_path("~/.local/bin")
+  uv_executable = system("which uv > /dev/null 2>&1") ? "uv" : "#{local_bin_path}/uv"
+
+  unless File.exist?(uv_executable) || system("which uv > /dev/null 2>&1")
+    UI.important("uv not found on PATH. Bootstrapping uv locally...")
+
+    # Ensure local bin directory exists
+    FileUtils.mkdir_p(local_bin_path)
+
+    # Download and run Astral's official standalone installer script
+    install_success = system("curl -LsSf https://astral.sh/uv/install.sh | sh")
+
+    if install_success
+      UI.success("Successfully bootstrapped uv!")
     else
-      sh("git -C .. commit -m 'Release notes for #{python_version}'")
-      sh("git -C .. push origin HEAD", error_callback: lambda { |_|
-        UI.important("Couldn't push the release notes commit; push it before the next build")
-      })
+      UI.user_error!("Failed to download and install uv automatically.")
     end
   end
 
-  private_lane :update_xcode do |options|
-    decide_version
-    collect_changes if options[:release]
-
-    begin
-      # Briefcase copies the stamped version into the app's metadata here
-      bootstrap
-    ensure
-      # Keep the working tree clean: the stamp only needs to reach the build
-      sh("git -C .. checkout -- pyproject.toml")
-    end
-
-    #unlock_keychain(
-    #  path: "login.keychain-db",
-    #  password: ENV["LOCAL_MACOS_PASSWORD"]
-    #)
-
-    # Set Marketing Version (CFBundleShortVersionString) and build number
-    # (CFBundleVersion) from the same values the Python metadata got
-    increment_version_number(
-      version_number: lane_context[:DATE_VERSION],
-      xcodeproj: xcode_project_path
-    )
-    increment_build_number(
-      build_number: lane_context[:BUILD_NUMBER],
-      xcodeproj: xcode_project_path
-    )
-
-    update_project_team(
-      path: xcode_project_path,
-      teamid: ENV["APP_STORE_TEAM_ID"]
-    )
-
-    update_xcodeproj(
-      xcodeproj: xcode_project_path,
-      options: {
-        'IPHONEOS_DEPLOYMENT_TARGET' => '15.0'
-      }
-    )
-
-    lane_context[:XCODE_PROJECT] = xcode_project_path
-    lane_context[:XCODE_SCHEME] = AppConfig::APP_NAME
+  # Ensure local bin path is temporarily appended to ENV['PATH'] for this execution context
+  unless ENV['PATH'].include?(local_bin_path)
+    ENV['PATH'] = "#{local_bin_path}:#{ENV['PATH']}"
   end
+
+  UI.message("--- Step 2: Running Python script using uv ---")
+  # uv will handle dependency resolution (e.g. via PEP 723 inline metadata) automatically
+  sh("uv --directory .. run generate_icons.py")
+
+  UI.message("--- Step 3: Running BeeWare Briefcase ---")
+  # Triggers your BeeWare packaging/build step (e.g. generating the Xcode project files)
+  # Start from a fresh Xcode project: Briefcase only writes Info.plist (permission
+  # usage descriptions, info.* keys) on create, and create skips an existing project
+  sh("rm", "-rf", File.join("..", "build", AppConfig::BRIEFCASE_SLUG, "iOS"))
+  sh("uvx --python 3.15 --directory .. briefcase create ios --no-input")
+  sh("uvx --python 3.15 --directory .. briefcase update ios --update-requirements --update-support --update-stub  --update-resources --no-input")
+end
+
+private_lane :update_xcode do
+  decide_version
+
+  begin
+    # Briefcase copies the stamped version into the app's metadata here
+    stamp_version
+    ios_bootstrap
+  ensure
+    # Keep the working tree clean: the stamp only needs to reach the build
+    sh("git -C .. checkout -- pyproject.toml")
+  end
+
+  #unlock_keychain(
+  #  path: "login.keychain-db",
+  #  password: ENV["LOCAL_MACOS_PASSWORD"]
+  #)
+
+  # Set Marketing Version (CFBundleShortVersionString) and build number
+  # (CFBundleVersion) from the same values the Python metadata got
+  increment_version_number(
+    version_number: lane_context[:DATE_VERSION],
+    xcodeproj: xcode_project_path
+  )
+  increment_build_number(
+    build_number: lane_context[:BUILD_NUMBER],
+    xcodeproj: xcode_project_path
+  )
+
+  update_project_team(
+    path: xcode_project_path,
+    teamid: ENV["APP_STORE_TEAM_ID"]
+  )
+
+  update_xcodeproj(
+    xcodeproj: xcode_project_path,
+    options: {
+      'IPHONEOS_DEPLOYMENT_TARGET' => '15.0'
+    }
+  )
+
+  lane_context[:XCODE_PROJECT] = xcode_project_path
+  lane_context[:XCODE_SCHEME] = AppConfig::APP_NAME
+end
+
+private_lane :build_xcode do
+  update_xcode
+
+  xcode_project = lane_context[:XCODE_PROJECT]
+  xcode_scheme = lane_context[:XCODE_SCHEME]
+
+  # 4. Build and archive using project: instead of workspace:
+  build_app(
+    #app_store_connect_api_key: api_key,
+    project: xcode_project,
+    scheme: xcode_scheme,
+    export_method: "app-store",
+    output_directory: "./build/output",
+    output_name: ipa_name,
+    clean: true,
+    export_options: {
+      compileBitcode: false,
+      signingStyle: "automatic",
+      uploadSymbols: true
+    },
+    export_team_id: ENV["APP_STORE_TEAM_ID"],
+    xcargs: "-allowProvisioningUpdates",
+    #xcodebuild_formatter: "xcbeautify"
+  )
+end
+
+# Builds the iOS app and uploads it to TestFlight with this release's notes.
+private_lane :ios_upload do
+  build_xcode
+
+  # "What to Test" is this build's section of the What's New notes only (not git
+  # commits); see scripts/collect_changes.py.
+  notes = release_notes(lane_context[:PYTHON_VERSION])
+  upload_to_testflight(
+    api_key: lane_context[:API_KEY],
+    changelog: notes[0, 4000],
+    #username: ENV["APP_STORE_APPLE_ID"],
+    #app_identifier: bundle_id
+  )
+end
+
+# ---- Android building blocks (shared by the android lanes and both) ----
+
+private_lane :android_bootstrap do
+  sh("uv --directory .. run generate_icons.py")
+  # A fresh Gradle project each time, as with iOS
+  sh("rm", "-rf", File.join("..", "build", AppConfig::BRIEFCASE_SLUG, "android"))
+  sh("uvx --python 3.15 --directory .. briefcase create android gradle --no-input")
+end
+
+# Builds the signed release APK. The build number goes in as `build`, because
+# Briefcase only takes the Python version's first three numbers for versionCode.
+private_lane :android_build do
+  begin
+    stamp_version
+    android_bootstrap
+    sh("uvx --python 3.15 --directory .. briefcase build android --no-input")
+    sh("uvx --python 3.15 --directory .. briefcase package android -p apk --no-input -C build=#{lane_context[:BUILD_NUMBER]}")
+  ensure
+    sh("git -C .. checkout -- pyproject.toml")
+  end
+
+  apk = Dir.glob(File.join("..", "dist", "*.apk"))
+    .reject { |path| path.end_with?("-signed.apk") }
+    .max_by { |path| File.mtime(path) }
+  UI.user_error!("Briefcase produced no APK in dist/") unless apk
+
+  signed = apk.sub(/\.apk\z/, "-signed.apk")
+  sh(
+    apksigner_path, "sign",
+    "--ks", ENV["ANDROID_KEYSTORE"],
+    "--ks-key-alias", ENV["ANDROID_KEY_ALIAS"],
+    "--ks-pass", "env:ANDROID_KEYSTORE_PASSWORD",
+    "--key-pass", "env:ANDROID_KEY_PASSWORD",
+    "--out", signed,
+    apk
+  )
+  # Absolute, because the Firebase action doesn't share the relative ../dist base
+  lane_context[:APK] = File.expand_path(signed)
+end
+
+# Builds the Android APK and uploads it to Firebase App Distribution for testers.
+private_lane :android_upload do
+  android_build
+
+  firebase_app_distribution(
+    app: ENV["FIREBASE_APP_ID"],
+    service_credentials_file: ENV["FIREBASE_SERVICE_CREDENTIALS_FILE"],
+    android_artifact_type: "APK",
+    android_artifact_path: lane_context[:APK],
+    groups: "internal",
+    release_notes: release_notes(lane_context[:PYTHON_VERSION])
+  )
+end
+
+default_platform(:ios)
+
+platform :ios do
 
   desc "Build Briefcase iOS app (.xcodeproj) and leave signing and deploying to Xcode"
   lane :manual do
@@ -253,32 +436,6 @@ platform :ios do
     setup_ci if is_ci
 
     update_xcode
-  end
-
-  private_lane :build_xcode do |options|
-    update_xcode(release: options[:release])
-
-    xcode_project = lane_context[:XCODE_PROJECT]
-    xcode_scheme = lane_context[:XCODE_SCHEME]
-
-    # 4. Build and archive using project: instead of workspace:
-    build_app(
-      #app_store_connect_api_key: api_key,
-      project: xcode_project,
-      scheme: xcode_scheme,
-      export_method: "app-store",
-      output_directory: "./build/output",
-      output_name: ipa_name,
-      clean: true,
-      export_options: {
-        compileBitcode: false,
-        signingStyle: "automatic",
-        uploadSymbols: true
-      },
-      export_team_id: ENV["APP_STORE_TEAM_ID"],
-      xcargs: "-allowProvisioningUpdates",
-      #xcodebuild_formatter: "xcbeautify"
-    )
   end
 
   desc "Build Briefcase iOS app (.xcodeproj) and deploy to local devices"
@@ -294,22 +451,15 @@ platform :ios do
     )
   end
 
-  private_lane :tag_release do
-    tag = lane_context[:PYTHON_VERSION]
-    add_git_tag(tag: tag, message: "TestFlight build #{tag}")
-    push_git_tags(tag: tag)
-    sh("git -C .. fetch --quiet origin main")
-    unless system("git -C .. merge-base --is-ancestor HEAD origin/main")
-      UI.important(
-        "#{tag} tags a commit that isn't on main. The public repository only " \
-        "gets tags on main, so the About page's Source link won't work until " \
-        "this commit is merged into main as is (not squashed). Share from main " \
-        "to avoid this."
-      )
-    end
+  desc "Build the iOS app and upload to TestFlight only: no notes commit, tag, mirror or release"
+  lane :upload do
+    setup_ci if is_ci
+
+    decide_version
+    ios_upload
   end
 
-  desc "Build Briefcase iOS app (.xcodeproj) and upload to TestFlight (pilot)"
+  desc "Build Briefcase iOS app (.xcodeproj) and upload to TestFlight, then tag, mirror and release"
   lane :share do
     # 1. Unlock Keychain on CI / Self-Hosted Runner
     setup_ci if is_ci
@@ -317,42 +467,49 @@ platform :ios do
     #get_certificates
     #get_provisioning_profile
 
-    build_xcode(release: true)
-
-    api_key = lane_context[:API_KEY]
-
-    # 5. Upload to TestFlight. "What to Test" is this build's section of the
-    # What's New notes only (not git commits); see scripts/collect_changes.py.
-    python_version = lane_context[:PYTHON_VERSION]
-    notes = sh("uv --directory .. run scripts/collect_changes.py --notes #{python_version}", log: false).strip
-    notes = "Build #{python_version}. No user-facing changes." if notes.empty?
-    upload_to_testflight(
-      api_key: api_key,
-      changelog: notes[0, 4000],
-      #username: ENV["APP_STORE_APPLE_ID"],
-      #app_identifier: bundle_id
-    )
-
-    # 6. Tag the release with its version, e.g. 2026.11.2.3, so the About
-    # page's Source link finds the exact code. the mirror step copies tags on
-    # main to the public repository.
-    tag_release
-
-    # 7. The About page's Source link points at the public repository, so the
-    # tag (and main, which holds the build's release notes) must be there
-    # before the build reaches testers.
-    mirror_to_public
-
-    # 8. A GitHub Release for the tag, with this build's What's New text, which
-    # the About page's Source link opens.
-    publish_release(python_version)
-    #pilot(
-    #  api_key: api_key,
-    #  ipa: ipa_path,
-    #  skip_waiting_for_build_processing: true,
-    #  changelog: ENV["RELEASE_NOTES"] || "Automated build submitted via Fastlane & Briefcase."
-    #)
+    decide_version
+    push_main
+    collect_changes
+    ios_upload
+    finish_release
   end
+end
+
+platform :android do
+
+  desc "Build the signed Android APK and upload it to Firebase App Distribution only: no notes commit, tag, mirror or release"
+  lane :upload do
+    check_android_env
+
+    decide_version(testflight: false)
+    android_upload
+  end
+
+  desc "Build the signed Android APK, upload it to Firebase App Distribution, then tag, mirror and release"
+  lane :share do
+    check_android_env
+
+    decide_version(testflight: false)
+    push_main
+    collect_changes
+    android_upload
+    finish_release
+  end
+end
+
+desc "Ship iOS (TestFlight) and Android (Firebase App Distribution), then push main, tag, mirror and release. Run from main."
+lane :both do
+  setup_ci if is_ci
+
+  UI.user_error!("Run `both` from main: the tag and the public mirror only cover main") unless current_git_branch == "main"
+  check_android_env
+
+  decide_version
+  push_main
+  collect_changes
+  ios_upload
+  android_upload
+  finish_release
 end
 
 desc "Mirror main and its release tags to the public repository"
