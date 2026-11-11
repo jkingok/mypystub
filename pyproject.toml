@@ -359,6 +359,17 @@ build_gradle_dependencies = [
 build_gradle_extra_content="""
 chaquopy.defaultConfig.staticProxy("toga_android.widgets.internal.webview")
 
+// Chaquopy compiles app code to .pyc and ships only that by default. Turn that
+// off so the .py source is packaged too: the launcher lists scripts and reads
+// their PEP 723 metadata and docstrings from it.
+chaquopy {
+    defaultConfig {
+        pyc {
+            src false
+        }
+    }
+}
+
 android {
     sourceSets {
         main {

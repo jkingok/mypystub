@@ -6,14 +6,15 @@ import asyncio
 import os
 import sys
 from collections.abc import Callable
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 import toga
 from toga.style import Pack
 
-from . import hooks as h
 from . import (
+    examples_copy,
     logfile,
     prompts,
     resume,
@@ -21,6 +22,7 @@ from . import (
     scan,
     web_meta,
 )
+from . import hooks as h
 from . import piplike as pip
 from . import settings as s
 from .errors import guarded
@@ -84,6 +86,7 @@ class PrototypeBase:
         self.data_path = getattr(self.app, "user_documents_dir", self.app.paths.data)
         print(f"Prototype initialized with data_path: {self.data_path}")
         self.this_path = Path(__file__).resolve().parent
+        self.examples_path = self.examples_location()
         self.icon_path = self.this_path / "resources" / "icons"
         self.template_path = self.this_path / "resources" / "templates"
         self.prototype_dir = self.data_path
@@ -357,10 +360,21 @@ class PrototypeBase:
             if path := table.indexPathForSelectedRow:
                 table.deselectRowAtIndexPath(path, animated=True)
 
+    def examples_location(self) -> Path:
+        """The Examples folder: a private copy on Android, else the bundled one."""
+        source = resources.files("mypystub") / "resources" / "examples"
+        try:
+            return examples_copy.examples_location(
+                source, Path(self.cache_path), sys.platform
+            )
+        except OSError as e:
+            print(f"Couldn't copy the examples; using the bundled ones: {e}")
+            return Path(str(source))
+
     def category_dirs(self) -> dict[str, Path]:
         """The top-level categories: built-in examples and the user's Documents."""
         return {
-            "Examples": self.this_path / "resources" / "examples",
+            "Examples": self.examples_path,
             "Documents": Path(self.prototype_dir),
         }
 
