@@ -699,6 +699,15 @@ async def install_resolved(
     return len(pending)
 
 
+def pure_only_by_default(platform_name: str) -> bool:
+    """Whether only pure-Python wheels install when the caller doesn't say.
+
+    Phones and tablets run compiled code only from wheels built into the app,
+    so iOS and Android refuse anything else. On desktop the rule is opt-in.
+    """
+    return platform_name in ("ios", "android")
+
+
 async def resolve_and_install_async(
     requirements: list[str],
     target_dir: Path,
@@ -827,7 +836,7 @@ async def resolve_and_install_async(
             resolution.mapping,
             target_dir,
             cache_dir,
-            sys.platform == "ios" if pure_only is None else pure_only,
+            pure_only_by_default(sys.platform) if pure_only is None else pure_only,
             force_reinstall,
             progress,
         )

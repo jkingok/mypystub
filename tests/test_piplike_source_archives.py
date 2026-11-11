@@ -207,9 +207,9 @@ def test_an_impure_wheel_is_refused_when_pure_only(
     assert not (tmp_path / "site" / "foo.py").exists()
 
 
-def test_pure_only_defaults_to_on_for_ios(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Off the device the rule is opt-in; on iOS it is always on."""
-    import inspect
-
-    source = inspect.getsource(piplike.resolve_and_install_async)
-    assert 'sys.platform == "ios" if pure_only is None else pure_only' in source
+def test_pure_only_is_always_on_for_phones_and_tablets() -> None:
+    """Compiled wheels are refused on iOS and Android; on desktop the rule is opt-in."""
+    assert piplike.pure_only_by_default("ios") is True
+    assert piplike.pure_only_by_default("android") is True
+    assert piplike.pure_only_by_default("darwin") is False
+    assert piplike.pure_only_by_default("linux") is False
