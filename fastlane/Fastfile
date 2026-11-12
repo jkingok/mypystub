@@ -377,10 +377,29 @@ def external_groups(options)
   (options[:external] || ENV["TESTFLIGHT_EXTERNAL_GROUPS"]).to_s.split(",").map(&:strip).reject(&:empty?)
 end
 
-# Builds the iOS app and uploads it to TestFlight with this release's notes. The
-# build reaches your internal testers at once. With `external` groups it is also
+# App Store Connect settings come from the environment too. Checked before
+# anything is built, so a missing one doesn't surface after the Android build.
+IOS_ENV = %w[
+  APP_STORE_CONNECT_KEY_ID
+  APP_STORE_CONNECT_ISSUER_ID
+  APP_STORE_CONNECT_PRIVATE_KEY
+  APP_STORE_TEAM_ID
+].freeze
+
+def check_ios_env
+  missing = IOS_ENV.select { |name| ENV[name].to_s.empty? }
+  UI.user_error!("Set these before an iOS release: #{missing.join(', ')}") unless missing.empty?
+end
+
+# Builds the iOS app (the .ipa), without uploading it.
+private_lane :ios_build do
+  build_xcode
+end
+
+# Uploads the built iOS app to TestFlight with this release's notes. The build
+# reaches your internal testers at once. With `external` groups it is also
 # submitted for external testing, which needs Apple's Beta App Review (see README).
-private_lane :ios_upload do |options|
+private_lane :ios_testflight do |options|
   api_key = app_store_connect_api_key(
     key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
     issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
@@ -388,8 +407,6 @@ private_lane :ios_upload do |options|
     is_key_content_base64: true
   )
   lane_context[:API_KEY] = api_key
-
-  build_xcode
 
   # "What to Test" is this build's section of the What's New notes only (not git
   # commits); see scripts/collect_changes.py.
@@ -405,6 +422,12 @@ private_lane :ios_upload do |options|
     UI.important("Submitting #{lane_context[:PYTHON_VERSION]} for external testing in: #{groups.join(', ')} (Beta App Review applies)")
   end
   upload_to_testflight(upload)
+end
+
+# Builds the iOS app and uploads it to TestFlight.
+private_lane :ios_upload do |options|
+  ios_build
+  ios_testflight(options || {})
 end
 
 # ---- Android building blocks (shared by the android lanes and both) ----
@@ -448,10 +471,8 @@ private_lane :android_build do
   lane_context[:APK] = File.expand_path(signed)
 end
 
-# Builds the Android APK and uploads it to Firebase App Distribution for testers.
-private_lane :android_upload do
-  android_build
-
+# Uploads the built, signed Android APK to Firebase App Distribution for testers.
+private_lane :android_firebase do
   firebase_app_distribution(
     app: ENV["FIREBASE_APP_ID"],
     service_credentials_file: ENV["FIREBASE_SERVICE_CREDENTIALS_FILE"],
@@ -460,6 +481,12 @@ private_lane :android_upload do
     groups: "internal",
     release_notes: release_notes(lane_context[:PYTHON_VERSION])
   )
+end
+
+# Builds the Android APK and uploads it to Firebase App Distribution.
+private_lane :android_upload do
+  android_build
+  android_firebase
 end
 
 default_platform(:ios)
@@ -538,18 +565,34 @@ platform :android do
   end
 end
 
-desc "Ship iOS (TestFlight) and Android (Firebase App Distribution), then push main, tag, mirror and release. Run from main."
+desc "Build iOS and Android, and only then upload to TestFlight and Firebase App Distribution, then push main, tag, mirror and release. Run from main."
 lane :both do |options|
   setup_ci if is_ci
 
   UI.user_error!("Run `both` from main: the tag and the public mirror only cover main") unless current_git_branch == "main"
+  check_ios_env
   check_android_env
 
   decide_version
   push_main
   collect_changes
-  ios_upload(external: options[:external])
-  android_upload
+
+  # Both builds first: if either fails, neither platform gets a build
+  ios_build
+  android_build
+
+  # Uploads can still fail one at a time. TestFlight has this build number once
+  # its upload succeeds, so tag it even if Firebase then fails, or the next run
+  # would number its build the same.
+  testflight_done = false
+  begin
+    ios_testflight(external: options[:external])
+    testflight_done = true
+    android_firebase
+  rescue StandardError
+    tag_release if testflight_done
+    raise
+  end
   finish_release
 end
 
