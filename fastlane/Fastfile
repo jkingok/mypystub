@@ -120,6 +120,24 @@ def check_android_env
   UI.user_error!("Set these before an Android release: #{missing.join(', ')}") unless missing.empty?
 end
 
+# A local install signs with the release key too, so it installs over a Firebase
+# build without uninstalling it; it doesn't need the Firebase settings.
+def check_android_signing_env
+  missing = ANDROID_ENV.grep(/\AANDROID_/).select { |name| ENV[name].to_s.empty? }
+  UI.user_error!("Set these before a signed Android build: #{missing.join(', ')}") unless missing.empty?
+end
+
+# The installed app's ID: Briefcase's bundle plus the app name (pyproject.toml)
+ANDROID_PACKAGE = "au.id.jking.#{AppConfig::BRIEFCASE_SLUG}"
+ANDROID_ACTIVITY = "org.beeware.android.MainActivity"
+
+def adb_path
+  sdk = ENV["ANDROID_HOME"] || File.expand_path("~/Library/Android/sdk")
+  path = File.join(sdk, "platform-tools", "adb")
+  UI.user_error!("adb not found at #{path}; set ANDROID_HOME") unless File.exist?(path)
+  path
+end
+
 # Briefcase 0.4.x doesn't sign Android packages, so the APK is signed here, with
 # the newest build-tools' apksigner in the Android SDK.
 def apksigner_path
@@ -541,6 +559,23 @@ platform :ios do
 end
 
 platform :android do
+
+  desc "Build the signed APK and install it on a connected device or emulator: no upload, tag or commit. device:<serial> (or ANDROID_SERIAL) picks one of several; see `adb devices -l`"
+  lane :local do |options|
+    check_android_signing_env
+
+    # Numbered like a release (so its versionCode isn't below one already
+    # installed), but not tagged: a later release may use the same number
+    decide_version
+    android_build
+
+    adb = [adb_path]
+    serial = options[:device] || ENV["ANDROID_SERIAL"]
+    adb += ["-s", serial] unless serial.to_s.empty?
+    # -r replaces the installed app and keeps its data (same signing key)
+    sh(*adb, "install", "-r", lane_context[:APK])
+    sh(*adb, "shell", "am", "start", "-n", "#{ANDROID_PACKAGE}/#{ANDROID_ACTIVITY}")
+  end
 
   desc "Build the signed Android APK and upload it to Firebase App Distribution only: no notes commit, tag, mirror or release"
   lane :upload do
