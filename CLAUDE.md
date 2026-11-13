@@ -14,7 +14,7 @@ MyPyStub is a Python Briefcase/Toga prototype app for iOS, with macOS, Linux, an
 
 - **Never commit to `main`.** Work on a `feature/...` branch and leave merging to the user.
 - **Push feature branches whenever it helps; never push to `main`.** That includes follow-up commits to a branch that already has a pull request. Don't force-push, and don't push to a branch someone else owns.
-- **Do not change the version.** At build time Fastlane stamps the calver and build number into `pyproject.toml` with `scripts/set_version.py` and restores it afterwards (see README, "Releasing to TestFlight"). The CalVer header in `CHANGELOG` is also set by the TestFlight script.
+- **Do not change the version.** Only Fastlane does. At release time it stamps the calver and build number into `pyproject.toml` with `scripts/set_version.py` and commits it (with `uv.lock`) alongside the release notes, so `main` carries the last released version (see README, "Releasing to TestFlight"). The CalVer header in `CHANGELOG` is also set by the TestFlight script.
 - **Do not edit generated or vendored output** (`build/`, `docs/`, `launcher.zip`).
 - **Keep `main` public-safe.** `mirror-main.yml` (or the Fastlane `mirror` lane) mirrors `main`, and the release tags on it, to the public repo, so do not commit secrets, signing material, or private notes.
 

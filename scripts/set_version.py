@@ -2,7 +2,8 @@
 
 Fastlane runs this before ``briefcase create``/``update``, so the app's Python
 metadata (``toga.App.version``, the About page) carries the same version as the
-Xcode project. Fastlane restores pyproject.toml afterwards.
+Xcode project. A release commits the stamped version (with the release
+notes), so main carries the last released version; other lanes restore it.
 
 One calver and build number give every form. Python gets the build number as
 a fourth release number, so its version is plain PEP 440 numbers, no words:
