@@ -1,5 +1,15 @@
 # What's New
 
+## 2026.11.13.1 (2026-11-13)
+
+### New
+
+- About shows the branch and commit of a build that isn't from main, so a test build can be told apart from a release.
+
+### Fixed
+
+- On Android, **Open Documents in Files** now opens your documents in the system Files browser (or the file picker), and browsing them there no longer crashes.
+
 ## 2026.11.12.1 (2026-11-12)
 
 ### New

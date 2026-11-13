@@ -2,7 +2,7 @@
 name = "MyPyStub"
 description = "My first application for prototyping with iDevices and Python"
 # Version is managed by Fastlane
-version = "0.0.2"
+version = "2026.11.13.1"
 requires-python = ">=3.12"
 dependencies = [
     "anyio",
@@ -55,12 +55,13 @@ icon = "assets/src_icon.png"       # Relative path to this prototype's icon
 project_name = "mypystub"
 bundle = "au.id.jking"
 # Version is managed by Fastlane
-version = "0.0.2"
+version = "2026.11.13.1"
 url = "https://github.com/jkingok/mypystub"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 author = "Joshua King"
 author_email = "jkingok@users.noreply.github.com"
+build = 1
 
 [tool.briefcase.app.mypystub]
 formal_name = "MyPyStub"
