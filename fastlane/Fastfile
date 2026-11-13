@@ -138,47 +138,53 @@ private_lane :push_main do
   sh("git -C .. push origin main")
 end
 
+# Build numbers already used on `date_version` (YYYY.M.D), from the release tags
+# (YYYY.M.D.N, added by the release lanes) that origin has. Every lane tags what
+# it uploads, so these are the numbers that are taken.
+def tagged_builds(date_version)
+  sh("git -C .. fetch --tags --quiet origin", error_callback: lambda { |_|
+    UI.important("Couldn't fetch tags; numbering from what is here and the GitHub Releases")
+  })
+  sh("git -C .. tag --list '#{date_version}.*'", log: false)
+    .lines.map { |tag| tag.strip[/\A#{Regexp.escape(date_version)}\.(\d+)\z/, 1] }.compact.map(&:to_i)
+end
+
+# The same, from the GitHub Releases of the public repository (anonymous, so only
+# public releases). A second source for when tags weren't fetched; best effort.
+def released_builds(date_version)
+  require "json"
+  require "net/http"
+  uri = URI("https://api.github.com/repos/#{PUBLIC_REPOSITORY}/releases?per_page=100")
+  response = Net::HTTP.get_response(uri)
+  unless response.is_a?(Net::HTTPSuccess)
+    UI.important("GitHub Releases answered #{response.code}; numbering from tags alone")
+    return []
+  end
+  JSON.parse(response.body).map { |release| release["tag_name"].to_s[/\A#{Regexp.escape(date_version)}\.(\d+)\z/, 1] }.compact.map(&:to_i)
+rescue StandardError => error
+  UI.important("Couldn't read the GitHub Releases (#{error.message}); numbering from tags alone")
+  []
+end
+
 # Decides the calver and build number, then stamps pyproject.toml (#61). Memoised
-# per run, so every lane in one run shares the same number. With testflight: false
-# (Android only) it doesn't need App Store Connect.
+# per run, so every lane in one run shares the same number.
+#
+# The number comes from GitHub, not App Store Connect: the next build is one more
+# than the highest build already tagged on origin or released on the public
+# repository for today's date. So a build must always be tagged (every release
+# lane does it), or its number would be used again.
 #
 # Builds are numbered per day: 1 to 99. Android's versionCode is built from the
 # build number with two digits, so 100 would break it.
-private_lane :decide_version do |options|
+private_lane :decide_version do
   next if lane_context[:PYTHON_VERSION]
-  testflight = (options || {}).fetch(:testflight, true)
-
-  latest_build = 0
-  if testflight
-    # Authenticate via App Store Connect API Key
-    api_key = app_store_connect_api_key(
-      key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
-      key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
-      is_key_content_base64: true
-    )
-    lane_context[:API_KEY] = api_key
-
-    # Builds on the same day are numbered after the latest one on TestFlight
-    latest_build = latest_testflight_build_number(
-      version: Time.now.strftime("%Y.%-m.%-d"),
-      app_identifier: bundle_id,
-      initial_build_number: 0
-    )
-  end
 
   # YYYY.M.D without leading zeros, so Xcode's CFBundleShortVersionString is
   # also exactly the PEP 440 base version in the app's Python metadata
   date_version = Time.now.strftime("%Y.%-m.%-d")
 
-  # Release tags (YYYY.M.D.N, added by the share lanes) count too, so a build
-  # is never numbered at or below one that was already tagged
-  sh("git -C .. fetch --tags --quiet origin", error_callback: lambda { |_|
-    UI.important("Couldn't fetch tags; numbering from TestFlight alone")
-  })
-  tagged = sh("git -C .. tag --list '#{date_version}.*'", log: false)
-    .lines.map { |tag| tag.strip.split(".")[3].to_i }
-  build_number = ([latest_build] + tagged).max + 1
+  taken = tagged_builds(date_version) + released_builds(date_version)
+  build_number = (taken.max || 0) + 1
   UI.user_error!("Build #{build_number} would be past 99 today; Android needs two digits per build") if build_number > 99
 
   # Python sees <calver>.<build>, e.g. 2026.11.2.3: four numbers, no words
@@ -357,19 +363,41 @@ private_lane :build_xcode do
   )
 end
 
-# Builds the iOS app and uploads it to TestFlight with this release's notes.
-private_lane :ios_upload do
+# The TestFlight groups to release to outside the team, from the lane's `external`
+# option or TESTFLIGHT_EXTERNAL_GROUPS: comma-separated group names. Empty means
+# internal testers only, which Apple doesn't review.
+def external_groups(options)
+  (options[:external] || ENV["TESTFLIGHT_EXTERNAL_GROUPS"]).to_s.split(",").map(&:strip).reject(&:empty?)
+end
+
+# Builds the iOS app and uploads it to TestFlight with this release's notes. The
+# build reaches your internal testers at once. With `external` groups it is also
+# submitted for external testing, which needs Apple's Beta App Review (see README).
+private_lane :ios_upload do |options|
+  api_key = app_store_connect_api_key(
+    key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
+    issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+    key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
+    is_key_content_base64: true
+  )
+  lane_context[:API_KEY] = api_key
+
   build_xcode
 
   # "What to Test" is this build's section of the What's New notes only (not git
   # commits); see scripts/collect_changes.py.
   notes = release_notes(lane_context[:PYTHON_VERSION])
-  upload_to_testflight(
-    api_key: lane_context[:API_KEY],
-    changelog: notes[0, 4000],
-    #username: ENV["APP_STORE_APPLE_ID"],
-    #app_identifier: bundle_id
-  )
+  upload = {
+    api_key: api_key,
+    changelog: notes[0, 4000]
+  }
+  groups = external_groups(options || {})
+  unless groups.empty?
+    # Distributing outside the team has to wait for the build to finish processing
+    upload.merge!(distribute_external: true, groups: groups, notify_external_testers: true)
+    UI.important("Submitting #{lane_context[:PYTHON_VERSION]} for external testing in: #{groups.join(', ')} (Beta App Review applies)")
+  end
+  upload_to_testflight(upload)
 end
 
 # ---- Android building blocks (shared by the android lanes and both) ----
@@ -452,15 +480,17 @@ platform :ios do
   end
 
   desc "Build the iOS app and upload to TestFlight only: no notes commit, tag, mirror or release"
-  lane :upload do
+  lane :upload do |options|
     setup_ci if is_ci
 
     decide_version
-    ios_upload
+    ios_upload(external: options[:external])
+    # Tagged even though it isn't released, so the build number isn't used again
+    tag_release
   end
 
   desc "Build Briefcase iOS app (.xcodeproj) and upload to TestFlight, then tag, mirror and release"
-  lane :share do
+  lane :share do |options|
     # 1. Unlock Keychain on CI / Self-Hosted Runner
     setup_ci if is_ci
 
@@ -470,7 +500,7 @@ platform :ios do
     decide_version
     push_main
     collect_changes
-    ios_upload
+    ios_upload(external: options[:external])
     finish_release
   end
 end
@@ -481,15 +511,18 @@ platform :android do
   lane :upload do
     check_android_env
 
-    decide_version(testflight: false)
+    decide_version
     android_upload
+    # Tagged even though it isn't released: Android won't install an update whose
+    # versionCode isn't higher, so the build number mustn't be used again
+    tag_release
   end
 
   desc "Build the signed Android APK, upload it to Firebase App Distribution, then tag, mirror and release"
   lane :share do
     check_android_env
 
-    decide_version(testflight: false)
+    decide_version
     push_main
     collect_changes
     android_upload
@@ -498,7 +531,7 @@ platform :android do
 end
 
 desc "Ship iOS (TestFlight) and Android (Firebase App Distribution), then push main, tag, mirror and release. Run from main."
-lane :both do
+lane :both do |options|
   setup_ci if is_ci
 
   UI.user_error!("Run `both` from main: the tag and the public mirror only cover main") unless current_git_branch == "main"
@@ -507,7 +540,7 @@ lane :both do
   decide_version
   push_main
   collect_changes
-  ios_upload
+  ios_upload(external: options[:external])
   android_upload
   finish_release
 end

@@ -70,14 +70,15 @@ Then run one of the lanes in `fastlane/Fastfile`:
 bundle exec fastlane ios share
 ```
 
-- `share` builds and uploads to TestFlight. TestFlight's "What to Test" is the newest build's section of What's New, not the git log.
+- `share` builds and uploads to TestFlight. TestFlight's "What to Test" is the newest build's section of What's New, not the git log. The build goes to your **internal** testers, which Apple doesn't review, like the `internal` group on Firebase App Distribution for Android.
+- `bundle exec fastlane ios share external:"Beta Testers"` (or `TESTFLIGHT_EXTERNAL_GROUPS="Beta Testers,Friends"` in the environment) also submits the build to those **external** TestFlight groups. Apple reviews external builds (Beta App Review): the first build of a new version is reviewed, which with a calver version is the first build of each day, and a build can wait in review before testers get it. So it is opt-in per release, not the default. It needs the groups to exist in App Store Connect, and the app's Test Information (contact details and notes) filled in there. Works with `upload` and `both` too.
 - `mirror` copies `main` and its release tags to the public repository (`bundle exec fastlane mirror`; set `PUBLIC_REPO_URL` to override the remote). `share` runs it after tagging, so the About page's Source link works in the public repository; run it by hand to catch up after merging.
 - `local` builds and installs on local devices.
 - `manual` builds the Xcode project and leaves signing and deploying to Xcode.
 
 The `share` lane also collects the change fragments in `changes/` into the app's Help → What's New page and commits them (see `changes/README.md`).
 
-Fastlane sets the version, so do not edit it by hand. Before Briefcase runs, it picks today's date and the next build number on TestFlight, and `scripts/set_version.py` stamps them into `pyproject.toml` (restored afterwards). Python sees the build number as a fourth number, so the version is plain PEP 440 with no words. Xcode's version keys hold at most three numbers, so it keeps the build number apart. Every lane numbers its build the same way:
+Fastlane sets the version, so do not edit it by hand. Before Briefcase runs, it picks today's date and the next build number, one more than the highest already used today, and `scripts/set_version.py` stamps them into `pyproject.toml` (restored afterwards). Python sees the build number as a fourth number, so the version is plain PEP 440 with no words. Xcode's version keys hold at most three numbers, so it keeps the build number apart. Every lane numbers its build the same way:
 
 | | Example |
 |---|---|
@@ -85,9 +86,11 @@ Fastlane sets the version, so do not edit it by hand. Before Briefcase runs, it 
 | Xcode `CFBundleShortVersionString` | `2026.11.2` |
 | Xcode `CFBundleVersion` | `3` |
 
+The build number comes from **GitHub, not App Store Connect**: one more than the highest `YYYY.M.D.N` tag on `origin` for today (Fastlane fetches the tags first), and any such release on the public repository's GitHub Releases (read anonymously, best effort). Every lane that uploads a build also tags it, `upload` lanes included, so a number is never used twice. A build uploaded some other way (from Xcode, say) isn't tagged, so tag it by hand (`git tag 2026.11.2.4 && git push origin 2026.11.2.4`) or its number could be used again, and TestFlight and Android both reject that.
+
 Runs straight from the source tree (`briefcase dev`, tests) show the placeholder version in `pyproject.toml`.
 
-After a successful upload, `share` tags the commit with the Python version (for example `2026.11.2.3`) and pushes the tag. The `mirror` lane copies `main` and the release tags on `main` to the public repository, and the About page links to the tag of the running build ("Source"). Tags on commits that aren't on `main` stay private, so share from `main`; a build from a branch that is later squash-merged keeps a private tag, and the lane warns about it. Build numbers count both TestFlight and these tags, so a number is never reused.
+After a successful upload, `share` tags the commit with the Python version (for example `2026.11.2.3`) and pushes the tag. The `mirror` lane copies `main` and the release tags on `main` to the public repository, and the About page links to the tag of the running build ("Source"). Tags on commits that aren't on `main` stay private, so share from `main`; a build from a branch that is later squash-merged keeps a private tag, and the lane warns about it. 
 
 ### GitHub Releases
 
