@@ -289,6 +289,7 @@ private_lane :ios_bootstrap do
   UI.message("--- Step 2: Running Python script using uv ---")
   # uv will handle dependency resolution (e.g. via PEP 723 inline metadata) automatically
   sh("uv --directory .. run generate_icons.py")
+  sh("uv --directory .. run scripts/build_info.py") # branch and commit for About
 
   UI.message("--- Step 3: Running BeeWare Briefcase ---")
   # Triggers your BeeWare packaging/build step (e.g. generating the Xcode project files)
@@ -410,6 +411,7 @@ end
 
 private_lane :android_bootstrap do
   sh("uv --directory .. run generate_icons.py")
+  sh("uv --directory .. run scripts/build_info.py") # branch and commit for About
   # A fresh Gradle project each time, as with iOS
   sh("rm", "-rf", File.join("..", "build", AppConfig::BRIEFCASE_SLUG, "android"))
   sh("uvx --python 3.15 --directory .. briefcase create android gradle --no-input")

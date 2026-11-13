@@ -13,6 +13,7 @@ from toga.style import Pack
 
 from . import (
     about,
+    build_info,
     first_run,
     logfile,
     maintenance,
@@ -240,6 +241,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
             aliases=self.configured_aliases(),
             home_page=self.app.home_page,
             packages=packages,
+            build=build_info.current(),
         )
 
     @guarded

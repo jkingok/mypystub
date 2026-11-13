@@ -92,6 +92,16 @@ Runs straight from the source tree (`briefcase dev`, tests) show the placeholder
 
 After a successful upload, `share` tags the commit with the Python version (for example `2026.11.2.3`) and pushes the tag. The `mirror` lane copies `main` and the release tags on `main` to the public repository, and the About page links to the tag of the running build ("Source"). Tags on commits that aren't on `main` stay private, so share from `main`; a build from a branch that is later squash-merged keeps a private tag, and the lane warns about it. 
 
+### Which branch a build came from
+
+Fastlane runs `scripts/build_info.py` before every build. It writes the branch and `git describe` to `src/mypystub/resources/build_info.json` (ignored by Git), which Briefcase bundles, and the About page shows them for builds that aren't from `main`. Before a local `briefcase run`, run it yourself, or About shows whatever an older build left there:
+
+```bash
+uv run scripts/build_info.py
+```
+
+A run from the source tree on a desktop (`briefcase dev`) asks Git directly.
+
 ### GitHub Releases
 
 After the tag is mirrored, `share` creates a **GitHub Release** for it on the public repository (`PUBLIC_REPOSITORY`, default `jkingok/mypystub`). Its title is the version and its body is that build's *What's New* text, the same Markdown the app shows (`scripts/collect_changes.py --release-notes <version>`). The About page's *Source* link opens that Release page, which also leads to the code at the tag.

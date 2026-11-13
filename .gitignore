@@ -75,3 +75,6 @@ logs/
 
 # uv virtual environment
 .venv/
+
+# Written before each build by scripts/build_info.py
+src/mypystub/resources/build_info.json
