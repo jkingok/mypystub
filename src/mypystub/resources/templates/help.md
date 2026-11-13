@@ -20,7 +20,7 @@ The app is made up of the following views:
 The list opens on two categories:
 
 - **Examples**: sample prototypes built into the app.
-- **Documents**: your own scripts and projects. On iPhone and iPad they're in the *On My* (iPhone/iPad) section of *Files* under *MyPyStub*; on Android, in the app's folder in your device's file browser.
+- **Documents**: your own scripts and projects. On iPhone and iPad they're in the *On My* (iPhone/iPad) section of *Files* under *MyPyStub*; on Android, under *MyPyStub* in the system Files browser and file pickers (Setup's **Open Documents in Files** opens it there).
 
 Each row previews what's inside. Tap a folder to open it, and `..` to go back up. Tap a script or project to run it.
 

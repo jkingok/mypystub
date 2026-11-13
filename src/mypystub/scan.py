@@ -20,8 +20,7 @@ from typing import Any
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
-from . import versions
-from . import webapps
+from . import versions, webapps
 from .piplike import parse_aliases
 
 PEP723_BLOCK = re.compile(
