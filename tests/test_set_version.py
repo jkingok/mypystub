@@ -76,22 +76,26 @@ def test_stamp_sets_versions_and_build_keeping_comments() -> None:
     assert doc["tool"]["briefcase"]["version"] == "2026.11.2.3"
     assert doc["tool"]["briefcase"]["build"] == 3
     assert "# Version is managed by Fastlane" in stamped
-    # Nothing else changes: two versions replaced, one build line added
-    current = tomlkit.parse(text)["project"]["version"]
+    # Nothing else changes: two versions replaced, and the build line replaced,
+    # or added when there is none (a release commits the build it was given)
+    current = tomlkit.parse(text)
+    version = current["project"]["version"]  # type: ignore[index]
+    build = current["tool"]["briefcase"].get("build")  # type: ignore[index,union-attr]
     diff = [
         line
         for line in difflib.ndiff(text.splitlines(), stamped.splitlines())
         if line[:2] in ("+ ", "- ")
     ]
-    assert sorted(diff) == sorted(
-        [
-            f'- version = "{current}"',
-            f'- version = "{current}"',
-            '+ version = "2026.11.2.3"',
-            '+ version = "2026.11.2.3"',
-            "+ build = 3",
-        ]
-    )
+    expected = [
+        f'- version = "{version}"',
+        f'- version = "{version}"',
+        '+ version = "2026.11.2.3"',
+        '+ version = "2026.11.2.3"',
+        "+ build = 3",
+    ]
+    if build is not None:
+        expected.append(f"- build = {build}")
+    assert sorted(diff) == sorted(expected)
 
 
 def test_main_writes_the_file(

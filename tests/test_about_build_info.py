@@ -1,11 +1,23 @@
 """The branch and commit on the About page, for builds not from main."""
 
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from mypystub import about, build_info
+
+
+@pytest.fixture(autouse=True)
+def outside_git_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Forget the GIT_* variables git exports to hooks (pre-commit runs these).
+
+    GIT_DIR, GIT_INDEX_FILE and the like would point git, here and in
+    build_info, at the repository being committed instead of the test's own.
+    """
+    for name in [name for name in os.environ if name.startswith("GIT_")]:
+        monkeypatch.delenv(name)
 
 
 def git(repo: Path, *args: str) -> None:

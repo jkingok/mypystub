@@ -222,6 +222,13 @@ private_lane :stamp_version do
   sh("uv --directory .. run scripts/set_version.py #{lane_context[:DATE_VERSION]} #{lane_context[:BUILD_NUMBER]}")
 end
 
+# Pin pyproject.toml's git requirements (Toga) to their current commit for this
+# build, so pip reuses the wheels it built before instead of cloning Toga again
+# for each package. Lanes that stamp the version restore pyproject.toml after.
+private_lane :pin_git_requirements do
+  sh("uv --directory .. run scripts/pin_git_requirements.py")
+end
+
 # Turn the change fragments in changes/ into this release's "What's New"
 # section, and commit them with the release's version, so the build (and its
 # tag) contains its own notes and main carries the version last released. That
@@ -312,10 +319,11 @@ private_lane :ios_bootstrap do
   UI.message("--- Step 3: Running BeeWare Briefcase ---")
   # Triggers your BeeWare packaging/build step (e.g. generating the Xcode project files)
   # Start from a fresh Xcode project: Briefcase only writes Info.plist (permission
-  # usage descriptions, info.* keys) on create, and create skips an existing project
+  # usage descriptions, info.* keys) on create, and create skips an existing project.
+  # create installs the code, requirements, support package, stub and resources
+  # itself, so an update afterwards would only install them all again.
   sh("rm", "-rf", File.join("..", "build", AppConfig::BRIEFCASE_SLUG, "iOS"))
   sh("uvx --python 3.15 --directory .. briefcase create ios --no-input")
-  sh("uvx --python 3.15 --directory .. briefcase update ios --update-requirements --update-support --update-stub  --update-resources --no-input")
 end
 
 private_lane :update_xcode do
@@ -324,6 +332,7 @@ private_lane :update_xcode do
   begin
     # Briefcase copies the stamped version into the app's metadata here
     stamp_version
+    pin_git_requirements
     ios_bootstrap
   ensure
     # Keep the working tree clean: the stamp only needs to reach the build
@@ -463,6 +472,7 @@ end
 private_lane :android_build do
   begin
     stamp_version
+    pin_git_requirements
     android_bootstrap
     sh("uvx --python 3.15 --directory .. briefcase build android --no-input")
     sh("uvx --python 3.15 --directory .. briefcase package android -p apk --no-input -C build=#{lane_context[:BUILD_NUMBER]}")
