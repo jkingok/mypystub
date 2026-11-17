@@ -1,8 +1,9 @@
-"""Report what's on the pasteboard, and why Paste might not be able to use it.
+"""Report what's on the pasteboard (iOS) or clipboard (Android), and what could use it.
 
 Copy something, run this, and read the Verdict at the end. iOS may ask whether
-to allow pasting: that answer is part of what's being tested. The report is also
-saved as paste_report.txt, and each type's raw bytes go in paste_dump/, both in
+to allow pasting, and Android 12+ shows a "pasted from your clipboard" note:
+that is part of what's being tested. The report is also saved as
+paste_report.txt, and each type's raw bytes go in paste_dump/, both in
 Documents, so they can be shared.
 """
 
@@ -258,11 +259,8 @@ def verdict(found: dict[str, Any], items: int, writable: bool) -> str:
     return "The pasteboard is empty. Copy something, then run this again."
 
 
-def main() -> None:
-    """Write the report."""
-    if sys.platform != "ios":
-        print("This looks at the iOS pasteboard, so it only runs on iPhone or iPad.")
-        return
+def ios_main() -> None:
+    """Write the report from the iOS pasteboard."""
     from rubicon.objc import ObjCClass  # pyright: ignore[reportMissingImports]
 
     documents = Path.home() / "Documents"
@@ -289,6 +287,183 @@ def main() -> None:
     say(verdict(found, items, writable))
     if writable:
         (documents / "paste_report.txt").write_text("\n".join(lines) + "\n")
+
+
+# -- Android --------------------------------------------------------------------
+# The clipboard is ClipboardManager. Its ClipData holds items, each text, HTML or a
+# content:// URI. Android 12+ shows a note when a script reads the content, and
+# 10+ only answers the app that has focus. A URI is read through ContentResolver,
+# which the clipboard grants to the app that fetched the clip.
+
+OPENABLE_NAME, OPENABLE_SIZE = "_display_name", "_size"
+SENSITIVE = "android.content.extra.IS_SENSITIVE"  # API 33+
+
+
+def android_activity() -> Any:
+    """The running activity: Briefcase's MainActivity keeps itself in a static."""
+    from java import jclass  # pyright: ignore[reportMissingImports]
+
+    return jclass("org.beeware.android.MainActivity").singletonThis
+
+
+def android_device(activity: Any) -> None:
+    """Report the device, the focus the clipboard needs, and how we were started."""
+    from java import jclass  # pyright: ignore[reportMissingImports]
+
+    build, version = jclass("android.os.Build"), jclass("android.os.Build$VERSION")
+    say("== Device ==")
+    say(f"Python {platform.python_version()}, Android {version.RELEASE}")
+    say(f"API {version.SDK_INT}, {build.MANUFACTURER} {build.MODEL}")
+    say(f"window focus: {bool(activity.hasWindowFocus())} (10+ needs it to read)")
+    launch = activity.getIntent()
+    say(f"started with {launch.getAction()}, type {launch.getType()}")
+
+
+def android_clip_counts(activity: Any) -> tuple[Any, bool]:
+    """Report what the clipboard says it holds, which shows no note and needs no focus."""
+    from java import jclass  # pyright: ignore[reportMissingImports]
+
+    manager = activity.getSystemService(
+        jclass("android.content.Context").CLIPBOARD_SERVICE
+    )
+    has_clip = bool(manager.hasPrimaryClip())
+    say()
+    say("== Clipboard ==")
+    say(f"hasPrimaryClip {has_clip}")
+    description = manager.getPrimaryClipDescription()
+    if description is None:
+        return manager, False
+    say(f"label {description.getLabel()}, {description.getMimeTypeCount()} type(s)")
+    for number in range(description.getMimeTypeCount()):
+        say(f"  type {description.getMimeType(number)}")
+    try:
+        age = time.time() - description.getTimestamp() / 1000
+        say(f"copied {age:.0f} seconds ago")
+        extras = description.getExtras()
+        if extras is not None and extras.getBoolean(SENSITIVE):
+            say("marked sensitive: the copying app asks for it to be hidden")
+    except Exception as problem:  # noqa: BLE001  (older than API 26 or 33)
+        say(f"no timestamp or sensitive flag: {problem!r}")
+    return manager, has_clip
+
+
+def read_uri(activity: Any, uri: Any, folder: Path) -> dict[str, Any]:
+    """Open a content URI as Paste would: type, name, size, then save the bytes."""
+    from java import jarray, jbyte  # pyright: ignore[reportMissingImports]
+
+    resolver = activity.getContentResolver()
+    result: dict[str, Any] = {}
+    started = time.monotonic()
+    try:
+        result["type"] = resolver.getType(uri)
+        cursor = resolver.query(uri, None, None, None, None)
+        if cursor is not None:
+            try:
+                if cursor.moveToFirst():
+                    for column, key in (
+                        (OPENABLE_NAME, "name"),
+                        (OPENABLE_SIZE, "size"),
+                    ):
+                        index = cursor.getColumnIndex(column)
+                        if index >= 0:
+                            result[key] = str(cursor.getString(index))
+            finally:
+                cursor.close()
+        stream = resolver.openInputStream(uri)
+        data, buffer = b"", jarray(jbyte)(65536)
+        while len(data) <= DUMP_LIMIT:
+            count = stream.read(buffer)
+            if count < 0:
+                break
+            data += bytes(memoryview(buffer))[:count]
+        stream.close()
+        name = re.sub(r"[^A-Za-z0-9._-]", "_", result.get("name") or "item")
+        folder.mkdir(exist_ok=True)
+        (folder / name).write_bytes(data)
+        result["saved as"] = name
+        result["read"] = len(data)
+        result["looks like"] = sniff(folder / name)
+    except Exception as problem:  # noqa: BLE001
+        result["exception"] = repr(problem)
+    result["seconds"] = round(time.monotonic() - started, 2)
+    return result
+
+
+def android_items(activity: Any, manager: Any, folder: Path) -> dict[str, Any]:
+    """Read the clip: this is what shows the Android 12 note. Try each URI."""
+    say()
+    say(f"== Items, raw bytes in {folder.name}/ ==")
+    found: dict[str, Any] = {"text": False, "files": []}
+    clip = manager.getPrimaryClip()
+    if clip is None:
+        say("hasPrimaryClip is true, but reading the clip gave nothing (no focus?)")
+        return found
+    for number in range(clip.getItemCount()):
+        item = clip.getItemAt(number)
+        say(f"Item {number + 1}:")
+        text, html, uri = item.getText(), item.getHtmlText(), item.getUri()
+        if text is not None:
+            say(f"  text: {len(str(text))} characters, starting {str(text)[:60]!r}")
+            found["text"] = True
+        if html is not None:
+            say(f"  html: {len(str(html))} characters")
+        if uri is not None:
+            say(f"  uri: {uri}")
+            result = read_uri(activity, uri, folder)
+            say(f"    {result}")
+            found["files"].append(result)
+    return found
+
+
+def android_verdict(found: dict[str, Any], has_clip: bool, writable: bool) -> str:
+    """What Paste would do with this clip, and what to try if it can't."""
+    if not writable:
+        return "Paste can't save anything: the documents folder isn't writable."
+    files = found.get("files", [])
+    for file in files:
+        if "exception" in file or file.get("read", 0) == 0:
+            return f"Paste would fail to read a copied file: {file}"
+    if files:
+        names = ", ".join(file.get("name", "a file") for file in files)
+        return f"Paste would import {names}."
+    if found.get("text"):
+        return "Paste would treat the text as Python, and ask for a file name."
+    if has_clip:
+        return (
+            "Something is copied, but nothing could be read. Android only gives the "
+            "clipboard to the app with focus, and a copied value may be hidden as "
+            "sensitive. Look for errors under Items."
+        )
+    return "The clipboard is empty. Copy something, then run this again."
+
+
+def android_main() -> None:
+    """Write the report from the Android clipboard."""
+    activity = android_activity()
+    documents = Path(str(activity.getFilesDir().getAbsolutePath()))
+    android_device(activity)
+    manager, has_clip = android_clip_counts(activity)
+    found = (
+        android_items(activity, manager, documents / "paste_dump") if has_clip else {}
+    )
+    writable = report_destination(documents)
+    say()
+    say("== Verdict ==")
+    say(android_verdict(found, has_clip, writable))
+    if writable:
+        (documents / "paste_report.txt").write_text("\n".join(lines) + "\n")
+
+
+def main() -> None:
+    """Write the report for this platform."""
+    if sys.platform == "ios":
+        ios_main()
+    elif sys.platform == "android":
+        android_main()
+    else:
+        print(
+            "This reads the clipboard on iPhone, iPad or Android, so it only runs there."
+        )
 
 
 if __name__ == "__main__":
