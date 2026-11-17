@@ -49,6 +49,52 @@ The pre-commit hooks run the same checks as the pull request gate (`.github/work
 uv run pre-commit run --all-files
 ```
 
+## Building an Android APK by hand, with another Python
+
+Fastlane (below) builds the release APK with the default Python. To build one by hand, for example with Python 3.14 beside the default build, run Briefcase under the Python you want: it picks the Android Python from the interpreter that runs it. Give each Python its own app ID so the APKs install side by side without clashing. `app_name` can't be overridden (and it names the module Briefcase starts), so change the **bundle**, which comes before it in the app ID, and the **formal name**, which is the name under the icon. Briefcase reads each `-C` value as TOML, so a string needs quotes inside the quotes. The documents provider's authority follows the app ID, so two installs can both appear in the Files app.
+
+`scripts/build_android.py` does all of this: it generates the icons (only the original is in Git, and without creating all of the variants the app gets Briefcase's default), writes the build info (so About shows your branch), clears the old build, runs `create` and `package -p apk` under that Python with the right `-C` options, and signs the APK if you have set the signing variables (below). Without a version it builds the default Python (currently 3.15, but whatever your Briefcase is running), named the same way. Add `--plain` to keep the normal app ID and name (`au.id.jking.mypystub`, "MyPyStub"), which updates a Fastlane build instead of installing beside it. _Note that this process assumes that you use `uv`!_
+
+```bash
+uv run scripts/build_android.py 3.14
+```
+
+That app's ID is `au.id.jking.py314.mypystub`. The result is in `dist/`. Briefcase leaves the APK with an awkward (generic or with spaces) name, so the script renames it to `MyPyStub_314-<version>.apk` (the Python without its dot, then the version) and signs it into `MyPyStub_314-<version>-signed.apk`. Without signing variables only the **unsigned** one is made, and Android refuses to install it until it is signed. `apksigner` also writes a `.idsig` file beside the signed APK, which installing doesn't need. The script uses `-p apk` because Briefcase's default is an `.aab` for Google Play.
+
+By hand, the steps are: `uv run generate_icons.py`; `uv run scripts/build_info.py`; `rm -rf build/mypystub/android` (Briefcase won't overwrite it, and every Python builds into that folder); then `briefcase create android` and `briefcase package android -p apk` under `uvx --python 3.14`, each with `-C 'bundle="au.id.jking.py314"' -C 'formal_name="MyPyStub 3.14"'`, and the same options on any other Briefcase command you run.
+
+For a quick test on your own device, `briefcase build android` (with the same `-C` options) makes a debug-signed APK that `adb install -r` accepts. Don't hand that one to anyone else: it is debuggable, and a debug key from another machine can't update it.
+
+### Signing the APK by hand
+
+Briefcase 0.4 doesn't sign Android packages. You need a keystore, made once, and the Android SDK's `apksigner`. **Keep the keystore and its passwords safe, and out of the repository.** Every later build must be signed with the same key, or phones will refuse to update an installed copy. It is the same key Fastlane uses (`ANDROID_KEYSTORE` and the other `ANDROID_KEY*` variables), so a hand-signed APK can update a Fastlane build of the same app ID.
+
+**If you are going to do this, you probably should change `bundle` in `pyproject.toml` to one of your own (effectively indicating a _fork_).**
+
+Make a keystore, only if you don't have one:
+
+```bash
+keytool -genkeypair -v -keystore ~/mypystub.jks -alias mypystub -keyalg RSA -keysize 2048 -validity 10000
+```
+
+`scripts/build_android.py` signs for you when these are set (it reads the passwords from the environment, so `apksigner` doesn't stop to ask): `ANDROID_KEYSTORE`, `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_PASSWORD` only if the key has its own password. To sign by hand instead, sign the APK (use the newest folder under `build-tools`; `$ANDROID_HOME` is usually `~/Library/Android/sdk` on a Mac). It asks for the passwords:
+
+```bash
+"$ANDROID_HOME"/build-tools/<version>/apksigner sign --ks ~/mypystub.jks --ks-key-alias mypystub --out dist/MyPyStub-signed.apk dist/<the unsigned>.apk
+```
+
+Check the signature, then install it on a connected phone or emulator, or send the signed file to testers:
+
+```bash
+"$ANDROID_HOME"/build-tools/<version>/apksigner verify --verbose dist/MyPyStub-signed.apk
+```
+
+```bash
+"$ANDROID_HOME"/platform-tools/adb install -r dist/MyPyStub-signed.apk
+```
+
+Installing over an app that was signed with a different key fails with a signature mismatch; uninstall it first (this deletes its data).
+
 ## Releasing to TestFlight
 
 Builds are shipped by hand from a clone on a Mac with Xcode, Ruby, and Bundler. The `Continuous Delivery to TestFlight` workflow only runs `fastlane ios share` and is manual; on a Mac it costs no CI minutes.

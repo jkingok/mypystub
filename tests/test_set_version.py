@@ -2,6 +2,7 @@
 
 import difflib
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,8 @@ def test_rejects_build_below_one(build: int) -> None:
 def test_stamp_sets_versions_and_build_keeping_comments() -> None:
     """Both versions and Briefcase's build are set; the file's comments survive."""
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    # A committed release already carries a build line; start from one without
+    text = re.sub(r"^build = \d+\n", "", text, flags=re.MULTILINE)
     stamped = load().stamp(text, "2026.11.2.3", 3)
     doc = tomlkit.parse(stamped)
     assert doc["project"]["version"] == "2026.11.2.3"

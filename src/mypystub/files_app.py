@@ -26,8 +26,10 @@ from urllib.parse import quote
 
 SCHEME = "shareddocuments://"
 
-# Must match android:authorities in pyproject.toml and AppDocumentsProvider.java
-ANDROID_AUTHORITY = "au.id.jking.mypystub.documents"
+# The provider's authority is the app's ID plus this, so installs of the app
+# under different names don't clash. Must match android:authorities in
+# pyproject.toml and AppDocumentsProvider.authority()
+AUTHORITY_SUFFIX = ".documents"
 ANDROID_ROOT_ID = "mypystub"  # AppDocumentsProvider.ROOT_ID
 ANDROID_ROOT_DOCUMENT = "root"  # AppDocumentsProvider.ROOT_DOC_ID
 # DocumentsContract.Root.MIME_TYPE_ITEM: "this URI is a root, open it to browse"
@@ -52,9 +54,10 @@ def open_android_files(jclass: Callable[[str], Any]) -> bool:
     intent_class = jclass("android.content.Intent")
     contract = jclass("android.provider.DocumentsContract")
 
+    authority = activity.getPackageName() + AUTHORITY_SUFFIX
     view = intent_class(intent_class.ACTION_VIEW)
     view.setDataAndType(
-        contract.buildRootUri(ANDROID_AUTHORITY, ANDROID_ROOT_ID), ANDROID_ROOT_MIME
+        contract.buildRootUri(authority, ANDROID_ROOT_ID), ANDROID_ROOT_MIME
     )
     view.addFlags(intent_class.FLAG_GRANT_READ_URI_PERMISSION)
     try:
@@ -68,7 +71,7 @@ def open_android_files(jclass: Callable[[str], Any]) -> bool:
     pick.setType("*/*")
     pick.putExtra(
         contract.EXTRA_INITIAL_URI,
-        contract.buildDocumentUri(ANDROID_AUTHORITY, ANDROID_ROOT_DOCUMENT),
+        contract.buildDocumentUri(authority, ANDROID_ROOT_DOCUMENT),
     )
     try:
         activity.startActivity(pick)

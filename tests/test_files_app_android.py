@@ -62,6 +62,9 @@ class Contract:
 
 
 class Activity:
+    def getPackageName(self) -> str:
+        return "au.id.jking.mypystub315"
+
     def __init__(self, refuse: int = 0) -> None:
         self.started: list[Intent] = []
         self.refuse = refuse  # how many startActivity calls fail first
@@ -87,7 +90,7 @@ def test_the_provider_root_is_viewed_first() -> None:
     assert files_app.open_android_files(jclass_for(activity)) is True
     (intent,) = activity.started
     assert intent.action == Intent.ACTION_VIEW
-    assert intent.data == "content://au.id.jking.mypystub.documents/root/mypystub"
+    assert intent.data == "content://au.id.jking.mypystub315.documents/root/mypystub"
     assert intent.type == "vnd.android.document/root"
 
 
@@ -97,7 +100,7 @@ def test_the_picker_at_the_root_when_nothing_views_it() -> None:
     (intent,) = activity.started
     assert intent.action == Intent.ACTION_OPEN_DOCUMENT
     assert intent.extras[Contract.EXTRA_INITIAL_URI] == (
-        "content://au.id.jking.mypystub.documents/document/root"
+        "content://au.id.jking.mypystub315.documents/document/root"
     )
     assert intent.categories == [Intent.CATEGORY_OPENABLE]
 
@@ -116,11 +119,13 @@ def test_without_chaquopy_it_says_it_could_not(
 def test_the_ids_match_the_provider_and_the_manifest() -> None:
     """The authority and root IDs are written in three places; keep them equal."""
     java = PROVIDER.read_text(encoding="utf-8")
-    assert f'AUTHORITY = "{files_app.ANDROID_AUTHORITY}"' in java
+    assert f'getPackageName() + "{files_app.AUTHORITY_SUFFIX}"' in java
+    assert "AUTHORITY =" not in java
     assert f'ROOT_ID = "{files_app.ANDROID_ROOT_ID}"' in java
     assert f'ROOT_DOC_ID = "{files_app.ANDROID_ROOT_DOCUMENT}"' in java
     manifest = PYPROJECT.read_text(encoding="utf-8")
-    assert f'android:authorities="{files_app.ANDROID_AUTHORITY}"' in manifest
+    wanted = f'android:authorities="${{applicationId}}{files_app.AUTHORITY_SUFFIX}"'
+    assert wanted in manifest
 
 
 def test_the_provider_implements_every_flag_it_advertises() -> None:

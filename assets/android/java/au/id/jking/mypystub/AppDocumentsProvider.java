@@ -36,9 +36,19 @@ import java.util.Locale;
  */
 public class AppDocumentsProvider extends DocumentsProvider {
     /** Must match android:authorities in pyproject.toml and files_app.py. */
-    public static final String AUTHORITY = "au.id.jking.mypystub.documents";
     public static final String ROOT_ID = "mypystub";
     public static final String ROOT_DOC_ID = "root";
+
+    /** This install's authority: its application ID plus ".documents". */
+    private String authority() {
+        return getContext().getPackageName() + ".documents";
+    }
+
+    /** The name shown beside the app's icon, so side-by-side installs differ. */
+    private String appLabel() {
+        Context context = getContext();
+        return context.getApplicationInfo().loadLabel(context.getPackageManager()).toString();
+    }
 
     private static final int MAX_SEARCH_RESULTS = 50;
 
@@ -118,7 +128,7 @@ public class AppDocumentsProvider extends DocumentsProvider {
 
     private void notifyChildrenChanged(File folder) {
         try {
-            Uri uri = DocumentsContract.buildChildDocumentsUri(AUTHORITY, idFor(folder));
+            Uri uri = DocumentsContract.buildChildDocumentsUri(authority(), idFor(folder));
             getContext().getContentResolver().notifyChange(uri, null);
         } catch (FileNotFoundException e) {
             // Outside the folder: nothing of ours to refresh
@@ -138,13 +148,16 @@ public class AppDocumentsProvider extends DocumentsProvider {
         MatrixCursor.RowBuilder row = result.newRow();
         row.add(Root.COLUMN_ROOT_ID, ROOT_ID);
         row.add(Root.COLUMN_DOCUMENT_ID, ROOT_DOC_ID);
-        row.add(Root.COLUMN_TITLE, "MyPyStub");
+        row.add(Root.COLUMN_TITLE, appLabel());
         row.add(Root.COLUMN_FLAGS,
             Root.FLAG_SUPPORTS_CREATE
                 | Root.FLAG_SUPPORTS_SEARCH
                 | Root.FLAG_SUPPORTS_IS_CHILD
                 | Root.FLAG_LOCAL_ONLY);
-        row.add(Root.COLUMN_ICON, R.mipmap.ic_launcher);
+        // Looked up by name: the generated R class is in the app's namespace,
+        // which changes with the bundle, not in this file's package
+        row.add(Root.COLUMN_ICON, getContext().getResources().getIdentifier(
+            "ic_launcher", "mipmap", getContext().getPackageName()));
         row.add(Root.COLUMN_MIME_TYPES, "*/*");
         row.add(Root.COLUMN_AVAILABLE_BYTES, baseDir().getFreeSpace());
         return result;
@@ -171,7 +184,7 @@ public class AppDocumentsProvider extends DocumentsProvider {
         // Lets an open listing refresh when something here changes
         result.setNotificationUri(
             getContext().getContentResolver(),
-            DocumentsContract.buildChildDocumentsUri(AUTHORITY, parentDocumentId));
+            DocumentsContract.buildChildDocumentsUri(authority(), parentDocumentId));
         return result;
     }
 
@@ -366,7 +379,7 @@ public class AppDocumentsProvider extends DocumentsProvider {
         MatrixCursor.RowBuilder row = result.newRow();
         String id = idFor(file);
         row.add(Document.COLUMN_DOCUMENT_ID, id);
-        row.add(Document.COLUMN_DISPLAY_NAME, ROOT_DOC_ID.equals(id) ? "MyPyStub" : file.getName());
+        row.add(Document.COLUMN_DISPLAY_NAME, ROOT_DOC_ID.equals(id) ? appLabel() : file.getName());
         row.add(Document.COLUMN_SIZE, file.isDirectory() ? null : file.length());
         row.add(Document.COLUMN_LAST_MODIFIED, file.lastModified());
 

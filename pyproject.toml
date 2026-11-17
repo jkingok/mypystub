@@ -26,9 +26,10 @@ dev = [
     "pytest>=9.2.0",
     "resvg-py>=0.5.0",
     "ruff>=0.17.3",
-    "toga-core>=0.5.7",
+    "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
+    "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
     # Toga's test backend, for UI tests without a device (tests/test_ui.py)
-    "toga-dummy>=0.5.7",
+    "toga-dummy @ git+https://github.com/beeware/toga.git#subdirectory=dummy",
 ]
 
 [tool.ruff]
@@ -52,7 +53,9 @@ icon = "assets/src_icon.png"       # Relative path to this prototype's icon
 
 # This project was generated with 0.4.2 using template: https://github.com/beeware/briefcase-template @ v0.4.2
 [tool.briefcase]
+# This internal name cannot be overridden
 project_name = "mypystub"
+# Bundle is overridden by scripts/build_android.py when needed
 bundle = "au.id.jking"
 # Version is managed by Fastlane
 version = "2026.11.13.1"
@@ -64,9 +67,12 @@ author_email = "jkingok@users.noreply.github.com"
 build = 1
 
 [tool.briefcase.app.mypystub]
+# Formal name is overridden by scripts/build_android.py when needed
 formal_name = "MyPyStub"
-description = "My first application for prototyping with iDevices and Python"
-long_description = """More details about the app should go here.
+description = "A mobile-first application for prototyping with Python"
+long_description = """Integrates Python wheels at build time and allows execution
+of scripts and projects at runtime with a Toga takeover UI methodology and/or support
+to interact with basic console scripts.
 """
 sources = [
     "src/mypystub",
@@ -86,6 +92,8 @@ requires = [
     "resolvelib",
     "tomlkit",
     "unearth",
+    "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
+    "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
 ]
 test_requires = [
     "pytest",
@@ -106,7 +114,7 @@ permission.photo_library = "Prototypes you run in MyPyStub may save images to yo
 
 [tool.briefcase.app.mypystub.macOS]
 requires = [
-    "toga-cocoa~=0.5.7",
+    "toga-cocoa @ git+https://github.com/beeware/toga.git#subdirectory=cocoa",
     # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
     # iOS section leaves it out and SVG icons are skipped there)
     "resvg-py>=0.5.0",
@@ -117,7 +125,7 @@ icon = "assets/icons/icon"
 
 [tool.briefcase.app.mypystub.linux]
 requires = [
-    "toga-gtk~=0.5.7",
+    "toga-gtk @ git+https://github.com/beeware/toga.git#subdirectory=gtk",
     # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
     # iOS section leaves it out and SVG icons are skipped there)
     "resvg-py>=0.5.0",
@@ -234,7 +242,7 @@ flatpak_sdk = "org.gnome.Sdk"
 
 [tool.briefcase.app.mypystub.windows]
 requires = [
-    "toga-winforms~=0.5.7",
+    "toga-winforms @ git+https://github.com/beeware/toga.git#subdirectory=winforms",
     # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
     # iOS section leaves it out and SVG icons are skipped there)
     "resvg-py>=0.5.0",
@@ -249,9 +257,7 @@ installer_icon = "assets/icons/icon"
 requires = [
 # resvg-py (SVG web app icons) is left out: there is no iOS wheel for it yet.
 # Add it once BeeWare's mobile wheels have one; without it SVG icons are skipped.
-# For the moment iOS needs bleeding edge packages
-    "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
-    "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
+# For the moment iOS needs bleeding edge packages,
     "toga-iOS @ git+https://github.com/beeware/toga.git#subdirectory=iOS",
     "std-nslog~=2.0.0; python_version < '3.14'",
 # Since iOS does not allow binaries to be added after the fact
@@ -294,7 +300,6 @@ info."NSLocalNetworkUsageDescription" = "Prototypes you run in MyPyStub may conn
 [tool.briefcase.app.mypystub.android]
 #android_abis = ["arm64-v8a"]
 requires = [
-    "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
     "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
     "toga-android @ git+https://github.com/beeware/toga.git#subdirectory=android",
     # Draws SVG web app icons (a Rust renderer; there is no iOS wheel yet, so the
@@ -304,27 +309,31 @@ requires = [
 # we build in some for convenience
 # See: https://beeware.org/mobile-wheels/
     "charset-normalizer>=3.5.0; python_version < '3.15'",
-    "markupsafe>=3.0.4",
-    "multidict>=6.8.0",
-    "aiohttp>=3.14.0",
-    "coverage>=7.17.0",
-    "xxhash>=3.7.0",
-    "pyzmq>=27.0.1",
+    "markupsafe>=3.0.3", # 3.0.3 chaquopy, 3.0.4+ pypi
+    "multidict>=4.7.4", # 4.7.4 chaquopy, 6.8.0+ pypi
+    "aiohttp>=3.8.1", # 3.8.1 chaquopy, 3.14.0+ pypi
+    "coverage>=7.17.0; python_version >= '3.13'",
+    "xxhash>=3.7.0; python_version >= '3.13'",
+    "pyzmq>=18.1.1", # 18.1.1 chaquopy, 27.0.1+ pypi
 # Blocked because Chaquopy builds for AMD64 for which wheels don't exist
 #    "pypdfium2>=5.2.0",
-    "mmh3>=5.2.0",
-    "backports.zstd>=1.3.0; python_version < '3.14'",
-    "dulwich>=0.24.4",
+    "mmh3>=5.2.0; python_version >= '3.13'",
+    "backports.zstd>=1.4.0; python_version == '3.13'",
+    "dulwich>=0.24.2; python_version >= '3.13'",
 # Blocked by missing cffi
 #    "curl-cffi>=0.15.0",
-    "pybase64>=1.4.2",
-    "maxminddb>=2.8.2",
-    "resvg_py>=0.3.1",
+    "pybase64>=1.4.2; python_version >= '3.13'",
+    "maxminddb>=2.8.2; python_version >= '3.13'",
+    "resvg_py>=0.3.1; python_version >= '3.14'",
 # Blocked because Chaquopy builds for ARM for which wheels don't exist
 #    "cytoolz>=1.2.0",
 # Blocked because Chaquopy builds for AMD64 for which wheels don't exist
 #    "optree>=0.18.0",
-    "lru-dict>=1.4.1; python_version < '3.14'",
+    "lru-dict>=1.1.6; python_version < '3.14'", # 1.1.6 chaquopy, 1.4.1+ pypi
+# Added at request, but only on older versions
+    "lxml>=4.4.2; python_version < '3.14'", # 4.4.2+ chaquopy, none pypi
+    "cryptography>=2.8; python_version < '3.14'", # 2.8+ chaquopy, none pypi
+    "pillow>=7.0.0; python_version < '3.14'", # 7.0.0+ chaquopy, none pypi
 ]
 
 base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
@@ -333,7 +342,7 @@ base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
 android_manifest_application_extra_content = """
 <provider
     android:name="au.id.jking.mypystub.AppDocumentsProvider"
-    android:authorities="au.id.jking.mypystub.documents"
+    android:authorities="${applicationId}.documents"
     android:grantUriPermissions="true"
     android:exported="true"
     android:permission="android.permission.MANAGE_DOCUMENTS">
@@ -351,6 +360,9 @@ build_gradle_dependencies = [
     "org.osmdroid:osmdroid-android:6.1.20",
     # Needed for WebView
     "androidx.webkit:webkit:1.15.0",
+    # Extras requested for Android integration
+    "androidx.appcompat:appcompat:1.8.0",
+    "androidx.documentfile:documentfile:1.1.0",
 ]
 
 # Needed for WebView, and to compile our custom Java sources (assets/android/java)
