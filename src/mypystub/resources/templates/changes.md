@@ -1,6 +1,6 @@
 # What's New
 
-## 2026.11.17.1 (2026-11-17)
+## 2026.11.17.2 (2026-11-17)
 
 ### New
 
@@ -8,10 +8,14 @@
 - A web app's Info page shows its HTML, and the stylesheets and scripts beside it, highlighted with line numbers and folded after 300 lines, like a script's source.
 - Rows in the list are named from the item's own metadata where it has one (a project's display or Briefcase app name, a zipapp's package name, a web app's name), and the window is titled with the last script's name on the Script tab and Launcher elsewhere.
 - We now support building for Android with alternative Python versions. I have extended the Python packages that are included as a result to include those that _chaquopy_, which is automatically trusted by _briefcase_, offers mainly for older Python versions.
+- On Android, the Back gesture and button now work in the app: they close the screen you are on (as its own Back, Cancel or Done would), return to the List tab, and go up a folder at a time, before leaving the app.
+- Android releases now attach a Python 3.13 build of MyPyStub to the GitHub Release, which installs beside the main app.
 
 ### Fixed
 
 - On Windows and Linux the list's icons are loaded as icons, so the list no longer fails with an error about a missing path.
+- On the Script and Logs tabs the text fills the screen again after rotating or hiding the errors pane, and screens are laid out again when the window changes size.
+- On Android, a long press on a row now opens Info and Setup without also running the script.
 
 ## 2026.11.13.1 (2026-11-13)
 
