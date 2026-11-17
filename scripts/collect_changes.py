@@ -21,13 +21,19 @@ Usage::
     uv run scripts/collect_changes.py --release-notes 2026.11.3.1
 
 The second form prints that build's section as plain text, for TestFlight's
-"What to Test". It prints nothing if the build has no section.
+"What to Test" and Firebase's release notes, which show no Markdown: each bullet
+is rendered with ``markdown`` and turned back into clean text by ``inscriptis``
+(no ``**``, backticks or link syntax). It prints nothing if the build has no
+section. The third prints it as Markdown, for a GitHub Release.
 """
 
 import argparse
 import re
 from datetime import date, timedelta
 from pathlib import Path
+
+import inscriptis
+import markdown
 
 TITLE = "# What's New"
 SHOWN_AS = {"feature": "New", "bugfix": "Fixed"}  # misc isn't shown
@@ -95,8 +101,18 @@ def notes_for(text: str, version: str) -> str:
     lines: list[str] = []
     for title, bullets in sections[0].groups.items():
         if bullets:
-            lines += [f"{title}:"] + [f"• {bullet}" for bullet in bullets] + [""]
+            lines += [f"{title}:"] + [f"• {plain(b)}" for b in bullets] + [""]
     return "\n".join(lines).strip()
+
+
+def plain(text: str) -> str:
+    """Markdown as clean text: no emphasis markers, backticks or link syntax.
+
+    A link keeps its words only. Whitespace is collapsed to single spaces, as
+    each bullet is one line.
+    """
+    html = markdown.markdown(text)
+    return " ".join(inscriptis.get_text(html).split())
 
 
 NO_CHANGES = "No user-facing changes."

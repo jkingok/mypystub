@@ -22,6 +22,7 @@ dependencies = [
 # Desktop and CI tooling only; never imported by the app or devtools.py.
 # Toga is added per platform by Briefcase, so toga-core is listed here for pyright.
 dev = [
+    "inscriptis>=2.7.6",
     "pre-commit>=4.7.0",
     "pyright>=1.1.414",
     "pytest>=9.2.0",
