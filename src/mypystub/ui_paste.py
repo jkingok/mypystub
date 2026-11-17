@@ -173,7 +173,9 @@ class PasteMixin(PrototypeBase):
                 self.import_button,
             ]
         )
-        self.push_screen(screen_title, toga.Column(children=[top, view]))
+        self.push_screen(
+            screen_title, toga.Column(children=[top, view]), on_back=self.cancel_import
+        )
 
     @guarded
     def cancel_import(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:

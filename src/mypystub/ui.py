@@ -23,6 +23,7 @@ from .errors import guarded
 from .pages import help_html
 from .run_settings import quick_start_name
 from .ui_actions import ActionsMixin
+from .ui_back import BackMixin
 from .ui_helpers import (
     create_source_zip,
     is_ipad_from_window,
@@ -51,7 +52,7 @@ SYMBOL_SIZE = 22
 HELP_PAGES = ("Help", "What's New", "About")
 
 
-class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
+class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, BackMixin):
     """The launcher's state and screens, built from the feature mixins."""
 
     def __init__(self, host_app: toga.App, on_done: Callable[[Any], None]) -> None:
@@ -136,6 +137,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
                     self.reload_logs(widget)
                 case "Help":
                     self.show_help_page()
+            self.note_tab(str(t.text))
             relayout(getattr(t, "content", None))
         self.apply_window_title()
         self.remember()
@@ -302,6 +304,15 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
                 self.error(f"Could not share the app's source: {e}", "Share source")
             )
 
+    def hook_android_back(self) -> None:
+        """Send Android's Back gesture and button to handle_back (see ui_back)."""
+        try:
+            from . import android_back
+        except ImportError as error:  # built without the static proxy
+            print(f"Back isn't hooked up: {error}")
+            return
+        android_back.install(self.handle_back)
+
     def choose_container(self, *args: Any, **kwargs: Any) -> toga.Widget:
         assert isinstance(self.app.main_window, toga.MainWindow)
         if is_ipad_from_window(self.app.main_window):
@@ -402,5 +413,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
         )
         self.show_help_page()
         self.app.loop.call_soon(lambda: self.reload_menu(self.script_list))
+        if sys.platform == "android":
+            self.hook_android_back()
         relayout_on_resize(self.app.main_window)
         return self.tabs

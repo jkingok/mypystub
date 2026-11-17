@@ -233,7 +233,7 @@ class SetupMixin(PrototypeBase):
                 self.setup_activity,
             ]
         )
-        self.push_screen(self.SETUP_PAGES[page], content)
+        self.push_screen(self.SETUP_PAGES[page], content, on_back=self.close_setup_page)
         self.setup_page = page
         self.remember()
         self.render_setup_page()

@@ -183,8 +183,12 @@ class PrototypeBase:
         self.package_dir: Path | None = None
         # The page each web view shows now (by id), so it isn't loaded twice
         self.loaded_pages: dict[int, str] = {}
-        # Content-stack depths under each screen pushed by push_screen()
+        # Content-stack depths under each screen pushed by push_screen(), and
+        # what the system Back button does on each (its own Back or Cancel)
         self.screen_bases: list[int] = []
+        self.back_actions: list[Callable[[], Any]] = []
+        # The tabs in the order they were shown, for Back (see BackMixin)
+        self.tab_history: list[str] = []
         # Toga's swipe actions are the same for every row (#59): swipe left
         # for Info, swipe right for Setup. The mixins that own them set the
         # handlers, as on_select belongs to running and the swipes to Info/Setup.
@@ -261,6 +265,7 @@ class PrototypeBase:
         self.push_screen(
             title,
             toga.Box(style=Pack(direction="column", margin=8), children=rows),
+            on_back=lambda: finish(None),
         )
         return await answer
 
@@ -575,12 +580,20 @@ class PrototypeBase:
         stack.window = mw
         return stack
 
-    def push_screen(self, title: str, content: toga.Widget) -> None:
+    def push_screen(
+        self,
+        title: str,
+        content: toga.Widget,
+        on_back: Callable[[], Any] | None = None,
+    ) -> None:
         """Show `content` over the launcher; :meth:`pop_screen` goes back.
 
         Screens go on the window's content stack like any other view. The
         floor stops a double-tapped Back from popping past this screen.
+        `on_back` is what the system Back button does here: the screen's own
+        Back or Cancel, if it does more than pop (see BackMixin).
         """
+        self.back_actions.append(on_back or self.pop_screen)
         mw = self.app.main_window
         assert isinstance(mw, toga.MainWindow)
         stack = self.content_stack()
@@ -621,6 +634,8 @@ class PrototypeBase:
         mw.title, mw.content = stack.pop()
         if popping and self.screen_bases:
             self.screen_bases.pop()
+            if self.back_actions:
+                self.back_actions.pop()
             if self.screen_bases:
                 stack.floor = self.screen_bases[-1]
         self.apply_window_title()

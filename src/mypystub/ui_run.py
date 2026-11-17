@@ -196,7 +196,9 @@ class RunMixin(RowSettingsMixin):
 
         view = toga.WebView(url=url, flex=1, on_navigation_starting=navigate)
         top = toga.Row(children=[toga.Button("‹ Back", on_press=guarded(back))])
-        self.push_screen(str(row.title), toga.Column(children=[top, view]))
+        self.push_screen(
+            str(row.title), toga.Column(children=[top, view]), on_back=back
+        )
 
     @guarded
     async def offer_quick_start(self) -> None:

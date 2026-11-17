@@ -65,8 +65,13 @@ MOST_ROWS = 5
 class Screens(Protocol):
     """Pushes screens over the launcher and pops them again."""
 
-    def push_screen(self, title: str, content: toga.Widget) -> None:
-        """Show `content` in place of the current screen."""
+    def push_screen(
+        self,
+        title: str,
+        content: toga.Widget,
+        on_back: Callable[[], Any] | None = None,
+    ) -> None:
+        """Show `content` in place of the current screen; `on_back` is Back."""
         ...
 
     def pop_screen(self) -> None:
@@ -375,7 +380,7 @@ class RunWithForm:
 
     def open(self) -> None:
         """Show the form over the current screen."""
-        self.screens.push_screen(self.screen_title, self.content)
+        self.screens.push_screen(self.screen_title, self.content, on_back=self.done)
 
     # -- State ----------------------------------------------------------------
 
