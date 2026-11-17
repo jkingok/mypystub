@@ -192,6 +192,10 @@ class PrototypeBase:
         # Toga's swipe actions are the same for every row (#59): swipe left
         # for Info, swipe right for Setup. The mixins that own them set the
         # handlers, as on_select belongs to running and the swipes to Info/Setup.
+        if sys.platform == "android":
+            from . import android_list
+
+            android_list.install()  # a long press must not also run the row
         self.script_list = toga.DetailedList(
             on_refresh=self.reload_menu,
             primary_action="Info",
