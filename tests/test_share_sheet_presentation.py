@@ -18,7 +18,7 @@ from mypystub.ui_helpers import configure_share_presentation, share_anchor_rect
 SRC = Path(__file__).resolve().parent.parent / "src" / "mypystub"
 SHARE_CODE = [
     SRC / "ui_helpers.py",
-    SRC / "resources/examples/joshua/media_hub/src/media_hub/widgets.py",
+    SRC / "resources/examples/contrib/jkingok/media_hub/src/media_hub/widgets.py",
 ]
 
 

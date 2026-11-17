@@ -21,7 +21,9 @@ def test_briefcase_requires_match_project_dependencies() -> None:
     """The app bundle ships the same packages that the code imports on desktop."""
     config = _load()
     project = set(config["project"]["dependencies"])
-    briefcase = set(config["tool"]["briefcase"]["app"]["mypystub"]["requires"])
+    requires = config["tool"]["briefcase"]["app"]["mypystub"]["requires"]
+    # Toga itself comes from git head on device and from the dev group on desktop.
+    briefcase = {r for r in requires if not r.startswith(("toga", "travertino"))}
     assert project == briefcase
 
 

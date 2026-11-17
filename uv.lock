@@ -447,6 +447,7 @@ dev = [
     { name = "ruff" },
     { name = "toga-core" },
     { name = "toga-dummy" },
+    { name = "travertino" },
 ]
 
 [package.metadata]
@@ -471,8 +472,9 @@ dev = [
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "resvg-py", specifier = ">=0.5.0" },
     { name = "ruff", specifier = ">=0.17.3" },
-    { name = "toga-core", specifier = ">=0.5.7" },
-    { name = "toga-dummy", specifier = ">=0.5.7" },
+    { name = "toga-core", git = "https://github.com/beeware/toga.git?subdirectory=core" },
+    { name = "toga-dummy", git = "https://github.com/beeware/toga.git?subdirectory=dummy" },
+    { name = "travertino", git = "https://github.com/beeware/toga.git?subdirectory=travertino" },
 ]
 
 [[package]]
@@ -814,28 +816,20 @@ wheels = [
 
 [[package]]
 name = "toga-core"
-version = "0.5.7"
-source = { registry = "https://pypi.org/simple" }
+version = "0.5.8.dev122+g2f89ecfc0"
+source = { git = "https://github.com/beeware/toga.git?subdirectory=core#2f89ecfc094a889410efe4f6083df7996dbcd77f" }
 dependencies = [
     { name = "travertino" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/76/10/02bde90457becf905952673ffc6df1f573435b5099ae50194ea3d8223916/toga_core-0.5.7.tar.gz", hash = "sha256:e920c81a7cb4bb5660008a16e05b8e0972a348fd3f84f44f3556f9ecac29ff8e", size = 1065875, upload-time = "2026-10-01T06:42:18.079Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/fb/e9f7d4aa837411a02e67f51538529f7a54f79f2ba1d9b338ce988212e44d/toga_core-0.5.7-py3-none-any.whl", hash = "sha256:7b95e0c18e62fe2de32b5d88178e532fae90b72d29cca38da83ddcacb8dc8302", size = 170589, upload-time = "2026-10-01T06:42:16.451Z" },
 ]
 
 [[package]]
 name = "toga-dummy"
-version = "0.5.7"
-source = { registry = "https://pypi.org/simple" }
+version = "0.5.8.dev122+g2f89ecfc0"
+source = { git = "https://github.com/beeware/toga.git?subdirectory=dummy#2f89ecfc094a889410efe4f6083df7996dbcd77f" }
 dependencies = [
     { name = "pillow" },
     { name = "pytest" },
     { name = "toga-core" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/76/4c9320538f9d5cccda46149eefb7adc6b8169c2cdfda2c9e505ae8d57d02/toga_dummy-0.5.7.tar.gz", hash = "sha256:9c716b1bfba7232bad1a7ae59cd00047513ac0f6c38748b4a39566b7b5ba4f5a", size = 75711, upload-time = "2026-10-01T06:42:13.434Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/c2/ed50dcdb5f04a9a836a4dc848fcc67ed4ec69d2a3f4c3406d5a3ae43069f/toga_dummy-0.5.7-py3-none-any.whl", hash = "sha256:fbe9d218aac46af35f8841eb08965c6bf16fac4ab0c7c4a21c4c66a3cdfb3ccc", size = 83550, upload-time = "2026-10-01T06:42:11.989Z" },
 ]
 
 [[package]]
@@ -849,12 +843,8 @@ wheels = [
 
 [[package]]
 name = "travertino"
-version = "0.5.7"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e3/69/b7d1a2a46188d5b24f1500fd4c37cf75f35d4aca0f55fa1b2b2b60649188/travertino-0.5.7.tar.gz", hash = "sha256:a84ad0ece33132a7170a7fe355d684c9b8d39da7f06d4bb9e4194cb97119f241", size = 50145, upload-time = "2026-10-01T06:42:16.377Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/eb/daf19ae19480c908facff6c828b3f2d4086747bf7db8da0d7a8315a0e793/travertino-0.5.7-py3-none-any.whl", hash = "sha256:0bcaed5fc2d2059fb3207e20a85ca1637bfcd81c0faa392eaa818e2bfd708a61", size = 26642, upload-time = "2026-10-01T06:42:14.935Z" },
-]
+version = "0.5.8.dev122+g2f89ecfc0"
+source = { git = "https://github.com/beeware/toga.git?subdirectory=travertino#2f89ecfc094a889410efe4f6083df7996dbcd77f" }
 
 [[package]]
 name = "truststore"

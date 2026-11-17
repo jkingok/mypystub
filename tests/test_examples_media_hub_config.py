@@ -6,7 +6,7 @@ from pathlib import Path
 
 PACKAGE = (
     Path(__file__).parent.parent
-    / "src/mypystub/resources/examples/joshua/media_hub/src/media_hub"
+    / "src/mypystub/resources/examples/contrib/jkingok/media_hub/src/media_hub"
 )
 READ = re.compile(r"settings\.get\(\s*\"(\w+)\"")
 
