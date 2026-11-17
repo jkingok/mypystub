@@ -6,6 +6,7 @@ version = "2026.11.13.1"
 requires-python = ">=3.12"
 dependencies = [
     "anyio",
+    "beautifulsoup4>=4.15.0",
     "certifi",
     "httpx2",
     "installer",
@@ -83,6 +84,8 @@ test_sources = [
 
 requires = [
     "anyio",
+    # Reads web apps' page metadata (pure Python, with the stdlib HTML parser)
+    "beautifulsoup4>=4.15.0",
     "certifi",
     "httpx2",
     "installer",

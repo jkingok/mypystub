@@ -28,11 +28,12 @@ import json
 import posixpath
 import re
 from dataclasses import dataclass, field
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 from urllib.request import Request, urlopen
+
+from bs4 import BeautifulSoup, Tag
 
 ICON_RELS = (
     "icon",
@@ -97,62 +98,53 @@ def _size(sizes: str | None) -> int:
     return best
 
 
-class _Parser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.meta = PageMeta()
-        self._in_title = False
-        self._title = ""
-        self.og_description: str | None = None
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        a = {k.lower(): (v or "") for k, v in attrs}
-        if tag == "title":
-            self._in_title = True
-        elif tag == "meta":
-            name = (a.get("name") or a.get("property") or "").lower()
-            content = _clean(a.get("content"))
-            m = self.meta
-            if name == "description":
-                m.description = content
-            elif name == "og:description":
-                self.og_description = content
-            elif name in ("og:title", "apple-mobile-web-app-title", "application-name"):
-                m.app_title = m.app_title or content
-            elif name == "author":
-                m.author = content
-            elif name == "keywords":
-                m.keywords = content
-            elif name == "theme-color":
-                m.theme_color = content
-        elif tag == "link":
-            rels = " ".join(a.get("rel", "").lower().split())
-            href = a.get("href", "").strip()
-            if not href:
-                return
-            if rels == "manifest":
-                self.meta.manifest = href
-            elif rels == "canonical":
-                self.meta.canonical = href
-            elif rels in ICON_RELS:
-                self.meta.icons.append((href, _size(a.get("sizes"))))
-
-    def handle_data(self, data: str) -> None:
-        if self._in_title:
-            self._title += data
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "title" and self._in_title:
-            self._in_title = False
-            self.meta.title = self.meta.title or _clean(self._title)
+def _named(name: str) -> re.Pattern[str]:
+    """Match an attribute value case-insensitively, as browsers do."""
+    return re.compile(f"^{re.escape(name)}$", re.IGNORECASE)
 
 
 def parse_page(text: str) -> PageMeta:
-    """The metadata in an HTML page (only its start is read: that's where it is)."""
-    parser = _Parser()
-    parser.feed(text[:100_000])
-    parser.meta.description = parser.meta.description or parser.og_description
-    return parser.meta
+    """The metadata in an HTML page (only its start is read: that's where it is).
+
+    Read with Beautiful Soup and the standard library's HTML parser, which
+    copes with the unclosed and oddly cased markup real pages have.
+    """
+    soup = BeautifulSoup(text[:100_000], "html.parser")
+
+    def meta(*names: str) -> str | None:
+        """The first non-empty content of a meta tag, by name or property."""
+        for name in names:
+            for key in ("name", "property"):
+                tag = soup.find("meta", attrs={key: _named(name)})
+                content = tag.get("content") if isinstance(tag, Tag) else None
+                if cleaned := _clean(content if isinstance(content, str) else None):
+                    return cleaned
+        return None
+
+    page = PageMeta(
+        title=_clean(soup.title.get_text()) if soup.title else None,
+        description=meta("description", "og:description"),
+        author=meta("author"),
+        keywords=meta("keywords"),
+        theme_color=meta("theme-color"),
+        app_title=meta("og:title", "apple-mobile-web-app-title", "application-name"),
+    )
+    for link in soup.find_all("link", href=True):
+        if not isinstance(link, Tag):
+            continue
+        rel = link.get("rel") or []
+        rels = " ".join(rel if isinstance(rel, list) else [str(rel)]).lower()
+        href = str(link.get("href", "")).strip()
+        if not href:
+            continue
+        if rels == "manifest":
+            page.manifest = page.manifest or href
+        elif rels == "canonical":
+            page.canonical = page.canonical or href
+        elif rels in ICON_RELS:
+            sizes = link.get("sizes")
+            page.icons.append((href, _size(sizes if isinstance(sizes, str) else None)))
+    return page
 
 
 def parse_manifest(text: str) -> Manifest | None:
