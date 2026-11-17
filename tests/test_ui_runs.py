@@ -271,7 +271,7 @@ def test_script_output_container_is_orientation_aware(proto: ui.Prototype) -> No
     from mypystub.widgets import OrientationBox
 
     assert isinstance(proto.script_output, OrientationBox)
-    assert proto.script_output.children == [proto.script_scroll, proto.error_pane]
+    assert proto.script_output.children == [proto.print_text, proto.error_pane]
 
 
 def test_streams_are_restored_after_a_run(

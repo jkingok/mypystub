@@ -136,7 +136,10 @@ class PrototypeBase:
         self.password_box = toga.Column(
             children=[self.password_prompt, self.password_text], text_align="center"
         )
-        self.print_text = toga.MultilineTextInput(readonly=True)
+        # A MultilineTextInput scrolls itself. Inside a ScrollContainer it is laid
+        # out at its own small minimum, and isn't laid out again when the space
+        # changes (rotation, the error pane hiding), so it fills the box itself.
+        self.print_text = toga.MultilineTextInput(readonly=True, flex=1)
         # The run's stderr, shown beside or below its output (#119). It's
         # hidden until something is written to it, and Hide hides it again
         # until the next write.
@@ -169,10 +172,7 @@ class PrototypeBase:
             password_field=self.password_text,
             toggle_password=self.toggle_password,
         )
-        self.script_scroll = toga.ScrollContainer(
-            horizontal=False, content=self.print_text, style=Pack(flex=1)
-        )
-        self.script_output = OrientationBox(self.script_scroll, self.error_pane)
+        self.script_output = OrientationBox(self.print_text, self.error_pane, flex=1)
         self.script_activity = LabelledActivity()
         self.splash = toga.ImageView(style=Pack(flex=0))
         # Category being browsed (None: the list of categories), and the folder

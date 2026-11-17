@@ -32,7 +32,13 @@ from .ui_resume import ResumeMixin
 from .ui_run import RunMixin
 from .ui_setup import SetupMixin
 from .ui_swipe import SwipeMixin
-from .ui_widgets import LabelledSelection, NotAnOptionContainer, refresh_on_new_width
+from .ui_widgets import (
+    LabelledSelection,
+    NotAnOptionContainer,
+    refresh_on_new_width,
+    relayout,
+    relayout_on_resize,
+)
 
 # The Logs tab's buttons: monochrome symbols, like the Setup toolbars, so the
 # row looks quiet (Help says what each does). Reload, jump to the newest line,
@@ -64,6 +70,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
         self.source_share = toga.Button(
             "Share source code", on_press=self.handle_source_share, visibility="hidden"
         )
+        # Scrolls itself, so it isn't put in a ScrollContainer (see print_text)
         self.log_text = toga.MultilineTextInput(
             readonly=True,
             style=Pack(flex=1),
@@ -129,6 +136,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
                     self.reload_logs(widget)
                 case "Help":
                     self.show_help_page()
+            relayout(getattr(t, "content", None))
         self.apply_window_title()
         self.remember()
 
@@ -314,15 +322,6 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
             )
         return scroll
 
-    def logs_scroll(self) -> toga.ScrollContainer:
-        """The Logs tab's text, laid out again once the tab has its width."""
-        scroll = toga.ScrollContainer(
-            horizontal=False, content=self.log_text, style=Pack(flex=1)
-        )
-        if sys.platform == "ios":
-            refresh_on_new_width(scroll._impl.document_container, self.log_text.refresh)
-        return scroll
-
     def _script_tab(self) -> toga.Widget:
         """The Script tab's content; the launcher keeps hold of the boxes it moves."""
         self.keyboard_box = toga.Box(style=Pack(flex=0))
@@ -354,7 +353,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
                     "Logs",
                     toga.Column(
                         children=[
-                            self.logs_scroll(),
+                            self.log_text,
                             toga.Row(
                                 children=[
                                     toga.Button(
@@ -403,4 +402,5 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
         )
         self.show_help_page()
         self.app.loop.call_soon(lambda: self.reload_menu(self.script_list))
+        relayout_on_resize(self.app.main_window)
         return self.tabs
