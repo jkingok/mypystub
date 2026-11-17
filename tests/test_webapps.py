@@ -25,11 +25,13 @@ def test_scan_finds_folder_and_page(tmp_path: Path) -> None:
     make(tmp_path)
     (tmp_path / "solo.html").write_text("<title>Solo</title>")
     rows = {r["title"]: r for r in scan.scan_all_prototypes(tmp_path)}
-    assert rows["site"]["kind"] == "web"
-    assert rows["site"]["subtitle"] == "A demo"
-    assert rows["solo"]["kind"] == "web"
-    assert rows["solo"]["subtitle"] == "Solo"
-    assert rows["solo"]["web_page"] == "solo.html"
+    # Titles come from the pages (#235); the file name shows when there's
+    # no description
+    assert rows["My Site"]["kind"] == "web"
+    assert rows["My Site"]["subtitle"] == "A demo"
+    assert rows["Solo"]["kind"] == "web"
+    assert rows["Solo"]["subtitle"] == "solo.html"
+    assert rows["Solo"]["web_page"] == "solo.html"
 
 
 def test_pyproject_folder_is_still_a_project(tmp_path: Path) -> None:

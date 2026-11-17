@@ -129,6 +129,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin):
                     self.reload_logs(widget)
                 case "Help":
                     self.show_help_page()
+        self.apply_window_title()
         self.remember()
 
     def resume_extras(self) -> dict[str, str | None]:

@@ -15,6 +15,7 @@ from threading import Thread
 from typing import Any
 
 from . import web_meta
+from .titles import clean_title
 
 HTML_SUFFIXES = (".html", ".htm")
 INDEX = "index.html"
@@ -111,10 +112,10 @@ def scan_web(item: Path, icon_cache: Path | None = None) -> dict[str, Any]:
         root, web_meta.icon_candidates(meta, manifest), icon_cache
     )
     return {
-        "title": name,
-        "subtitle": web_meta.display_description(meta, manifest)
-        or web_meta.display_title(meta, manifest)
-        or "Web app",
+        # The app's own name (manifest, metas, <title>), else the file's (#235)
+        "title": clean_title(web_meta.display_title(meta, manifest)) or name,
+        # Its description; else its file name, which the title no longer shows
+        "subtitle": web_meta.display_description(meta, manifest) or item.name,
         "icon_path": icon,
         "icon_pending": pending,
         "kind": "web",

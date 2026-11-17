@@ -47,6 +47,8 @@ class RunMixin(RowSettingsMixin):
             if self.tabs.window is not None:
                 self.tabs.current_tab = "List"
         self.ended_run = self.run_id if run_id is None else run_id
+        # The script may have retitled the window, with or without a takeover
+        self.apply_window_title()
 
     def start(self, context: runner.RunContext) -> None:
         """Run a prototype on the script thread, like ``python script.py``.
@@ -230,6 +232,7 @@ class RunMixin(RowSettingsMixin):
         # Switch to the Script view first, so installing dependencies shows
         # progress there instead of leaving the list looking frozen.
         title = getattr(selected_row, "title", "script")
+        self.run_title = str(title)
         self.print_text.value = ""
         self.error_text.value = ""
         self.hide_errors()

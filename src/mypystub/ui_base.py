@@ -80,6 +80,8 @@ class PrototypeBase:
         self.app = host_app
         self.on_done_callback = on_done  # This is your ticket back to safety
         self.title = "Launcher"  # host_app.formal_name
+        # The last script run, which the window is titled with on the Script tab
+        self.run_title: str | None = None
         # The launcher keeps its own state (settings, widgets) on itself and
         # never on the shared app object or its widget registry: prototypes run
         # in this process, and some set app.settings or reuse widget ids.
@@ -588,6 +590,23 @@ class PrototypeBase:
         mw.title = title
         mw.content = content
 
+    def apply_window_title(self) -> None:
+        """Title the window for the tab showing (#235).
+
+        "Launcher" on every tab but Script, which shows the last script run.
+        Only while the tabs are on screen: a pushed screen or a prototype's
+        takeover titles the window itself, and this puts it back afterwards
+        (a prototype may have changed it).
+        """
+        mw = self.app.main_window
+        if not isinstance(mw, toga.MainWindow) or self.tabs is None:
+            return
+        if mw.content is not self.tabs:
+            return
+        current: Any = self.tabs.current_tab
+        on_script = current is not None and str(current.text) == "Script"
+        mw.title = self.run_title if on_script and self.run_title else self.title
+
     def pop_screen(self) -> None:
         """Go back to the screen under the last :meth:`push_screen`.
 
@@ -604,6 +623,7 @@ class PrototypeBase:
             self.screen_bases.pop()
             if self.screen_bases:
                 stack.floor = self.screen_bases[-1]
+        self.apply_window_title()
 
     def load_page(self, view: toga.WebView, body: str) -> None:
         """Show an HTML fragment in a web view, unless it already shows that page.

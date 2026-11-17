@@ -22,6 +22,7 @@ from packaging.version import Version
 
 from . import versions, webapps
 from .piplike import parse_aliases
+from .titles import clean_title, distinguishing_parts
 
 PEP723_BLOCK = re.compile(
     r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
@@ -93,7 +94,7 @@ def scan_script(item: Path) -> dict[str, Any] | None:
                 return None
 
     return {
-        "title": launcher.get("display_name") or item.stem,
+        "title": clean_title(launcher.get("display_name")) or item.stem,
         "subtitle": launcher.get("description")
         or docstring_summary(source)
         or DEFAULT_SCRIPT_SUBTITLE,
@@ -156,6 +157,15 @@ def project_entry_points(project_meta: Mapping[str, Any]) -> list[EntryPoint]:
     return sorted(found, key=lambda e: (e.name.casefold(), e.name, e.group))
 
 
+def briefcase_formal_name(toml_data: Mapping[str, Any]) -> str | None:
+    """A Briefcase project's ``formal_name``: its first app's, else the project's."""
+    briefcase = toml_data.get("tool", {}).get("briefcase", {})
+    for app in (briefcase.get("app") or {}).values():
+        if isinstance(app, Mapping) and (name := clean_title(app.get("formal_name"))):
+            return name
+    return clean_title(briefcase.get("formal_name"))
+
+
 def scan_project(item: Path) -> dict[str, Any]:
     """Describe a project folder from its ``pyproject.toml``.
 
@@ -176,8 +186,16 @@ def scan_project(item: Path) -> dict[str, Any]:
     tool_meta = toml_data.get("tool", {}).get("stub_launcher", {})
     icon_relative = tool_meta.get("icon")
 
+    # A title to show, best first: the launcher's own setting, a Briefcase app's
+    # formal name, the project's name (an identifier), then the folder (#235)
+    title = (
+        clean_title(tool_meta.get("display_name"))
+        or briefcase_formal_name(toml_data)
+        or clean_title(name)
+        or item.name
+    )
     row: dict[str, Any] = {
-        "title": tool_meta.get("display_name", name),
+        "title": title,
         "subtitle": desc,
         "icon_path": item / icon_relative if icon_relative else None,
         # Target launch file path relative to its home folder
@@ -306,7 +324,7 @@ def scan_zipapp(item: Path) -> dict[str, Any]:
     """
     meta = read_zipapp_metadata(item)
     row: dict[str, Any] = {
-        "title": item.stem,
+        "title": clean_title(meta.get("name")) or item.stem,
         "subtitle": meta.get("description") or "Zipapp",
         "icon_path": None,
         "entry_point": item,
@@ -405,7 +423,8 @@ def scan_all_prototypes(
 ) -> Iterable[Mapping[str, Any]]:
     """List the prototypes and sub-folders directly inside ``base_dir``.
 
-    Folders come first, then scripts and project folders, each sorted by name.
+    Folders come first, then scripts and project folders, each sorted by the
+    title shown (which may come from metadata, #235).
     Folders with a ``pyproject.toml`` are runnable projects; other folders are
     returned with a ``folder`` key so the launcher can drill into them. Web
     apps' icons are converted into `icon_cache`, if given.
@@ -449,7 +468,37 @@ def scan_all_prototypes(
             # ValueError covers TOMLDecodeError, bad specifiers and bad versions
             print(f"Skipping malformed prototype {item.name}: {e}")
 
-    return folders + prototypes
+    folders.sort(key=lambda r: str(r.get("title")).casefold())
+    return folders + distinct_titles(prototypes)
+
+
+def distinct_titles(rows: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Rows that share a title get what tells their files apart: ``App (v1)``.
+
+    Titles can come from metadata now (#235), so two items may claim the same
+    one. Only the part of the file names they don't share is added (see
+    ``titles.distinguishing_parts``). Rows are then sorted by the title shown,
+    which is what the eye goes by. Settings are keyed by path, never by title.
+    """
+    groups: dict[str, list[int]] = {}
+    for index, r in enumerate(rows):
+        groups.setdefault(str(r.get("title")).casefold(), []).append(index)
+    distinct = list(rows)
+    for indexes in groups.values():
+        if len(indexes) < 2:
+            continue
+        stems = [_file_stem(rows[i]) for i in indexes]
+        for i, part in zip(indexes, distinguishing_parts(stems), strict=True):
+            distinct[i] = {**rows[i], "title": f"{rows[i].get('title')} ({part})"}
+    return sorted(distinct, key=lambda r: str(r.get("title")).casefold())
+
+
+def _file_stem(row: Mapping[str, Any]) -> str:
+    """The row's file or folder name, without a ``.py``/``.pyz``/``.html`` suffix."""
+    path = row.get("project_dir") or row.get("entry_point")
+    if not isinstance(path, Path):
+        return str(row.get("title"))
+    return path.stem if path.is_file() else path.name
 
 
 def relative_folder(base_dir: Path, folder: Path) -> Path:

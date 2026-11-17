@@ -22,6 +22,8 @@ The list opens on two categories:
 - **Examples**: sample prototypes built into the app.
 - **Documents**: your own scripts and projects. On iPhone and iPad they're in the *On My* (iPhone/iPad) section of *Files* under *MyPyStub*; on Android, under *MyPyStub* in the system Files browser and file pickers (Setup's **Open Documents in Files** opens it there).
 
+Each row is named from what the item says about itself where it can: a project's `display_name` or Briefcase app name, a zipapp's package name, or a web app's own name; otherwise its file name. Rows are sorted by the name shown. Two rows with the same name also show what tells their files apart, such as *App (v1)* and *App (v2)* for `app_v1.py` and `app_v2.py`. The window is titled *Launcher*, or, on the Script tab, with the name of the last script run.
+
 Each row previews what's inside. Tap a folder to open it, and `..` to go back up. Tap a script or project to run it.
 
 Swipe a row for more:
