@@ -258,6 +258,24 @@ def bootstrap_application() -> Any:
     return MyApp(user_documents_dir)
 
 
+def activity_was_recreated(app: toga.App) -> bool:
+    """Whether this is Android's new Activity in a process that outlived the last.
+
+    Android can destroy the Activity (Back at the root on Android 15 and later,
+    or the system reclaiming it) while the process, the Python interpreter and
+    the Toga app stay alive. Briefcase then runs this module again for the new
+    Activity, which has no UI: the Toga app still belongs to the old one. Always
+    False off Android.
+    """
+    if sys.platform != "android":
+        return False
+    from java import jclass  # type: ignore[import-not-found]  # Chaquopy
+
+    listener = getattr(getattr(app, "_impl", None), "_listener", None)
+    current = jclass("org.beeware.android.MainActivity").singletonThis
+    return listener is not None and listener.native != current
+
+
 def main() -> toga.App | None:
     """
     Application entry point called by Briefcase or __main__.py.
@@ -267,6 +285,15 @@ def main() -> toga.App | None:
     """
     if not (a := toga.App.app):
         return bootstrap_application()
+    elif activity_was_recreated(a):
+        # Build the UI again, for the new Activity, as a first launch does
+        print("Android recreated the Activity: building the UI again")
+        for old in list(a.windows):  # Android allows only one window; the old
+            a.windows.discard(old)  # one belongs to the Activity that was destroyed
+        # Startup has run once: a window made now would build menus through a
+        # window method Android doesn't have. Startup sets the hook again.
+        a.commands.on_change = None
+        a._impl.create()  # pyright: ignore[reportAttributeAccessIssue]
     elif a.loop:
         a.loop.call_soon(cast(Callable[[], None], lambda a=a: MyApp.startup_into(a)))
     else:
