@@ -484,10 +484,12 @@ def test_package_and_entry_icons_are_placeholders_until_added(
     for name in ("boxes.png", "terminal.png", "window.png", "plug.png"):
         shutil.copy(ICONS / "list.png", icons / name)
     proto.reload_menu(proto.script_list)
-    assert all(isinstance(r.icon, toga.Image) for r in proto.script_list.data[1:])
+    assert all(
+        isinstance(r.icon, (toga.Icon, toga.Image)) for r in proto.script_list.data[1:]
+    )
     proto.package_dir = None
     proto.reload_menu(proto.script_list)
-    assert isinstance(row(proto, "tools").icon, toga.Image)
+    assert isinstance(row(proto, "tools").icon, (toga.Icon, toga.Image))
 
 
 def test_package_info_lists_its_entry_points(

@@ -85,7 +85,9 @@ def test_category_icons_appear_once_downloaded(
     for name in ("examples.png", "documents.png"):
         shutil.copy(ICONS / "list.png", icons / name)
     proto.reload_menu(proto.script_list)
-    assert all(isinstance(row.icon, toga.Image) for row in proto.script_list.data)
+    assert all(
+        isinstance(row.icon, (toga.Icon, toga.Image)) for row in proto.script_list.data
+    )
 
 
 def test_script_rows_show_docstrings(proto: ui.Prototype) -> None:
@@ -108,12 +110,14 @@ def test_kind_icons_appear_once_downloaded(proto: ui.Prototype, tmp_path: Path) 
     for name in ("folder.png", "file-code.png", "arrow-small-left.png"):
         shutil.copy(ICONS / "list.png", icons / name)
     proto.reload_menu(proto.script_list)
-    assert all(isinstance(row.icon, toga.Image) for row in proto.script_list.data)
+    assert all(
+        isinstance(row.icon, (toga.Icon, toga.Image)) for row in proto.script_list.data
+    )
 
     # A script row too
     proto.subfolder = Path()
     proto.reload_menu(proto.script_list)
-    assert isinstance(proto.script_list.data[-1].icon, toga.Image)  # "top"
+    assert isinstance(proto.script_list.data[-1].icon, (toga.Icon, toga.Image))  # "top"
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +247,9 @@ def test_default_icons_are_not_used_as_a_splash(
     )
     proto.reload_menu(proto.script_list)
     row = next(r for r in proto.script_list.data if r.title == "plain")
-    assert isinstance(row.icon, toga.Image)  # the list still shows the default
+    assert isinstance(
+        row.icon, (toga.Icon, toga.Image)
+    )  # the list still shows the default
 
     assert splash_during_install(proto, app, "plain", monkeypatch) is None
 

@@ -44,6 +44,9 @@ CATEGORY_ICONS = {
     "Documents": "documents.png",
 }
 
+# Platforms whose DetailedList takes a toga.Image as a row icon (see list_icon)
+IMAGE_ICON_PLATFORMS = ("ios", "android", "darwin")
+
 KIND_ICONS = {
     "folder": "folder.png",
     "project": "box.png",
@@ -391,13 +394,27 @@ class PrototypeBase:
         self.subfolder = Path()
         self.package_dir = None
 
-    def bundled_icon(self, filename: str) -> toga.Image | None:
+    def bundled_icon(self, filename: str) -> toga.Icon | toga.Image | None:
         """Load an icon from resources/icons, or None until the file is added."""
         path = self.icon_path / filename
         if not path.exists():
             return None
+        return self.list_icon(path, tint=True)
+
+    @staticmethod
+    def list_icon(path: Path, tint: bool = False) -> toga.Icon | toga.Image:
+        """An image for a DetailedList row, in the form this platform accepts.
+
+        Toga documents a row's icon as a ``toga.Icon``. The iOS, Android and
+        macOS (Cocoa) backends also take a ``toga.Image``, which is what lets the
+        launcher tint its line-art icons on iOS (below). The Windows backend
+        doesn't: it needs the icon's ``path``, and a Toga Image has none. So
+        everywhere else the file is loaded as an Icon.
+        """
+        if sys.platform not in IMAGE_ICON_PLATFORMS:
+            return toga.Icon(path)
         image = toga.Image(path)
-        if sys.platform == "ios":
+        if tint and sys.platform == "ios":
             # The icons are black line art; tint them with the label colour so
             # they follow light and dark mode like the row text does
             from toga_iOS.libs import UIColor
@@ -496,12 +513,12 @@ class PrototypeBase:
             # The prototype's own icon, if it set one and the file exists. Only
             # this is used as the Script view's splash; the small default icons
             # below are for the list alone and look poor stretched to a splash.
-            own_icon = None
+            own_icon = row_icon = None
             if proto["icon_path"] and proto["icon_path"].exists():
-                own_icon = toga.Image(
-                    proto["icon_path"]
-                )  # This should be Icon, but it works
-            row_icon = own_icon
+                # The splash is an ImageView, which wants an Image; the row an
+                # icon in the form this platform's list accepts
+                own_icon = toga.Image(proto["icon_path"])
+                row_icon = self.list_icon(proto["icon_path"])
             icon_file = KIND_ICONS.get(proto.get("kind", ""))
             if row_icon is None and icon_file:
                 row_icon = self.bundled_icon(icon_file)
