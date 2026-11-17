@@ -25,7 +25,7 @@ class PasteMixin(PrototypeBase):
         super().__init__(host_app, on_done)
         self.paste_button = toga.Button("Paste", on_press=self.handle_paste)
         self.add_button_icon(self.paste_button, "paste.png")
-        if sys.platform != "ios":
+        if sys.platform not in ("ios", "android"):
             self.paste_button.style.display = "none"  # no pasteboard to read
         # What a shown preview would import, until Cancel or Import
         self._pending_import: tuple[str, str, Path] | None = None
@@ -94,8 +94,13 @@ class PasteMixin(PrototypeBase):
             return
         if content is None:
             await self.info(
-                "Copy a script as text, or a file in the Files app, then paste. "
-                "If iOS asks, choose Allow Paste.",
+                "Copy a script as text"
+                + (
+                    "."
+                    if sys.platform == "android"
+                    else ", or a file in the Files app, then paste. "
+                    "If iOS asks, choose Allow Paste."
+                ),
                 "Nothing to paste",
             )
             return

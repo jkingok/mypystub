@@ -239,7 +239,7 @@ def test_cancel_discards_without_importing(
     assert list(docs.glob("pasted*.py")) == []
 
 
-def test_paste_button_is_for_ios_only(proto: ui.Prototype) -> None:
-    """Without a pasteboard to read, the button isn't shown."""
+def test_paste_button_is_hidden_off_ios_and_android(proto: ui.Prototype) -> None:
+    """Without a pasteboard or clipboard to read, the button isn't shown."""
     assert proto.paste_button.text == "Paste"
-    assert proto.paste_button.style.display == "none"  # tests run off iOS
+    assert proto.paste_button.style.display == "none"  # tests run on desktop

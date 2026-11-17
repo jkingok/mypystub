@@ -114,8 +114,8 @@ async def read_pasteboard(into: Path) -> tuple[str, str] | None:
     """What the system pasteboard (clipboard) holds, or None if nothing useful.
 
     Returns ``("file", path)`` for a copied file, which is preferred, or
-    ``("text", string)`` for copied text. Pasteboards only exist on iOS: on
-    other platforms this returns None.
+    ``("text", string)`` for copied text. On Android only text is read (see
+    android_clipboard); on other platforms this returns None.
 
     The Files app offers a copied file through an item provider, not a URL, so
     the file is copied into the folder `into`, replacing what was there from the
@@ -124,6 +124,11 @@ async def read_pasteboard(into: Path) -> tuple[str, str] | None:
     it when the app quits. Raises ValueError for a copied folder, and OSError if
     the file can't be read.
     """
+    if sys.platform == "android":
+        from . import android_clipboard
+
+        text = android_clipboard.read_text()
+        return ("text", text) if text else None
     if sys.platform != "ios":
         return None
     pasteboard = UIPasteboard.generalPasteboard
