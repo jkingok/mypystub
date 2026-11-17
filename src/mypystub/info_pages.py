@@ -60,28 +60,37 @@ def link(url: str, text: str | None = None) -> str:
     return label
 
 
-def source_html(source: str, limit: int = SOURCE_PREVIEW_LINES) -> str:
-    """Python source, highlighted with line numbers, escaped by Pygments.
+def source_html(
+    source: str, limit: int = SOURCE_PREVIEW_LINES, language: str = "python"
+) -> str:
+    """Source code, highlighted with line numbers, escaped by Pygments.
 
-    Long files show their first `limit` lines; the rest is in a fold, so the
-    page stays quick to lay out until the reader asks for it.
+    `language` is a Pygments lexer name (``python``, ``html``, ``css``,
+    ``javascript``). Long files show their first `limit` lines; the rest is in
+    a fold, so the page stays quick to lay out until the reader asks for it.
     """
     lines = source.splitlines(keepends=True)
     head, rest = "".join(lines[:limit]), "".join(lines[limit:])
-    page = _highlight(head, 1)
+    page = _highlight(head, 1, language)
     if rest:
         page += (
             f"<details><summary>Show all {len(lines)} lines</summary>\n"
-            f"{_highlight(rest, limit + 1)}</details>\n"
+            f"{_highlight(rest, limit + 1, language)}</details>\n"
         )
     return page
 
 
-def _highlight(code: str, first_line: int) -> str:
+def _highlight(code: str, first_line: int, language: str = "python") -> str:
     try:
         from pygments import highlight
         from pygments.formatters import HtmlFormatter
-        from pygments.lexers import PythonLexer
+        from pygments.lexers import get_lexer_by_name
+        from pygments.util import ClassNotFound
+
+        try:
+            lexer = get_lexer_by_name(language)
+        except ClassNotFound:
+            lexer = get_lexer_by_name("text")
     except ImportError:
         numbered = "".join(
             f"{n:4d}  {escape(line)}"
@@ -91,7 +100,7 @@ def _highlight(code: str, first_line: int) -> str:
     formatter = HtmlFormatter(
         cssclass="codehilite", linenos="inline", linenostart=first_line
     )
-    return highlight(code, PythonLexer(), formatter)
+    return highlight(code, lexer, formatter)
 
 
 def toml_html(text: str) -> str:
@@ -475,14 +484,39 @@ def web_info_html(root: Path, page: str, title: str) -> str:
         )
     if page == "index.html" and (readme := find_file(root, ("readme",))):
         parts.append(section("README", text_file_html(readme)))
-    lines = source.splitlines()
-    shown = "\n".join(lines[:SOURCE_PREVIEW_LINES])
-    more = (
-        f"\n… {len(lines) - SOURCE_PREVIEW_LINES} more lines"
-        if len(lines) > SOURCE_PREVIEW_LINES
-        else ""
-    )
-    parts.append(
-        section("Page source", f"<pre><code>{escape(shown + more)}</code></pre>")
-    )
+    parts.append(section("Page source", source_html(source, language="html")))
+    parts += web_asset_sections(root, page)
     return "\n".join(p for p in parts if p)
+
+
+# The other files of a web app folder shown on its Info page, by suffix
+WEB_ASSETS = {".css": "css", ".js": "javascript", ".mjs": "javascript"}
+MAX_WEB_ASSETS = 5
+
+
+def web_asset_sections(root: Path, page: str) -> list[str]:
+    """The stylesheets and scripts beside a folder web app's index.html.
+
+    Only for a folder app (a single page shares its folder with unrelated
+    files), top level only, at most a few, each highlighted and folded.
+    """
+    if page != "index.html":
+        return []
+    try:
+        files = sorted(
+            p for p in root.iterdir() if p.is_file() and p.suffix.lower() in WEB_ASSETS
+        )
+    except OSError:
+        return []
+    sections = []
+    for path in files[:MAX_WEB_ASSETS]:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        sections.append(
+            section(
+                path.name, source_html(text, language=WEB_ASSETS[path.suffix.lower()])
+            )
+        )
+    return sections
