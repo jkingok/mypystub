@@ -374,11 +374,11 @@ build_gradle_dependencies = [
 # directory is added here. app/ sits five levels below the repo root in
 # build/mypystub/android/gradle/.
 build_gradle_extra_content="""
-// Java classes extended in Python: Toga's WebView client, and our handler for
-// Android's Back (OnBackPressedCallback is a class, so it needs a static proxy)
+// Java classes extended in Python: Toga's WebView client. (Android's Back uses
+// the PyBackCallback Java class instead: OnBackPressedCallback has no
+// no-argument constructor, which a static proxy needs.)
 chaquopy.defaultConfig.staticProxy(
     "toga_android.widgets.internal.webview",
-    "mypystub.android_back",
 )
 
 // Chaquopy compiles app code to .pyc and ships only that by default. Turn that

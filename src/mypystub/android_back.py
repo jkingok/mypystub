@@ -5,40 +5,34 @@ AndroidX ``OnBackPressedCallback`` to the activity's ``OnBackPressedDispatcher``
 AndroidX delivers Back on every Android version, including Android 13 and later,
 where Back is predictive and ``onBackPressed`` is no longer called.
 
-``OnBackPressedCallback`` is an abstract class, not an interface, so Chaquopy
-can only extend it with a static proxy, which is compiled into the app at build
-time: pyproject.toml names this module in ``chaquopy.defaultConfig.staticProxy``.
-That is why this module imports Java at its top: it is only ever imported on
-Android, from :func:`install`'s caller.
+``OnBackPressedCallback`` is an abstract class whose only constructor takes a
+boolean, which Chaquopy's static proxy (it generates a constructor with no
+arguments) can't extend. So ``PyBackCallback``, a small Java subclass in
+assets/android/java, extends it, and this module gives it a ``Handler`` through a
+dynamic proxy. That is why this module imports Java at its top: it is only ever
+imported on Android, from :func:`install`'s caller.
 """
 
 from collections.abc import Callable
 from typing import Any
 
-from androidx.activity import (  # pyright: ignore[reportMissingImports]
-    OnBackPressedCallback,
-)
 from java import (  # pyright: ignore[reportMissingImports]
-    Override,
-    constructor,
-    jboolean,
+    dynamic_proxy,
     jclass,
-    jvoid,
-    static_proxy,
 )
 
+PyBackCallback = jclass("au.id.jking.mypystub.PyBackCallback")
 
-class BackCallback(static_proxy(OnBackPressedCallback)):  # type: ignore[misc]
+
+class BackHandler(dynamic_proxy(PyBackCallback.Handler)):  # type: ignore[misc]
     """Calls a Python handler for Back; if it declines, Android's default runs."""
 
-    @constructor([jboolean])
-    def __init__(self, enabled: bool) -> None:
-        """Enabled from the start: the handler decides each time."""
-        super().__init__(enabled)
-        self.handler: Callable[[], bool] = lambda: False
+    def __init__(self, handler: Callable[[], bool]) -> None:
+        super().__init__()
+        self.handler = handler
+        self.callback: Any = None  # the PyBackCallback this answers for
 
-    @Override(jvoid, [])
-    def handleOnBackPressed(self) -> None:
+    def handle(self) -> None:
         """Back was pressed: the handler, or the system's default."""
         try:
             handled = bool(self.handler())
@@ -47,9 +41,9 @@ class BackCallback(static_proxy(OnBackPressedCallback)):  # type: ignore[misc]
             handled = False
         if not handled:
             # The documented way to fall through: step aside and dispatch again
-            self.setEnabled(False)
+            self.callback.setEnabled(False)
             activity().getOnBackPressedDispatcher().onBackPressed()
-            self.setEnabled(True)
+            self.callback.setEnabled(True)
 
 
 def activity() -> Any:
@@ -57,7 +51,7 @@ def activity() -> Any:
     return jclass("org.beeware.android.MainActivity").singletonThis
 
 
-_installed: list[BackCallback] = []  # kept alive while the app runs
+_installed: list[BackHandler] = []  # kept alive while the app runs
 
 
 def install(handler: Callable[[], bool]) -> None:
@@ -65,8 +59,8 @@ def install(handler: Callable[[], bool]) -> None:
     if _installed:
         _installed[0].handler = handler
         return
-    callback = BackCallback(True)
-    callback.handler = handler
+    proxy = BackHandler(handler)
+    proxy.callback = PyBackCallback(proxy)
     main = activity()
-    main.getOnBackPressedDispatcher().addCallback(main, callback)
-    _installed.append(callback)
+    main.getOnBackPressedDispatcher().addCallback(main, proxy.callback)
+    _installed.append(proxy)

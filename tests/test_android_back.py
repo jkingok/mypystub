@@ -3,6 +3,7 @@
 import importlib
 import sys
 import types
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -25,14 +26,20 @@ class Dispatcher:
         self.defaults += 1
 
 
-class Callback:
-    """androidx.activity.OnBackPressedCallback, as far as it is used."""
+class PyBackCallback:
+    """au.id.jking.mypystub.PyBackCallback: the Java subclass, with a Handler."""
 
-    def __init__(self, enabled: bool) -> None:
-        self.enabled = enabled
+    Handler = object
+
+    def __init__(self, handler: Any) -> None:
+        self.handler = handler
+        self.enabled = True
 
     def setEnabled(self, enabled: bool) -> None:
         self.enabled = enabled
+
+    def handleOnBackPressed(self) -> None:
+        self.handler.handle()
 
 
 @pytest.fixture
@@ -40,18 +47,15 @@ def android_back(monkeypatch: pytest.MonkeyPatch) -> Any:
     dispatcher = Dispatcher()
     activity = types.SimpleNamespace(getOnBackPressedDispatcher=lambda: dispatcher)
     java = types.ModuleType("java")
-    java.static_proxy = lambda base: base  # type: ignore[attr-defined]
-    java.constructor = lambda types_: lambda f: f  # type: ignore[attr-defined]
-    java.Override = lambda ret, args: lambda f: f  # type: ignore[attr-defined]
-    java.jboolean = bool  # type: ignore[attr-defined]
-    java.jvoid = None  # type: ignore[attr-defined]
-    java.jclass = lambda name: types.SimpleNamespace(singletonThis=activity)  # type: ignore[attr-defined]
-    androidx = types.ModuleType("androidx")
-    activity_module = types.ModuleType("androidx.activity")
-    activity_module.OnBackPressedCallback = Callback  # type: ignore[attr-defined]
+    java.dynamic_proxy = lambda interface: object  # type: ignore[attr-defined]
+
+    def jclass(name: str) -> Any:
+        if name == "au.id.jking.mypystub.PyBackCallback":
+            return PyBackCallback
+        return types.SimpleNamespace(singletonThis=activity)
+
+    java.jclass = jclass  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "java", java)
-    monkeypatch.setitem(sys.modules, "androidx", androidx)
-    monkeypatch.setitem(sys.modules, "androidx.activity", activity_module)
     monkeypatch.delitem(sys.modules, "mypystub.android_back", raising=False)
     module = importlib.import_module("mypystub.android_back")
     module.dispatcher = dispatcher  # type: ignore[attr-defined]
@@ -91,8 +95,13 @@ def test_installing_again_replaces_the_handler(android_back: Any) -> None:
     assert calls == ["second"] and len(android_back.dispatcher.callbacks) == 1
 
 
-def test_the_static_proxy_is_declared_for_the_build() -> None:
-    from pathlib import Path
-
-    pyproject = (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text()
-    assert '"mypystub.android_back"' in pyproject
+def test_the_java_subclass_has_a_constructor_python_can_call() -> None:
+    """A static proxy of OnBackPressedCallback can't compile (#277's cause)."""
+    root = Path(__file__).resolve().parent.parent
+    java = (
+        root / "assets/android/java/au/id/jking/mypystub/PyBackCallback.java"
+    ).read_text()
+    assert "extends OnBackPressedCallback" in java
+    assert "super(true)" in java
+    pyproject = (root / "pyproject.toml").read_text()
+    assert '"mypystub.android_back"' not in pyproject  # no static proxy for it
