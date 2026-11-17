@@ -1,5 +1,12 @@
 # What's New
 
+## 2026.11.18.1 (2026-11-18)
+
+### Fixed
+
+- Scripts on iOS run again. Since 2026.11.13.1 they seemed to hang with no output, only moving on when you switched tabs.
+- On Android, the screen no longer stays blank when you reopen the app after Back closed it.
+
 ## 2026.11.17.2 (2026-11-17)
 
 ### New
