@@ -160,6 +160,8 @@ Creating a Release needs `GITHUB_RELEASE_TOKEN`, a token allowed to write Releas
 bundle exec fastlane release version:2026.11.8.1
 ```
 
+Lanes that ship Android (`android share` and `both`) also attach **extra Android builds** to the Release, after Firebase has the main one: by default Python 3.13 (`MyPyStub_313-<version>-signed.apk`), built with `scripts/build_android.py`, so it has its own app ID and installs beside the Firebase build. Set `ANDROID_EXTRA_PYTHONS` to change the list (`"3.13,3.14"`), or to an empty string for none. A failed extra build is reported and left out, without stopping the Release. Without `GITHUB_RELEASE_TOKEN` they aren't built at all. The `release` lane doesn't build them.
+
 #### Making a token (desktop or CI)
 
 Use a fine-grained personal access token limited to the public repository:

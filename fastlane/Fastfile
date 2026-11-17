@@ -76,7 +76,7 @@ PUBLIC_REPOSITORY = ENV["PUBLIC_REPOSITORY"] || "jkingok/mypystub"
 # repository. It comes from the environment, never from this repository. Without
 # it the Release is skipped with a warning, since the uploads have already
 # happened; run `bundle exec fastlane release version:<version>` later.
-def publish_release(version)
+def publish_release(version, assets = [])
   token = ENV["GITHUB_RELEASE_TOKEN"].to_s
   if token.empty?
     UI.important(
@@ -93,8 +93,38 @@ def publish_release(version)
     name: version,
     description: notes,
     is_draft: false,
-    is_prerelease: false
+    is_prerelease: false,
+    upload_assets: assets
   )
+end
+
+# Extra Android builds attached to the GitHub Release, each with its own app ID
+# so it installs beside the Firebase build. ANDROID_EXTRA_PYTHONS overrides the
+# list (comma-separated; empty for none).
+ANDROID_EXTRA_PYTHONS_DEFAULT = "3.13"
+
+def android_extra_pythons
+  ENV.fetch("ANDROID_EXTRA_PYTHONS", ANDROID_EXTRA_PYTHONS_DEFAULT)
+    .split(",").map(&:strip).reject(&:empty?)
+end
+
+# Builds each extra Python with scripts/build_android.py and returns the signed
+# APKs. A failed build is reported and skipped: Firebase already has this
+# release, so it still gets tagged and released.
+def build_android_extras(version)
+  return [] if ENV["GITHUB_RELEASE_TOKEN"].to_s.empty?
+
+  android_extra_pythons.filter_map do |python|
+    sh("uv --directory .. run scripts/build_android.py #{python}")
+    apk = File.expand_path(File.join("..", "dist", "MyPyStub_#{python.delete('.')}-#{version}-signed.apk"))
+    next apk if File.exist?(apk)
+
+    UI.important("No signed APK for Python #{python} at #{apk}; it is left out of the release")
+    nil
+  rescue StandardError => error
+    UI.important("The Python #{python} Android build failed, so the release goes without it: #{error.message}")
+    nil
+  end
 end
 
 # This release's "What's New" text for the store or tester notes. Falls back to a
@@ -273,12 +303,13 @@ end
 # The steps after the uploads, shared by every release lane: push main, tag the
 # commit, mirror main and its tags to the public repository, and create the GitHub
 # Release that the About page links to.
-private_lane :finish_release do
+private_lane :finish_release do |options|
   python_version = lane_context[:PYTHON_VERSION]
   push_main
   tag_release
   mirror_to_public
-  publish_release(python_version)
+  assets = options[:android_extras] ? build_android_extras(python_version) : []
+  publish_release(python_version, assets)
 end
 
 # ---- iOS building blocks (shared by the ios lanes and both) ----
@@ -606,7 +637,7 @@ platform :android do
     push_main
     collect_changes
     android_upload
-    finish_release
+    finish_release(android_extras: true)
   end
 end
 
@@ -638,7 +669,7 @@ lane :both do |options|
     tag_release if testflight_done
     raise
   end
-  finish_release
+  finish_release(android_extras: true)
 end
 
 desc "Mirror main and its release tags to the public repository"

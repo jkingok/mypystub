@@ -8,7 +8,10 @@ Pythons install side by side. ``--plain`` keeps the normal app ID and name
 (``au.id.jking.mypystub``, "MyPyStub"), which updates a Fastlane build.
 
 Steps: generate the icons, record the branch for About, clear the old Android build (Briefcase won't
-overwrite it), ``briefcase create``, ``briefcase package -p apk``, then sign the
+overwrite it), pin Toga's git requirements to their current commit (as Fastlane
+does, so pip reuses its cached wheels instead of cloning Toga for each package;
+pyproject.toml is put back afterwards), ``briefcase create``, ``briefcase package
+-p apk``, then sign the
 APK with the SDK's ``apksigner`` if the signing variables are set:
 
     ANDROID_KEYSTORE            path to the keystore
@@ -33,6 +36,8 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -164,6 +169,36 @@ def sign_command(
     return command + ["--out", str(signed), str(apk)]
 
 
+def pin_requirements(pyproject: Path) -> None:
+    """Pin the git requirements in ``pyproject`` with pin_git_requirements.py."""
+    script = ROOT / "scripts" / "pin_git_requirements.py"
+    subprocess.run(
+        [
+            "uv",
+            "--directory",
+            str(ROOT),
+            "run",
+            str(script),
+            "--pyproject",
+            str(pyproject),
+        ],
+        check=True,
+    )
+
+
+@contextmanager
+def pinned(
+    pyproject: Path, pin: Callable[[Path], None] = pin_requirements
+) -> Iterator[None]:
+    """Pin ``pyproject``'s git requirements for the block, then restore it."""
+    original = pyproject.read_bytes()
+    try:
+        pin(pyproject)
+        yield
+    finally:
+        pyproject.write_bytes(original)
+
+
 def briefcase(python: str, *args: str) -> None:
     """Run Briefcase under `python`, from the repository root."""
     command = ["uvx", "--python", python, "--directory", str(ROOT), "briefcase", *args]
@@ -192,8 +227,9 @@ def main(argv: list[str] | None = None) -> None:
     shutil.rmtree(ROOT / "build" / APP / "android", ignore_errors=True)
     dist = ROOT / "dist"
     before = apks(dist)
-    briefcase(python, "create", "android", "gradle", "--no-input", *options)
-    briefcase(python, "package", "android", "-p", "apk", "--no-input", *options)
+    with pinned(ROOT / "pyproject.toml"):
+        briefcase(python, "create", "android", "gradle", "--no-input", *options)
+        briefcase(python, "package", "android", "-p", "apk", "--no-input", *options)
 
     # Rename it, so builds with different Pythons don't share or replace a name
     apk = dist / apk_name(python, app_version())
