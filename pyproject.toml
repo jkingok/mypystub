@@ -258,6 +258,12 @@ installer_icon = "assets/icons/icon"
 
 # Mobile deployments
 [tool.briefcase.app.mypystub.iOS]
+# Rubicon 0.6 (which Toga now needs) no longer runs the iOS run loop itself, so
+# the launcher must release the GIL before UIApplicationMain, or every other
+# thread (the script, its output) waits until the main thread runs Python.
+# Briefcase 0.4.7's template (v0.4.7) doesn't; the template's main branch does
+# (briefcase-iOS-Xcode-template#91). Drop this once Briefcase's release has it.
+template_branch = "main"
 requires = [
 # resvg-py (SVG web app icons) is left out: there is no iOS wheel for it yet.
 # Add it once BeeWare's mobile wheels have one; without it SVG icons are skipped.
