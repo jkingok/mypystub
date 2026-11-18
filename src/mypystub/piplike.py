@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import importlib
 import importlib.metadata
 import shutil
@@ -7,7 +8,7 @@ import tempfile
 import zipfile
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,12 +20,12 @@ from installer.destinations import SchemeDictionaryDestination
 from installer.sources import WheelFile
 from packaging.requirements import Requirement
 from packaging.tags import Tag, sys_tags
-from packaging.utils import canonicalize_name
+from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 from unearth import PackageFinder, TargetPython
 from unearth.link import Link
 
-from . import direct_refs, git_hosts, purity, source_installs
+from . import direct_refs, git_hosts, purity, source_build, source_installs
 from .direct_refs import unsupported_message
 from .package_aliases import ALIASES, Alias, parse_aliases  # noqa: F401
 
@@ -43,10 +44,6 @@ class Candidate:
     is_installed: bool = False
     # A wheel the requirement itself pointed at (`foo @ https://...whl`, #171)
     is_direct: bool = False
-    # Source the requirement pointed at, unpacked here and installed without a
-    # build (#172); set only for those
-    source_root: Path | None = None
-    source_project: source_installs.Project | None = field(default=None, compare=False)
     # Use frozenset for immutability so dataclass remains hashable
     requested_extras: frozenset[str] = frozenset()
     # The requirement name this candidate satisfies; differs from `name` when an
@@ -90,6 +87,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         installed_packages: dict[str, Version] | None = None,
         target_dir: Path | None = None,
         supported_tags: Iterable[Tag] | None = None,
+        backend_installer: source_build.BackendInstaller | None = None,
     ):
         """Resolve against bundled, then installed, then PyPI packages.
 
@@ -124,7 +122,11 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             supported_tags if supported_tags is not None else sys_tags()
         )
         self._warned: set[str] = set()
-        self._sources: dict[str, source_installs.Project] = {}
+        # Source URLs already built, and the URL each built wheel is cached under
+        self._sources: dict[str, str] = {}
+        # Installs a build backend's requirements into a folder (#257); tests
+        # replace it, the app resolves them from PyPI like any requirement
+        self.backend_installer = backend_installer or self.install_backend
         self.http_client = http_client
         self.use_system = use_system
         self.max_candidates = max_candidates
@@ -347,16 +349,20 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         excluded: set[Candidate],
         active_extras: frozenset[str],
     ) -> list[Candidate]:
-        """The pure-Python project in a source archive, ready to install (#172)."""
+        """The wheel built from a source archive the requirement names (#257).
+
+        Once built, it is a wheel at a URL like any other (#171): its metadata,
+        purity check and install all take that path.
+        """
         url = git_hosts.archive_url(requirement.url or "") or (requirement.url or "")
-        project = self._prepare_source(url, requirement)
+        wheel_url = self._prepare_source(url, requirement)
+        wheel = direct_refs.cache_path(self.cache_dir, wheel_url)
+        name, version, _, _ = parse_wheel_filename(wheel.name)
         candidate = Candidate(
-            name=project.name,
-            version=project.version,
-            link=Link(url),
+            name=name,
+            version=version,
+            link=Link(wheel_url),
             is_direct=True,
-            source_root=project.root,
-            source_project=project,
             requested_extras=active_extras,
             identifier=canon_id,
         )
@@ -367,10 +373,12 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             return []
         return [candidate]
 
-    def _prepare_source(
-        self, url: str, requirement: Requirement
-    ) -> source_installs.Project:
-        """Download and unpack an archive, and read the project in it (cached)."""
+    def _prepare_source(self, url: str, requirement: Requirement) -> str:
+        """Download, unpack and build a source archive (cached); the wheel's URL.
+
+        The wheel is kept where a wheel at its URL would be (``cache_path``),
+        under a URL made from the source's, so nothing downloads it again.
+        """
         if url in self._sources:
             return self._sources[url]
         archive = direct_refs.cache_path(self.cache_dir, url)
@@ -386,15 +394,109 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             archive.write_bytes(response.content)
         try:
             direct_refs.check_sha256(archive, url)
-            project = source_installs.open_archive(archive, url, requirement.name)
-        except (direct_refs.WheelProblem, source_installs.SourceProblem) as problem:
+            root = source_installs.open_source(archive, url)
+            system = source_build.build_system(root)
+            site = self.backend_site(system.requires)
+            built = source_build.build_wheel(
+                root,
+                site,
+                archive.parent / "built",
+                source_installs.version_hint(
+                    root, url, source_installs.commit_of(archive)
+                ),
+                system,
+            )
+        except (
+            direct_refs.WheelProblem,
+            source_installs.SourceProblem,
+            source_build.BuildProblem,
+        ) as problem:
             if isinstance(problem, direct_refs.WheelProblem):
                 archive.unlink(missing_ok=True)  # a wrong hash: don't keep the file
             raise DependencyError(
                 f"Can't install “{requirement}”: {problem}."
             ) from None
-        self._sources[url] = project
-        return project
+        name, _, _, _ = parse_wheel_filename(built.name)
+        if requirement.name and canonicalize_name(requirement.name) != name:
+            raise DependencyError(
+                f"Can't install “{requirement}”: the source is {name}, "
+                f"not {requirement.name}."
+            )
+        wheel_url = f"{direct_refs.urldefrag(url).url}/{built.name}"
+        target = direct_refs.cache_path(self.cache_dir, wheel_url)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(built, target)
+        self._sources[url] = wheel_url
+        return wheel_url
+
+    def backend_site(self, requires: tuple[str, ...]) -> Path:
+        """A folder with a build backend's requirements installed, made once.
+
+        Kept beside the user's packages, by requirements, so the next build
+        with the same backend needs no network. Only fetched when a source
+        needs it (backends aren't bundled with the app, so they can update).
+        """
+        key = hashlib.sha256("\n".join(sorted(requires)).encode()).hexdigest()[:16]
+        base = self.target_dir.parent if self.target_dir else self.cache_dir
+        site = base / "build_backends" / key
+        if (site / ".complete").exists():
+            return site
+        shutil.rmtree(site, ignore_errors=True)
+        site.mkdir(parents=True)
+        try:
+            self.backend_installer(requires, site)
+        except DependencyError as error:
+            shutil.rmtree(site, ignore_errors=True)
+            raise source_build.BuildProblem(
+                f"its build backend can't be installed: {error}"
+            ) from None
+        (site / ".complete").write_text("\n".join(requires) + "\n", encoding="utf-8")
+        return site
+
+    def install_backend(self, requires: tuple[str, ...], site: Path) -> None:
+        """Resolve a backend's requirements from PyPI and unpack them into `site`.
+
+        Pure wheels only, nothing bundled taken for them (the backend gets its
+        own copies), and no source builds: a backend has to come as wheels.
+        """
+        provider = PyPIWheelProvider(
+            finder=self.finder,
+            cache_dir=self.cache_dir,
+            system_packages={},
+            http_client=self.http_client,
+            use_system=False,
+            max_candidates=self.max_candidates,
+            target_dir=site,
+            supported_tags=self.supported_tags,
+        )
+        try:
+            result = resolvelib.Resolver(provider, resolvelib.BaseReporter()).resolve(
+                [Requirement(r) for r in requires]
+            )
+        except resolvelib.ResolutionError as error:
+            raise DependencyError(str(error)) from error
+        for candidate in result.mapping.values():
+            if candidate.link is None:
+                continue
+            wheel = (
+                direct_refs.cache_path(self.cache_dir, candidate.link.url)
+                if candidate.is_direct
+                else self.cache_dir / candidate.link.filename
+            )
+            if not wheel.exists():
+                try:
+                    response = self.http_client.get(
+                        direct_refs.urldefrag(candidate.link.url).url,
+                        follow_redirects=True,
+                    )
+                    response.raise_for_status()
+                except httpx2.HTTPError as exc:
+                    raise DependencyError(f"Couldn't download {candidate}: {exc}")
+                wheel.parent.mkdir(parents=True, exist_ok=True)
+                wheel.write_bytes(response.content)
+            if reason := purity.wheel_impurity(wheel):
+                raise DependencyError(f"{candidate.name} isn't pure Python ({reason})")
+            unpack_wheel(wheel, site)
 
     def _direct_wheel_metadata(self, candidate: Candidate) -> str:
         """The METADATA of a wheel at a URL: downloaded once, then read from disk."""
@@ -459,10 +561,12 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                         f"ignoring {requirement.specifier}",
                     )
                 return True
-        if candidate.source_root and source_installs.version_is_unknown(
-            candidate.version
+        if (
+            candidate.is_direct
+            and candidate.version.public == "0"
+            and candidate.version.local is not None
         ):
-            return True  # the source doesn't say, and it was asked for by URL
+            return True  # built from source that doesn't say, asked for by URL
         return not (
             requirement.specifier
             and not requirement.specifier.contains(candidate.version, prereleases=True)
@@ -545,8 +649,6 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
     def _fetch_candidate_metadata(self, candidate: Candidate) -> str:
         if not candidate.link:
             return ""
-        if candidate.is_direct and candidate.source_root is not None:
-            return self._sources[candidate.link.url].metadata_text()
         if candidate.is_direct:
             return self._direct_wheel_metadata(candidate)
         metadata_url = f"{candidate.link.url}.metadata"
@@ -651,21 +753,21 @@ async def install_resolved(
                 if candidate.is_direct
                 else cache_dir / link.filename
             )
-            if candidate.source_root is None:
-                if not wheel_path.exists():
-                    wheel_path.parent.mkdir(parents=True, exist_ok=True)
-                    print(f"downloading {link}")
-                    progress(f"Downloading {candidate.name} {candidate.version}")
-                    await download_wheel_async(
-                        async_http, direct_refs.urldefrag(link.url).url, wheel_path
-                    )
-                # Only pure Python is installed at run time (#172)
-                if require_pure and (reason := purity.wheel_impurity(wheel_path)):
-                    raise DependencyError(
-                        f"{candidate.name} {candidate.version} can't be installed: "
-                        f"{reason}. Only pure Python is installed at run time; "
-                        "compiled packages have to be bundled with the app."
-                    )
+            # A wheel built from source is already here (#257)
+            if not wheel_path.exists():
+                wheel_path.parent.mkdir(parents=True, exist_ok=True)
+                print(f"downloading {link}")
+                progress(f"Downloading {candidate.name} {candidate.version}")
+                await download_wheel_async(
+                    async_http, direct_refs.urldefrag(link.url).url, wheel_path
+                )
+            # Only pure Python is installed at run time (#172)
+            if require_pure and (reason := purity.wheel_impurity(wheel_path)):
+                raise DependencyError(
+                    f"{candidate.name} {candidate.version} can't be installed: "
+                    f"{reason}. Only pure Python is installed at run time; "
+                    "compiled packages have to be bundled with the app."
+                )
             pending.append((candidate, wheel_path, installed))
 
     for candidate, wheel_path, installed in pending:
@@ -679,17 +781,6 @@ async def install_resolved(
                 remove_installed_package, target_dir, candidate.name
             )
         progress(f"Installing {candidate.name} {candidate.version}")
-        if candidate.source_project is not None:
-            # Pure Python from source: copied, never built (#172)
-            try:
-                await asyncio.to_thread(
-                    source_installs.install, candidate.source_project, target_dir
-                )
-            except OSError as exc:
-                raise DependencyError(
-                    f"Failed to install {candidate.name}: {exc}"
-                ) from exc
-            continue
         try:
             await asyncio.to_thread(unpack_wheel, wheel_path, target_dir)
         except (zipfile.BadZipFile, OSError) as exc:

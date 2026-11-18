@@ -19,8 +19,8 @@ BIN = "https://example.com/b-1.0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
 def test_a_source_with_no_version_satisfies_a_limit_on_it(tmp_path: Path) -> None:
     """You pointed at it, and its version is unknown, not wrong."""
     pyproject = (
-        '[build-system]\nrequires = ["setuptools"]\n'
-        'build-backend = "setuptools.build_meta"\n'
+        '[build-system]\nrequires = ["fakebackend"]\n'
+        'build-backend = "fakebackend"\n'
         '[project]\nname = "thing"\ndynamic = ["version"]\n'
     )
     url = "https://github.com/o/thing/archive/HEAD.zip"
@@ -38,7 +38,6 @@ def test_is_satisfied_only_excuses_unknown_versions(tmp_path: Path) -> None:
         version=Version("1.0"),
         link=piplike.Link("https://example.com/thing.zip"),
         is_direct=True,
-        source_root=tmp_path,
         identifier=canonicalize_name("thing"),
     )
     assert not p.is_satisfied_by(Requirement("thing>=2"), candidate)

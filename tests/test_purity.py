@@ -1,14 +1,11 @@
 """Only pure Python is installed at run time (#172)."""
 
-import tomllib
 import zipfile
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from mypystub import purity
-from tests.support_sources import TOGA_CONSOLE_LIKE, write_tree
 
 
 def wheel(
@@ -59,73 +56,3 @@ def test_a_binary_inside_a_pure_looking_wheel_is_impure(
     """Tagged any, but carrying compiled code."""
     path = wheel(tmp_path, **{member.replace("/", "__"): "binary"})
     assert "compiled code" in (purity.wheel_impurity(path) or "")
-
-
-def project(tmp_path: Path, **changes: Any) -> tuple[Path, dict[str, Any], list[Path]]:
-    """A toga-console-like tree, with `changes` applied (path -> text or None)."""
-    files = dict(TOGA_CONSOLE_LIKE)
-    for key, value in changes.items():
-        key = key.replace("__", "/")
-        if value is None:
-            files.pop(key, None)
-        else:
-            files[key] = value
-    root = write_tree(tmp_path, files)
-    data = tomllib.loads((root / "pyproject.toml").read_text())
-    return root, data, [root / "src" / "toga_console"]
-
-
-def test_a_plain_setuptools_project_is_fine(tmp_path: Path) -> None:
-    """A pure project with a pure backend needs nothing but copying."""
-    assert purity.tree_impurity(*project(tmp_path)) is None
-
-
-@pytest.mark.parametrize(
-    ("change", "fragment"),
-    [
-        (
-            {
-                "pyproject.toml": TOGA_CONSOLE_LIKE["pyproject.toml"].replace(
-                    "setuptools.build_meta", "maturin"
-                )
-            },
-            "compiles code",
-        ),
-        (
-            {
-                "pyproject.toml": TOGA_CONSOLE_LIKE["pyproject.toml"].replace(
-                    "setuptools.build_meta", "somebackend.api"
-                )
-            },
-            "isn't run here",
-        ),
-        (
-            {
-                "pyproject.toml": TOGA_CONSOLE_LIKE["pyproject.toml"].replace(
-                    '"setuptools_scm==10.3.4"', '"cython"'
-                )
-            },
-            "cython",
-        ),
-        (
-            {
-                "pyproject.toml": TOGA_CONSOLE_LIKE["pyproject.toml"]
-                + "\n[[tool.setuptools.ext-modules]]\nname='x'\nsources=['x.c']\n"
-            },
-            "extension modules",
-        ),
-        (
-            {"setup.py": "from setuptools import Extension\next_modules=[]\n"},
-            "setup.py",
-        ),
-        ({"Cargo.toml": "[package]\n"}, "Cargo.toml"),
-        ({"src__toga_console__fast.pyx": "cdef int x\n"}, "fast.pyx"),
-        ({"src__toga_console__lib.so": "binary"}, "lib.so"),
-    ],
-)
-def test_anything_that_needs_a_build_is_refused(
-    tmp_path: Path, change: dict[str, str], fragment: str
-) -> None:
-    """Compiled backends, build requirements, extensions and compiled files."""
-    reason = purity.tree_impurity(*project(tmp_path, **change))
-    assert reason is not None and fragment in reason

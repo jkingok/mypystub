@@ -20,8 +20,8 @@ BUNDLED = {"somelib": Version("1.0")}
 TOGA_CONSOLE_LIKE = {
     "pyproject.toml": """
 [build-system]
-requires = ["setuptools==84.2.1", "setuptools_scm==10.3.4"]
-build-backend = "setuptools.build_meta"
+requires = ["fakebackend==1.0"]
+build-backend = "fakebackend"
 
 [project]
 dynamic = ["version"]
@@ -46,6 +46,60 @@ Console = "toga_console.platforms.dummy:Console"
     "tests/test_x.py": "def test(): ...\n",
     "examples/demo/app.py": "print('demo')\n",
 }
+
+
+# A tiny PEP 517 backend, standing in for setuptools and friends so tests need
+# no network: it packages the top-level packages (under src/ if there is one)
+# with static [project] metadata, takes a dynamic version from the variable
+# version plugins read, and fails like setuptools (SystemExit) on C sources.
+FAKE_BACKEND = r"""
+import os, re, tomllib, zipfile
+from pathlib import Path
+
+def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
+    project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
+    version = project.get("version") or os.environ.get("SETUPTOOLS_SCM_PRETEND_VERSION")
+    if not version:
+        raise LookupError("unable to detect version")
+    if any(Path().rglob("*.c")):
+        raise SystemExit("error: command 'cc' failed: no compiler")
+    name = re.sub(r"[-_.]+", "_", project["name"]).lower()
+    base = Path("src") if Path("src").is_dir() else Path(".")
+    packages = [p for p in base.iterdir() if (p / "__init__.py").exists()]
+    info = f"{name}-{version}.dist-info"
+    lines = ["Metadata-Version: 2.1", f"Name: {project['name']}", f"Version: {version}"]
+    lines += [f"Requires-Dist: {r}" for r in project.get("dependencies", [])]
+    for extra, reqs in project.get("optional-dependencies", {}).items():
+        lines.append(f"Provides-Extra: {extra}")
+        lines += [f"Requires-Dist: {r.split(';')[0].strip()}; extra == '{extra}'" for r in reqs]
+    points = []
+    for group, entries in project.get("entry-points", {}).items():
+        points.append(f"[{group}]")
+        points += [f"{k} = {v}" for k, v in entries.items()]
+    wheel = Path(wheel_directory) / f"{name}-{version}-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as zf:
+        record = []
+        for package in packages:
+            for file in package.rglob("*"):
+                if file.is_file() and "__pycache__" not in file.parts:
+                    arc = file.relative_to(base).as_posix()
+                    zf.write(file, arc)
+                    record.append(arc)
+        for arc, text in (
+            (f"{info}/METADATA", "\n".join(lines) + "\n"),
+            (f"{info}/WHEEL", "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n"),
+            (f"{info}/entry_points.txt", "\n".join(points) + "\n"),
+        ):
+            zf.writestr(arc, text)
+            record.append(arc)
+        zf.writestr(f"{info}/RECORD", "".join(f"{r},,\n" for r in record + [f"{info}/RECORD"]))
+    return wheel.name
+"""
+
+
+def install_fake_backend(requires: tuple[str, ...], site: Path) -> None:
+    """The backend installer tests use: the fake backend, whatever is asked for."""
+    (site / "fakebackend.py").write_text(FAKE_BACKEND)
 
 
 def make_zip(files: dict[str, str | bytes], top: str = "project-main") -> bytes:
@@ -88,6 +142,7 @@ def provider(tmp_path: Path, served: dict[str, bytes], **kwargs: Any):
         system_packages=kwargs.pop("system", {}),
         http_client=httpx2.Client(transport=serve(served)),
         supported_tags=ANY,
+        backend_installer=kwargs.pop("backend_installer", install_fake_backend),
         **kwargs,
     )
 
