@@ -24,7 +24,7 @@ from packaging.version import Version
 from unearth import PackageFinder, TargetPython
 from unearth.link import Link
 
-from . import direct_refs, purity, source_installs
+from . import direct_refs, git_hosts, purity, source_installs
 from .direct_refs import unsupported_message
 from .package_aliases import ALIASES, Alias, parse_aliases  # noqa: F401
 
@@ -316,7 +316,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 f"{canon_id} is bundled with the app, so a URL can't replace it."
             )
         requirement = direct[0]
-        if direct_refs.kind_of(requirement.url or "") in ("archive", "github"):
+        if direct_refs.kind_of(requirement.url or "") in ("archive", "git-host"):
             return self._source_candidates(
                 canon_id, requirement, req_specs, excluded, active_extras
             )
@@ -348,9 +348,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         active_extras: frozenset[str],
     ) -> list[Candidate]:
         """The pure-Python project in a source archive, ready to install (#172)."""
-        url = source_installs.github_archive_url(requirement.url or "") or (
-            requirement.url or ""
-        )
+        url = git_hosts.archive_url(requirement.url or "") or (requirement.url or "")
         project = self._prepare_source(url, requirement)
         candidate = Candidate(
             name=project.name,

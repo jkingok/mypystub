@@ -27,19 +27,23 @@ from packaging.utils import (
 )
 from packaging.version import Version
 
-from .source_installs import github_archive_url
+from .git_hosts import archive_url, page_suggestion
 
 ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar")
 
 # Kinds of direct reference that can be installed. A kind not in here is refused
 # with a message that says why (see :func:`unsupported_message`).
-SUPPORTED: frozenset[str] = frozenset({"wheel", "archive", "github"})
+SUPPORTED: frozenset[str] = frozenset({"wheel", "archive", "git-host"})
 
 WHY = {
-    "git+https": "installing from this git host isn't supported yet (GitHub is)",
+    "git+https": (
+        "git URLs can only be installed from GitHub, GitLab and Bitbucket, "
+        "which are fetched as archives"
+    ),
     "git+ssh": "installing from git over SSH isn't supported",
     "git": "this kind of git URL isn't supported",
     "file": "a local file path can't be used, since it won't exist on other devices",
+    "page": "that's a repository's web page, which pip can't install either",
     "other": "this kind of URL isn't supported",
 }
 
@@ -47,14 +51,15 @@ WHY = {
 def kind_of(url: str) -> str:
     """What a requirement's URL points at.
 
-    One of ``wheel``, ``archive``, ``github`` (a GitHub repository, which is
-    fetched as an archive), ``git+https``, ``git+ssh``, ``git`` (any
-    other ``git+`` scheme), ``file`` or ``other``.
+    One of ``wheel``, ``archive``, ``git-host`` (``git+https://`` on GitHub,
+    GitLab or Bitbucket, fetched as an archive), ``git+https`` (another host),
+    ``git+ssh``, ``git`` (any other ``git+`` scheme), ``file``, ``page`` (a
+    repository's web page on one of those hosts) or ``other``.
     """
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
-    if github_archive_url(url):
-        return "github"
+    if archive_url(url):
+        return "git-host"
     if scheme.startswith("git+"):
         transport = scheme[len("git+") :]
         if transport in ("https", "http"):
@@ -69,6 +74,8 @@ def kind_of(url: str) -> str:
         return "wheel"
     if path.endswith(ARCHIVE_SUFFIXES):
         return "archive"
+    if page_suggestion(url):
+        return "page"
     return "other"
 
 
@@ -82,6 +89,11 @@ def unsupported_message(requirement: Requirement) -> str | None:
     kind = kind_of(requirement.url)
     if kind in SUPPORTED:
         return None
+    if kind == "page":
+        return (
+            f"Can't install “{requirement}”: {WHY[kind]}. Use "
+            f"“{requirement.name} @ {page_suggestion(requirement.url)}”."
+        )
     return (
         f"Can't install “{requirement}”: {WHY[kind]}. "
         f"Ask for {requirement.name} by name to get it from PyPI, if it's there."

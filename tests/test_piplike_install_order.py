@@ -26,7 +26,7 @@ def test_a_source_with_no_version_satisfies_a_limit_on_it(tmp_path: Path) -> Non
     url = "https://github.com/o/thing/archive/HEAD.zip"
     served = {url: make_zip({"pyproject.toml": pyproject, "thing/__init__.py": ""})}
     p = provider(tmp_path, served)
-    pins = resolve(p, "thing @ https://github.com/o/thing", "thing>=2")
+    pins = resolve(p, "thing @ git+https://github.com/o/thing", "thing>=2")
     assert str(pins["thing"].version).startswith("0+")
 
 

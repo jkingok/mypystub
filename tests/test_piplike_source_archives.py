@@ -34,7 +34,7 @@ def test_a_github_url_resolves_to_the_project_in_its_archive(tmp_path: Path) -> 
     """The URL is turned into an archive URL; the project is read, not built."""
     served = {ARCHIVE: make_zip(CONSOLE)}
     p = provider(tmp_path, served, system=BUNDLED)
-    pinned = resolve(p, "toga-console @ https://github.com/beeware/toga-console")
+    pinned = resolve(p, "toga-console @ git+https://github.com/beeware/toga-console")
     candidate = pinned["toga-console"]
     assert candidate.version == Version("0.1.0")
     assert candidate.is_direct and candidate.source_root is not None
@@ -62,13 +62,13 @@ def test_subdirectory_is_honoured(tmp_path: Path) -> None:
     p = provider(tmp_path, {ARCHIVE: make_zip(files)}, system=BUNDLED)
     pinned = resolve(
         p,
-        "toga-console @ https://github.com/beeware/toga-console#subdirectory=packages/console",
+        "toga-console @ git+https://github.com/beeware/toga-console#subdirectory=packages/console",
     )
     assert "toga-console" in pinned
     with pytest.raises(piplike.DependencyError, match="no folder called nope"):
         resolve(
             provider(tmp_path / "b", {ARCHIVE: make_zip(files)}),
-            "toga-console @ https://github.com/beeware/toga-console#subdirectory=nope",
+            "toga-console @ git+https://github.com/beeware/toga-console#subdirectory=nope",
         )
 
 
@@ -110,7 +110,7 @@ def test_source_that_needs_a_build_is_refused_in_a_dialog_sized_message(
     """The message names the requirement and what needs a build."""
     p = provider(tmp_path, {ARCHIVE: make_zip(files)})
     with pytest.raises(piplike.DependencyError, match="Can't install") as error:
-        resolve(p, "toga-console @ https://github.com/beeware/toga-console")
+        resolve(p, "toga-console @ git+https://github.com/beeware/toga-console")
     assert fragment in str(error.value)
 
 
@@ -120,7 +120,7 @@ def test_a_sha256_on_an_archive_is_checked(tmp_path: Path) -> None:
     with pytest.raises(piplike.DependencyError, match="sha256"):
         resolve(
             p,
-            f"toga-console @ https://github.com/beeware/toga-console#sha256={'0' * 64}",
+            f"toga-console @ git+https://github.com/beeware/toga-console#sha256={'0' * 64}",
         )
 
 
@@ -163,7 +163,7 @@ def test_install_from_github_makes_it_importable(
         tmp_path,
         monkeypatch,
         {ARCHIVE: make_zip(files)},
-        "toga-console @ https://github.com/beeware/toga-console",
+        "toga-console @ git+https://github.com/beeware/toga-console",
         use_system=False,
     )
     monkeypatch.syspath_prepend(str(target))

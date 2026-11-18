@@ -12,46 +12,10 @@ from mypystub import source_installs as si
 from tests.support_sources import TOGA_CONSOLE_LIKE, make_zip, write_tree
 
 
-@pytest.mark.parametrize(
-    ("url", "archive"),
-    [
-        ("https://github.com/o/r", "https://github.com/o/r/archive/HEAD.zip"),
-        ("https://github.com/o/r.git", "https://github.com/o/r/archive/HEAD.zip"),
-        ("https://github.com/o/r/", "https://github.com/o/r/archive/HEAD.zip"),
-        ("https://github.com/o/r/tree/v1.2", "https://github.com/o/r/archive/v1.2.zip"),
-        (
-            "git+https://github.com/o/r.git@v1.2",
-            "https://github.com/o/r/archive/v1.2.zip",
-        ),
-        (
-            "git+https://github.com/o/r.git@main#subdirectory=pkg",
-            "https://github.com/o/r/archive/main.zip#subdirectory=pkg",
-        ),
-        (
-            "https://github.com/o/r/tree/feature/x#sha256=ab",
-            "https://github.com/o/r/archive/feature/x.zip#sha256=ab",
-        ),
-    ],
-)
-def test_github_urls_become_archive_urls(url: str, archive: str) -> None:
-    """The known GitHub pattern, with the ref and the fragment kept."""
-    assert si.github_archive_url(url) == archive
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "https://github.com/o",
-        "https://github.com/o/r/issues/1",
-        "https://github.com/o/r/blob/main/x.py",
-        "https://gitlab.com/o/r",
-        "git+ssh://git@github.com/o/r.git",
-        "https://example.com/github.com/o/r",
-    ],
-)
-def test_other_urls_are_not_github_repositories(url: str) -> None:
-    """Files, issues, other hosts and SSH are not translated."""
-    assert si.github_archive_url(url) is None
+def test_gitlab_and_bitbucket_archives_name_their_ref() -> None:
+    """The version hint reads the ref from each host's archive URL."""
+    assert si.ref_of("https://gitlab.com/g/s/r/-/archive/v1.2/r-v1.2.zip") == "v1.2"
+    assert si.ref_of("https://bitbucket.org/w/r/get/v1.2.zip") == "v1.2"
 
 
 def test_subdirectory_and_ref() -> None:

@@ -14,12 +14,14 @@ from mypystub import direct_refs
         ("https://host/p/foo-1.0.tar.gz", "archive"),
         ("https://host/p/foo-1.0.zip", "archive"),
         ("https://github.com/o/r/archive/refs/tags/v1.zip#subdirectory=pkg", "archive"),
-        ("git+https://github.com/o/r.git@v1", "github"),
-        ("git+https://github.com/o/r.git@v1#subdirectory=pkg", "github"),
-        ("https://github.com/o/r", "github"),
-        ("https://github.com/o/r/tree/main", "github"),
+        ("git+https://github.com/o/r.git@v1", "git-host"),
+        ("git+https://github.com/o/r.git@v1#subdirectory=pkg", "git-host"),
+        ("git+https://gitlab.com/o/r.git@v1", "git-host"),
+        ("git+https://bitbucket.org/o/r@v1", "git-host"),
+        ("https://github.com/o/r", "page"),
+        ("https://github.com/o/r/tree/main", "page"),
         ("https://github.com/o/r/issues/1", "other"),
-        ("git+https://gitlab.com/o/r.git@v1", "git+https"),
+        ("git+https://example.org/o/r.git@v1", "git+https"),
         ("git+ssh://git@github.com/o/r.git", "git+ssh"),
         ("git+file:///tmp/r", "git"),
         ("file:///tmp/foo.whl", "file"),
@@ -40,7 +42,7 @@ def test_a_plain_name_is_fine() -> None:
 @pytest.mark.parametrize(
     ("text", "fragment"),
     [
-        ("foo @ git+https://gitlab.com/o/r.git@v1", "git host"),
+        ("foo @ git+https://example.org/o/r.git@v1", "GitHub, GitLab and Bitbucket"),
         ("foo @ git+ssh://git@github.com/o/r.git", "SSH"),
         ("foo @ file:///tmp/foo.whl", "local file"),
     ],
@@ -52,3 +54,12 @@ def test_url_requirements_are_refused_with_a_reason(text: str, fragment: str) ->
     assert fragment in message
     assert text in message
     assert "Ask for foo by name" in message
+
+
+def test_a_repository_page_is_refused_with_the_pip_form() -> None:
+    """pip can't install a web page either, so the git+https form is offered."""
+    message = direct_refs.unsupported_message(
+        Requirement("foo @ https://github.com/o/r/tree/v1")
+    )
+    assert message is not None
+    assert "web page" in message and "foo @ git+https://github.com/o/r@v1" in message

@@ -25,7 +25,8 @@ def resolve(text: str, tmp_path: Path) -> Any:
 @pytest.mark.parametrize(
     "text",
     [
-        "foo @ git+https://gitlab.com/o/r.git@v1",
+        "foo @ git+https://example.org/o/r.git@v1",
+        "foo @ https://github.com/o/r",
         "foo @ git+ssh://git@github.com/o/r.git",
     ],
 )

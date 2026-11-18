@@ -1,7 +1,7 @@
 """Install a pure-Python project from a source archive, without building it (#172).
 
-``foo @ https://host/foo-1.0.tar.gz`` and ``foo @ https://github.com/o/r`` name
-source, not a wheel. There is no ``subprocess`` on iOS and nothing compiled may
+``foo @ https://host/foo-1.0.tar.gz`` and ``foo @ git+https://github.com/o/r``
+(fetched as an archive, see :mod:`git_hosts`) name source, not a wheel. There is no ``subprocess`` on iOS and nothing compiled may
 be installed, so no build backend is run. Instead a project that is plainly pure
 Python (see :mod:`purity`) has its package files copied into site-packages and a
 ``.dist-info`` written from its static ``pyproject.toml`` metadata, which is what
@@ -39,40 +39,6 @@ NOT_PACKAGES = frozenset(
 NOT_MODULES = frozenset({"setup.py", "conftest.py", "noxfile.py", "fabfile.py"})
 
 
-# -- GitHub ---------------------------------------------------------------
-
-
-def github_archive_url(url: str) -> str | None:
-    """The archive URL for a GitHub repository URL, or None if it isn't one.
-
-    Understands ``https://github.com/o/r``, ``.../r.git``, ``.../tree/<ref>``,
-    ``...@<ref>`` and a ``git+`` prefix. With no ref the default branch
-    (``HEAD``) is used. The fragment (``#subdirectory=``, ``#sha256=``) is kept.
-    """
-    base, fragment = urldefrag(url)
-    parts = urlsplit(base)
-    scheme = parts.scheme.lower().removeprefix("git+")
-    if scheme not in ("https", "http") or parts.netloc.lower() not in (
-        "github.com",
-        "www.github.com",
-    ):
-        return None
-    path, _, at = parts.path.partition("@")
-    segments = [s for s in path.split("/") if s]
-    if len(segments) < 2:
-        return None
-    owner, repo = segments[0], segments[1].removesuffix(".git")
-    ref = at
-    if len(segments) >= 4 and segments[2] == "tree":
-        ref = "/".join(segments[3:])
-    elif len(segments) != 2:
-        return None  # a file, an issue, a release page: not a repository root
-    if not owner or not repo:
-        return None
-    archive = f"https://github.com/{owner}/{repo}/archive/{ref or 'HEAD'}.zip"
-    return f"{archive}#{fragment}" if fragment else archive
-
-
 def subdirectory(url: str) -> str:
     """The ``#subdirectory=`` a URL asks for, or "" for the archive's root."""
     values = parse_qs(urldefrag(url).fragment).get("subdirectory", [""])
@@ -82,6 +48,11 @@ def subdirectory(url: str) -> str:
 def ref_of(url: str) -> str:
     """The ref (tag, branch or commit) an archive URL was made for, if it shows."""
     path = urlsplit(urldefrag(url).url).path
+    segments = [s for s in path.split("/") if s]
+    # GitLab's .../-/archive/<ref>/<repo>-<ref>.zip names the ref in the path
+    for index in range(len(segments) - 2):
+        if segments[index : index + 2] == ["-", "archive"]:
+            return segments[index + 2]
     name = PurePosixPath(path).name
     for suffix in ARCHIVE_SUFFIXES:
         name = name.removesuffix(suffix)
@@ -263,7 +234,9 @@ def _find_packages(root: Path, project: dict) -> list[Path]:
     found: list[Path] = []
     for entry in sorted(base.iterdir()):
         name = entry.name
-        if name.startswith((".", "_")) and name != "__init__.py":
+        # Hidden and private names, including a stray __init__.py beside the
+        # packages (tatogalib has src/__init__.py), which isn't a module of its own
+        if name.startswith((".", "_")):
             continue
         if entry.is_dir():
             if base == root and (name in NOT_PACKAGES or name.endswith(".egg-info")):
