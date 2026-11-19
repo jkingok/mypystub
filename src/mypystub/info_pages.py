@@ -155,8 +155,10 @@ def script_info_from_source(source: str, title: str, filename: str) -> str:
         docstring = None
         parts.append(f"<p>It has a syntax error on line {e.lineno}.</p>")
     if docstring:
-        paragraphs = [p.strip() for p in docstring.split("\n\n") if p.strip()]
-        parts += [f"<p>{escape(p)}</p>" for p in paragraphs]
+        # Plain text is (nearly) Markdown, and many docstrings use it: render
+        # it as a Markdown README is, with raw HTML escaped and unsafe links
+        # dropped (#288). ast.get_docstring has already removed the indent.
+        parts.append(readme_html(docstring, "docstring.md"))
 
     dependencies: list[str] = []
     blocks: list[str] = []
