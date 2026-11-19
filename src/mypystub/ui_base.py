@@ -16,6 +16,7 @@ from toga.style import Pack
 from . import (
     examples_copy,
     logfile,
+    native,
     prompts,
     resume,
     runner,
@@ -354,6 +355,15 @@ class PrototypeBase:
     def set_preserve_logs(self, preserve: bool) -> None:
         """Turn Preserve Logs on or off. Off only matters at the next start."""
         self.settings.set_flag(PRESERVE_LOGS_SETTING, preserve)
+
+    @property
+    def native_mode(self) -> bool:
+        """Desktop runs use pip and a subprocess (#280): on by default."""
+        return native.available() and self.settings.get_flag(native.SETTING, True)
+
+    def set_native_mode(self, on: bool) -> None:
+        """Save Setup's Native mode switch."""
+        self.settings.set_flag(native.SETTING, on)
 
     def apply_log_policy(self) -> None:
         """At launch, empty the log unless Preserve Logs is on."""

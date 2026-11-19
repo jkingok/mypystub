@@ -469,8 +469,12 @@ class ScriptRunner:
 
     def _log(self, text: str) -> None:
         """Write `text` to the app's log only."""
-        log = (self._original_streams or (sys.stdout,))[0]
-        log.write(text)
+        self.log_only(text)
+
+    def log_only(self, text: str, error: bool = False) -> None:
+        """Write `text` to the app's log (not the Script tab) during a run."""
+        streams = self._original_streams or (sys.stdout, sys.stderr)
+        streams[1 if error else 0].write(text)
 
     def echo_answer(self) -> None:
         """Write the question and answer, as a terminal would, to screen and log.

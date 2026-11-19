@@ -55,6 +55,9 @@ def proto(app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch) -> ui.Prot
     # is shared by the whole run: make it current again
     asyncio.set_event_loop(app.loop)
     monkeypatch.setattr(app, "user_documents_dir", docs, raising=False)
+    # Runs go in-process, as on a phone; tests/test_ui_native.py turns
+    # desktop Native mode (#280) back on where it's what's tested
+    monkeypatch.setattr(ui.Prototype, "native_mode", property(lambda self: False))
     p = ui.Prototype(host_app=app, on_done=lambda _: None)
     p.system_env = {}  # not this machine's environment, which tests mustn't see
     fresh_stack(p)

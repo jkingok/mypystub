@@ -16,6 +16,7 @@ from . import (
     about,
     files_app,
     maintenance,
+    native,
     permissions,
     release_check,
     setup_pages,
@@ -232,6 +233,11 @@ class SetupMixin(PrototypeBase):
         self.set_preserve_logs(bool(widget.value))
 
     @guarded
+    def handle_native_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
+        """Desktop only: the real pip and Python, or the mobile ways (#280)."""
+        self.set_native_mode(bool(widget.value))
+
+    @guarded
     def handle_console_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
         """Show runs in toga-console instead of the usual output (experimental)."""
         self.set_experimental_console(bool(widget.value))
@@ -245,12 +251,18 @@ class SetupMixin(PrototypeBase):
     async def handle_wipe_cache(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Delete user-installed packages, after confirmation."""
         if not await self.confirm(
-            "Delete all user-installed packages? Prototypes reinstall their "
-            "dependencies on their next run, which needs the network.",
+            "Delete all user-installed packages (and, on a desktop, Native "
+            "mode's venv)? Prototypes reinstall their dependencies on their "
+            "next run, which needs the network.",
             "Wipe user packages",
         ):
             return
         await asyncio.to_thread(maintenance.wipe, self.site_packages)
+        if native.available():
+            # Native mode's venv holds what pip installed (#280): remade next run
+            await asyncio.to_thread(
+                maintenance.wipe, Path(self.cache_path) / native.VENV_FOLDER
+            )
         importlib.invalidate_caches()
         self.pending_updates = []
         self.checked_updates = None
@@ -370,6 +382,18 @@ class SetupMixin(PrototypeBase):
             heading("App"),
             self.menu_entry(
                 toga.Button("Open Documents in Files", on_press=self.handle_open_files)
+            ),
+            *(
+                [
+                    toga.Switch(
+                        "Native mode (pip and a separate Python)",
+                        value=self.native_mode,
+                        on_change=self.handle_native_toggle,
+                        margin=(4, 8),
+                    )
+                ]
+                if native.available()
+                else []
             ),
             toga.Switch(
                 "Experimental Console",  # Help says it applies from the next run

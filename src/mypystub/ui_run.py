@@ -19,36 +19,17 @@ from . import (
 )
 from .errors import guarded
 from .run_settings import quick_start_name
-from .ui_rowsettings import RowSettingsMixin
-
-# The Script tab's last word on a run, after any dialog has been dismissed
-FINISHED = "✅ Finished"
-DEPENDENCY_FAILED = "❌ Dependency install failed"
-LOAD_FAILED = "❌ Couldn't load the script"
-
-
-def run_status(error: BaseException | None) -> str:
-    """The status a run ends with: how it ended, marked good or bad.
-
-    No error, or ``sys.exit()`` / ``sys.exit(0)``, is a normal end. Any other
-    exit status, as at a terminal, is a failure; ``sys.exit("message")``
-    exits with status 1 after printing the message, so the message is shown.
-    """
-    if error is None:
-        return FINISHED
-    if isinstance(error, SystemExit):
-        code = error.code
-        if code is None or code == 0:
-            return FINISHED
-        if isinstance(code, int):
-            return f"❌ Exited with status {code}"
-        return f"❌ Exited: {code}"
-    if isinstance(error, (runner.NotRunnable, runner.UnsupportedGui)):
-        return "⚠️ Couldn't run"
-    return f"❌ Failed: {type(error).__name__}"
+from .run_status import (  # noqa: F401  (re-exported for callers and tests)
+    DEPENDENCY_FAILED,
+    FINISHED,
+    LOAD_FAILED,
+    STOPPED,
+    run_status,
+)
+from .ui_native import NativeMixin
 
 
-class RunMixin(RowSettingsMixin):
+class RunMixin(NativeMixin):
     """Running a prototype and noticing when its run ends."""
 
     def __init__(self, host_app: toga.App, on_done: Callable[[Any], None]) -> None:
@@ -278,6 +259,11 @@ class RunMixin(RowSettingsMixin):
             self.script_output.style.flex = 1
         self.tabs.current_tab = "Script"
         self.script_activity.update(f"Preparing {title}")
+
+        # On a desktop, Native mode uses pip and a subprocess instead (#280)
+        if self.native_mode:
+            await self.run_native(selected_row, list(settings.args), env, str(title))
+            return
 
         # 2. Check and satisfy dependencies
         if required_packages:

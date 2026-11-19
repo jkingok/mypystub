@@ -15,9 +15,17 @@ ROOT = Path(__file__).parent.parent
 PLATFORMS = ["macOS", "linux", "windows", "iOS", "android"]
 
 
+# Widgets the launcher uses for its own features, not Toga itself (#289)
+LAUNCHER_WIDGETS = ("toga-console",)
+
+
 def toga_requirements(requires: list[str]) -> set[str]:
     """The Toga and Travertino requirements in a Briefcase `requires` list."""
-    return {r for r in requires if r.startswith(("toga", "travertino"))}
+    return {
+        r
+        for r in requires
+        if r.startswith(("toga", "travertino")) and not r.startswith(LAUNCHER_WIDGETS)
+    }
 
 
 def app_table(path: Path, name: str) -> dict:
