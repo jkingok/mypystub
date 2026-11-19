@@ -25,8 +25,8 @@ import java.util.Deque;
 import java.util.Locale;
 
 /**
- * Shows the app's documents folder (Context.getFilesDir(), the folder the
- * launcher lists as Documents) in the system Files browser and file pickers.
+ * Shows the app's documents folder (Context.getFilesDir(), where the app
+ * keeps its documents) in the system Files browser and file pickers.
  *
  * Document IDs are "root" for the folder itself and "root/<relative path>" for
  * what is inside it, never raw absolute paths, and every ID is checked to stay
@@ -34,19 +34,22 @@ import java.util.Locale;
  * advertised: the framework's defaults throw for the rest (search, rename,
  * copy, move), and a file browser that calls one then crashes.
  *
- * Files the app shares out (Share, Backup, About) are staged in its cache, in
- * "share/", and get IDs "share/<name>". They are read-only, never listed or
+ * Files the app shares out are staged in its cache, in "share/", and get IDs
+ * "share/<name>". They are read-only, never listed or
  * searched, and reached only through the URI the app grants with its share
  * intent: the receiving app can open and query them, nothing more.
  */
 public class AppDocumentsProvider extends DocumentsProvider {
-    /** Must match android:authorities in pyproject.toml and files_app.py. */
-    public static final String ROOT_ID = "mypystub";
+    /** The one root this provider offers. */
+    public static final String ROOT_ID = "documents";
     public static final String ROOT_DOC_ID = "root";
-    /** Must match SHARE_PREFIX in android_share.py and SHARE_FOLDER in share_items.py. */
+    /** Shared files' IDs: the app stages them in its cache's "share" folder. */
     public static final String SHARE_PREFIX = "share/";
 
-    /** This install's authority: its application ID plus ".documents". */
+    /**
+     * This install's authority: its application ID plus ".documents", as
+     * android:authorities says in pyproject.toml.
+     */
     private String authority() {
         return getContext().getPackageName() + ".documents";
     }

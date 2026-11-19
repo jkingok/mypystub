@@ -123,7 +123,6 @@ class PrototypeBase:
         # The Script tab. While input() or getpass() asks, its box takes the
         # activity row's place at the bottom (see toggle_box).
         self.script_box = toga.Column()
-        self.new_project_name: toga.TextInput | None = None
         self.input_prompt = toga.Label("Input")
         self.input_text = toga.TextInput(style=Pack(flex=1))
         self.input_box = toga.Column(
@@ -361,6 +360,12 @@ class PrototypeBase:
         redirector = logfile.current()
         if redirector is not None and not self.preserve_logs:
             redirector.truncate()
+
+    async def show_info_for(self, path: Path) -> None:
+        """Show the Info page of the row for `path`, if the list has one.
+
+        A hook: the base does nothing; SwipeMixin, which owns Info, shows it.
+        """
 
     def remember(self) -> None:
         """Save where the user is (see ResumeMixin); does nothing in the base."""

@@ -322,18 +322,6 @@ def test_every_menu_button_fills_its_own_row(proto: ui.Prototype) -> None:
     assert all(b.style.flex == 1 for b in buttons)
 
 
-def test_new_project_field_fills_its_row(proto: ui.Prototype) -> None:
-    """The name field takes the space between its label and Add button."""
-    (row,) = [
-        w
-        for w in proto.setup_sections()
-        if w.style.direction == "row"
-        and any(isinstance(c, toga.TextInput) for c in w.children)
-    ]
-    (field,) = [c for c in row.children if isinstance(c, toga.TextInput)]
-    assert field.style.flex == 1
-
-
 def test_menu_is_the_same_after_a_page_and_back(proto: ui.Prototype) -> None:
     """Opening a Setup page and coming back leaves the menu's layout as it was."""
     menu = proto.setup_sections()

@@ -49,6 +49,8 @@ The pre-commit hooks run the same checks as the pull request gate (`.github/work
 uv run pre-commit run --all-files
 ```
 
+The project template (`src/mypystub/resources/templates/project/`) uses **symbolic links** for the files it shares with the launcher (Android's Back, the documents provider and `generate_icons.py`), so each exists once. Briefcase and New copy what they point to. On Windows, clone with links enabled (Developer Mode, and `git config --global core.symlinks true` before cloning); otherwise git writes one-line files in their place. `scripts/check_template_links.py` catches that: Fastlane (in every lane's environment check) and `scripts/build_android.py` run it first and stop, and the app's New refuses to make a project from a damaged template.
+
 ## Building an Android APK by hand, with another Python
 
 Fastlane (below) builds the release APK with the default Python. To build one by hand, for example with Python 3.14 beside the default build, run Briefcase under the Python you want: it picks the Android Python from the interpreter that runs it. Give each Python its own app ID so the APKs install side by side without clashing. `app_name` can't be overridden (and it names the module Briefcase starts), so change the **bundle**, which comes before it in the app ID, and the **formal name**, which is the name under the icon. Briefcase reads each `-C` value as TOML, so a string needs quotes inside the quotes. The documents provider's authority follows the app ID, so two installs can both appear in the Files app.

@@ -1,0 +1,5 @@
+# Made by generate_icons.py
+/assets/icons
+build/
+logs/
+__pycache__/

@@ -7,7 +7,7 @@ appears in basic examples.
 
 Or a more sophisticated UI using BeeWare's *Toga* can be used.
 
-_There are some important steps to integrating your own Toga script within the limitations of iOS and Android, so I recommend you start with my template._
+_There are some important steps to integrating your own Toga script within the limitations of iOS and Android, so I recommend you start with a template: **New** on the List tab._
 
 Simple scripts _might_ work but long running ones can detect the Toga environment and understand that they are initially on a background thread.
 They can return to the main thread via the `asyncio` features. To gracefully hold control back rather than exiting the background thread early,
@@ -57,7 +57,6 @@ The log is emptied each time the app starts, so it can't grow without limit. Tur
 
 The Setup tab has these sections:
 
-- **Projects**: create a new project from the template (below).
 - **Environment**: environment variables every script and project inherits (see *Swipe right: Setup* above).
 - **Preserve Logs**: keep the log between launches instead of starting each launch with an empty one. Off by default.
 - **Experimental Console**: from the next run, show the Script tab in [toga-console](https://github.com/beeware/toga-console), BeeWare's console widget: output and errors (in red) in one scrolling view, which you can type into for the whole run, as at a terminal: each line you enter goes to the script's standard input, so `input()` and reading `sys.stdin` work as they would there (Ctrl-D ends the input, Ctrl-C interrupts a script waiting for it). `getpass()` still uses its password field, so a password isn't shown. Off by default.
@@ -67,11 +66,16 @@ The Setup tab has these sections:
 
 Nothing is checked online until you tap a button.
 
-Here is the tool which generates a new "Project" or module for you to edit. If I've done it right then this is _also_
-a good enough example that can be built standalone using *Briefcase* into an app standalone via a Mac.
+## New scripts and projects
 
-Notice that the template contains a way of building a navigation stack and allowing the user to return back to the launcher.
-On iPhone and iPad there is no "real" exit, except for manually throwing the app away from the switcher.
+**New**, on the List tab's row of buttons, starts something in the folder you're browsing (in Documents). Type a name, then choose:
+
+- **Script**: one file with a short docstring (its description in the list), an empty dependencies block to add packages to, and a `main()`. It also runs with plain `python`.
+- **Project**: a full Briefcase app. Copy the folder to a computer and `briefcase dev`, `briefcase run iOS` or `briefcase run android` build it as it is. Its `app.py` has a `main()` of the same shape as a script's, so a script grows into a project by moving its body there.
+  - In MyPyStub, the project's `main()` takes over the window with a **Back** button that returns to the launcher.
+  - As an app of its own, its `bootstrap.py` does what MyPyStub does for it: a window with what it prints and a **Restart** button, a log (`app_runtime.log` in its Documents, emptied at each start) and the same Documents folder and permissions as MyPyStub. The Back button is hidden there, as there's nothing to go back to; the output view comes back only on an error, or if the app finishes without showing anything.
+
+On iPhone and iPad there is no "real" exit, except for throwing the app away from the switcher.
 
 This launcher will introspect the `pyproject.toml` to look for a name, description, icon and its dependencies. It will attempt to download pure-Python wheels from [PyPI](https://pypi.org) for any dependencies. _It cannot yet download wheels for packages with binary extensions on iPhone, iPad or Android._
 

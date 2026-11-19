@@ -145,7 +145,15 @@ ANDROID_ENV = %w[
   ANDROID_KEY_PASSWORD
 ].freeze
 
+# The project template shares files with the launcher as symbolic links; a
+# clone without them (Windows) would build an app with a damaged template.
+# Every lane checks this first, through the environment checks below.
+def check_template_links
+  sh("uv --directory .. run scripts/check_template_links.py")
+end
+
 def check_android_env
+  check_template_links
   missing = ANDROID_ENV.select { |name| ENV[name].to_s.empty? }
   UI.user_error!("Set these before an Android release: #{missing.join(', ')}") unless missing.empty?
 end
@@ -153,6 +161,7 @@ end
 # A local install signs with the release key too, so it installs over a Firebase
 # build without uninstalling it; it doesn't need the Firebase settings.
 def check_android_signing_env
+  check_template_links
   missing = ANDROID_ENV.grep(/\AANDROID_/).select { |name| ENV[name].to_s.empty? }
   UI.user_error!("Set these before a signed Android build: #{missing.join(', ')}") unless missing.empty?
 end
@@ -445,6 +454,7 @@ IOS_ENV = %w[
 ].freeze
 
 def check_ios_env
+  check_template_links
   missing = IOS_ENV.select { |name| ENV[name].to_s.empty? }
   UI.user_error!("Set these before an iOS release: #{missing.join(', ')}") unless missing.empty?
 end

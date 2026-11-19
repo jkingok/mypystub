@@ -90,7 +90,7 @@ def test_the_provider_root_is_viewed_first() -> None:
     assert files_app.open_android_files(jclass_for(activity)) is True
     (intent,) = activity.started
     assert intent.action == Intent.ACTION_VIEW
-    assert intent.data == "content://au.id.jking.mypystub315.documents/root/mypystub"
+    assert intent.data == "content://au.id.jking.mypystub315.documents/root/documents"
     assert intent.type == "vnd.android.document/root"
 
 

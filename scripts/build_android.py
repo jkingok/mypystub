@@ -217,6 +217,10 @@ def main(argv: list[str] | None = None) -> None:
         help="keep the normal app ID and name, to update a Fastlane build",
     )
     args = parser.parse_args(argv)
+    # First, before anything is made: a clone without symbolic links
+    checker = ROOT / "scripts" / "check_template_links.py"
+    if subprocess.run([sys.executable, str(checker)], check=False).returncode:
+        raise SystemExit(1)
     python = args.python
     options = overrides(python, args.plain)
 

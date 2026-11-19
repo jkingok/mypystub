@@ -41,6 +41,13 @@ class SwipeMixin(RowSettingsMixin):
         """Swipe left: Info."""
         asyncio.ensure_future(self.show_info(row))
 
+    async def show_info_for(self, path: Path) -> None:
+        """Show the Info page of the list row for `path` (a new item, #146)."""
+        for row in self.script_list.data:
+            if self.row_path(row) == path:
+                await self.show_info(row)
+                return
+
     @guarded
     async def show_info(self, row: Any) -> None:
         """Show what's known about a row, or say why there's nothing."""

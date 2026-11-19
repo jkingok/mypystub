@@ -30,7 +30,7 @@ SCHEME = "shareddocuments://"
 # under different names don't clash. Must match android:authorities in
 # pyproject.toml and AppDocumentsProvider.authority()
 AUTHORITY_SUFFIX = ".documents"
-ANDROID_ROOT_ID = "mypystub"  # AppDocumentsProvider.ROOT_ID
+ANDROID_ROOT_ID = "documents"  # AppDocumentsProvider.ROOT_ID
 ANDROID_ROOT_DOCUMENT = "root"  # AppDocumentsProvider.ROOT_DOC_ID
 # DocumentsContract.Root.MIME_TYPE_ITEM: "this URI is a root, open it to browse"
 ANDROID_ROOT_MIME = "vnd.android.document/root"

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import importlib
 import platform
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
@@ -58,76 +57,6 @@ class SetupMixin(PrototypeBase):
         self.health: maintenance.Health | None = None
         self.health_error: str | None = None
         self.build_error: str | None = None  # why the newer-build check failed
-
-    def new_project_field(self) -> toga.TextInput:
-        """The New Project name field, which the launcher keeps hold of."""
-        self.new_project_name = toga.TextInput(flex=1, on_confirm=self.close_keyboard)
-        return self.new_project_name
-
-    @guarded
-    def new_project(self, widget: toga.Button, **kwargs: Any) -> None:
-        def snake(s: str) -> str:
-            return "_".join(s.lower().split())
-
-        project_name = self.new_project_name.value if self.new_project_name else ""
-        template_zip = self.template_path / "my_template.zip"
-        target = self.data_path / snake(project_name)
-
-        def do_new_project() -> None:
-            target.mkdir(parents=True, exist_ok=True)
-
-            from zipfile import ZipFile
-
-            with ZipFile(template_zip, "r") as f:
-                f.extractall(path=target)
-            if (m := (target / "__MACOSX")).exists():
-                shutil.rmtree(m)
-
-            original = "My Template"
-
-            def pascal(s: str) -> str:
-                return "".join(s.split())
-
-            def running(s: str) -> str:
-                return "".join(s.lower().split())
-
-            for old, new in [
-                (original, project_name),
-                (pascal(original), pascal(project_name)),
-                (running(original), running(project_name)),
-                (snake(original), snake(project_name)),
-            ]:
-                # Recursively scan files inside the newly extracted directory tree
-                for file_path in target.rglob("*"):
-                    if file_path.is_file() and file_path.suffix in [
-                        ".py",
-                        ".toml",
-                        ".rst",
-                        ".md",
-                    ]:
-                        # Read, replace token strings, and write back out safely
-                        content = file_path.read_text(encoding="utf-8")
-                        if old in content:
-                            file_path.write_text(
-                                content.replace(old, new), encoding="utf-8"
-                            )
-
-                    if file_path.name == old:
-                        file_path.rename(file_path.parent / new)
-                    elif file_path.stem == old:
-                        file_path.rename(file_path.parent / (new + file_path.suffix))
-            asyncio.create_task(self.info(f"Created new project {project_name}"))
-
-        if target.exists():
-            asyncio.create_task(
-                self.question(
-                    f"Replace existing {snake(project_name)}?",
-                    "Folder Exists",
-                    do_new_project,
-                )
-            )
-        else:
-            do_new_project()
 
     async def confirm(self, text: str, title: str) -> bool:
         """Ask a yes/no question; True if the user said yes."""
@@ -432,15 +361,7 @@ class SetupMixin(PrototypeBase):
 
         exit_visible = len(getattr(self.app.main_window, "content_stack", [])) > 0
         return [
-            heading("Projects"),
-            toga.Row(
-                align_items="center",
-                children=[
-                    toga.Label("New Project"),
-                    self.new_project_field(),
-                    toga.Button("Add", on_press=self.new_project),
-                ],
-            ),
+            heading("Running"),
             self.menu_entry(
                 toga.Button("Environment ›", on_press=self.open_setup_environment)
             ),

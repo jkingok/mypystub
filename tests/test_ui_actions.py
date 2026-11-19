@@ -71,14 +71,18 @@ def names(proto: ui.Prototype, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any
     return state
 
 
-def test_both_buttons_share_the_row_equally(proto: ui.Prototype) -> None:
+def test_the_buttons_share_the_row_equally(proto: ui.Prototype) -> None:
     """Flex, not the text's width, sizes them, so a label can't be squeezed."""
     assert proto.paste_button.parent is proto.new_folder_button.parent
     assert proto.paste_button.parent.children == [
+        proto.new_button,
         proto.new_folder_button,
         proto.paste_button,
     ]
-    assert proto.paste_button.style.flex == proto.new_folder_button.style.flex == 1
+    assert {
+        b.style.flex
+        for b in (proto.new_button, proto.new_folder_button, proto.paste_button)
+    } == {1}
     assert proto.new_folder_button.text == "New Folder"
 
 

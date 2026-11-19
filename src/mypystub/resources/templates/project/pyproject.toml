@@ -1,0 +1,147 @@
+# A Briefcase project, started on a phone in MyPyStub. On a computer, make the
+# icons once (`uv run generate_icons.py`), then build it as it is:
+# `briefcase dev`, `briefcase run iOS`, `briefcase run android`.
+#
+# MyPyStub has no editor for this file; change it in any text editor.
+
+# Everything about the app itself is here, once: Briefcase reads the version,
+# description, author, Python and dependencies from [project], and MyPyStub
+# reads the dependencies. A script's `# /// script` block has the same keys
+# (requires-python, dependencies), so moving a script here is a copy.
+[project]
+name = "app-template"
+version = "0.0.1"
+description = "App Template description"
+# TODO: add your email, if you publish the app: { name = "...", email = "..." }
+authors = [{ name = "Jane Developer" }]
+license = "BSD-3-Clause"
+requires-python = ">=3.12"
+# TODO: add the packages your app imports, such as "httpx>=0.28".
+# MyPyStub installs them when it runs the project, and Briefcase adds them to
+# the built app.
+dependencies = []
+
+[tool.stub_launcher]
+# How MyPyStub runs it: the same entry point as `briefcase dev`
+display_name = "App Template"
+entry_point = "src/app_template/__main__.py"
+
+[tool.briefcase]
+project_name = "App Template"
+bundle = "com.example"
+
+# Toga comes from the same place as MyPyStub's (for now, its git head), so the
+# app runs on the Toga and Rubicon it was tried with in MyPyStub.
+[tool.briefcase.app.app_template]
+formal_name = "App Template"
+sources = ["src/app_template"]
+test_sources = ["tests"]
+requires = [
+    # Toga's backends come from git, so their toga-core and travertino must too
+    "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
+    "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
+    # Your own packages go in [project] dependencies above, not here
+]
+test_requires = ["pytest"]
+
+# Made by generate_icons.py from assets/src_icon.png (replace that with your own)
+icon = "assets/icons/png/icon-512"
+# Keep in step with SPLASH_BACKGROUND_COLOR in generate_icons.py
+splash_background_color = "#7f7f7f"
+
+# The same hardware permissions as MyPyStub, so what works there works here.
+# TODO: remove any your app doesn't use: App Review rejects unused ones.
+permission.fine_location = "App Template may use your precise location."
+permission.camera = "App Template may take photos or video."
+permission.photo_library = "App Template may save images to your photo library."
+
+[tool.briefcase.app.app_template.macOS]
+requires = [
+    "toga-cocoa @ git+https://github.com/beeware/toga.git#subdirectory=cocoa",
+    "std-nslog~=2.0.0; python_version < '3.14'",
+]
+icon = "assets/icons/icon"
+
+[tool.briefcase.app.app_template.linux]
+requires = [
+    "toga-gtk @ git+https://github.com/beeware/toga.git#subdirectory=gtk",
+]
+
+[tool.briefcase.app.app_template.linux.system.debian]
+system_requires = ["libcairo2-dev", "libgirepository-2.0-dev"]
+system_runtime_requires = [
+    "gir1.2-gtk-3.0",
+    "libgirepository-2.0-0",
+    "libcanberra-gtk3-module",
+]
+
+[tool.briefcase.app.app_template.windows]
+requires = [
+    "toga-winforms @ git+https://github.com/beeware/toga.git#subdirectory=winforms",
+]
+icon = "assets/icons/icon"
+
+[tool.briefcase.app.app_template.iOS]
+# The app runs main() on a thread of its own (so input() can wait for an
+# answer). Rubicon 0.6 needs the GIL released before UIApplicationMain, or that
+# thread waits for the main one; Briefcase's iOS template has that fix on its
+# main branch (briefcase-iOS-Xcode-template#91). Drop this once a release has it.
+template_branch = "main"
+requires = [
+    "toga-iOS @ git+https://github.com/beeware/toga.git#subdirectory=iOS",
+    "std-nslog~=2.0.0; python_version < '3.14'",
+]
+icon = "assets/icons/ios/icon"
+# Documents shows in the Files app, as MyPyStub's does
+info."UIFileSharingEnabled" = true
+info."LSSupportsOpeningDocumentsInPlace" = true
+info."NSLocalNetworkUsageDescription" = "App Template may connect to devices on your local network."
+
+[tool.briefcase.app.app_template.android]
+requires = [
+    # Listed again, as MyPyStub does, so Android's install takes it from git too
+    "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
+    "toga-android @ git+https://github.com/beeware/toga.git#subdirectory=android",
+]
+icon = "assets/icons/android/icon"
+base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
+build_gradle_dependencies = [
+    "com.google.android.material:material:1.13.0",
+    # Needed for DetailedList
+    "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0",
+    # Needed for WebView
+    "androidx.webkit:webkit:1.15.0",
+    # Back (PyBackCallback) and the documents provider
+    "androidx.appcompat:appcompat:1.8.0",
+    "androidx.documentfile:documentfile:1.1.0",
+]
+
+# Documents shows in the Files app, as MyPyStub's does
+android_manifest_application_extra_content = """
+<provider
+    android:name="app_template.android.AppDocumentsProvider"
+    android:authorities="${applicationId}.documents"
+    android:grantUriPermissions="true"
+    android:exported="true"
+    android:permission="android.permission.MANAGE_DOCUMENTS">
+    <intent-filter>
+        <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+    </intent-filter>
+</provider>
+"""
+
+# Compiles the Java in android/java (Back and the documents provider). app/ is
+# five folders below this one, in build/app_template/android/gradle/.
+build_gradle_extra_content = """
+chaquopy.defaultConfig.staticProxy(
+    "toga_android.widgets.internal.webview",
+)
+
+android {
+    sourceSets {
+        main {
+            java.srcDirs += file("$projectDir/../../../../../android/java")
+        }
+    }
+}
+"""
