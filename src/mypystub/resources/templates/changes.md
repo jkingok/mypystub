@@ -1,5 +1,25 @@
 # What's New
 
+## 2026.11.19.1 (2026-11-19)
+
+### New
+
+- A dependency given as a source URL (a GitHub repository or an archive) is now built with its own build backend, so projects with dynamic versions, Poetry or setup.py metadata install too.
+- **New** on the List tab starts a script or a full project. A project is a Briefcase app that also builds on a computer for iOS, Android and desktop as it is; on its own it shows its output, keeps a log, and offers Restart if it stops. The Setup tab's New Project field is gone. On Android, MyPyStub's documents now appear in the Files app under a new root: if Files had MyPyStub pinned or in its recent places, that entry may stop working until you open MyPyStub from the Files app's list again. Links to individual files keep working.
+- On Android, Share (scripts, projects and zipapps), Backup, About's Share and Share source code now open Android's share sheet.
+- On desktop, Native mode (a Setup switch, on by default) installs dependencies with pip into one managed venv and runs each prototype in its own Python process, so it behaves as it would with the real tools. Its output, errors and input still use the Script tab.
+- Dependencies can name a repository on GitHub, GitLab or Bitbucket with pip's form (`name @ git+https://github.com/owner/repo@tag`), which installs the same way on a phone (as an archive) and with pip on a computer. A repository's web page address is no longer accepted, since pip can't install it; the message gives the form to use.
+- An **Experimental Console** switch in Setup (off by default) shows the Script tab in toga-console, BeeWare's console widget, from the next run: output and errors in one view, and `input()` typed straight into it.
+- On iPhone, the launcher keeps its tabs and screens clear of the keyboard, including in landscape, and of the notch and home indicator.
+- Setup's Environment screen no longer repeats an intro line and a foldable heading; it opens straight to the variables.
+- On Android, the on-screen keyboard no longer covers the bottom of the Script tab and other screens.
+
+### Fixed
+
+- The contributed examples (blog_master and media_hub) now start on Android: pasting text and images uses Android's clipboard, sharing a media_hub page uses Android's share sheet, and features that are iOS-only say so instead of failing.
+- The Script tab now says how a run ended, with ✅ or ❌: an error or a non-zero exit status stays on show after its message, instead of turning back into Finished.
+- On Android, the keyboard now closes once a script stops asking for input, instead of staying up over the Script tab.
+
 ## 2026.11.18.1 (2026-11-18)
 
 ### Fixed
