@@ -37,6 +37,9 @@ class RunMixin(NativeMixin):
         # Each run gets an id; end-of-run work for an older run is ignored (#64)
         self.run_id = 0
         self.ended_run = 0
+        # A run is in progress from run_row until end_script (#301): one at a
+        # time, since runs share the process's streams, hooks and Script tab
+        self.running = False
         self.script_list.on_select = self.handle_row_selection
 
     def end_script(self, run_id: int | None = None, status: str = FINISHED) -> None:
@@ -48,6 +51,7 @@ class RunMixin(NativeMixin):
         if a takeover is still showing, they're left alone (#64, case C).
         """
         self.splash.image = None
+        self.running = False
         self.script_activity.update(status, on=False)
         action = runner.end_action(printed=self.script_runner.printed, error=False)
         if action != "stay" and self.tabs.window is not None:
@@ -228,7 +232,26 @@ class RunMixin(NativeMixin):
 
     @guarded
     async def run_row(self, selected_row: Any) -> None:
-        """Run a script or project row with the settings saved in its Setup."""
+        """Run a script or project row with the settings saved in its Setup.
+
+        Only one at a time (#301): while a run is in progress, from here until
+        end_script (a takeover counts until it's popped), another is refused
+        with an alert, and the Script tab is shown.
+        """
+        if self.running:
+            if self.tabs.window is not None:
+                self.tabs.current_tab = "Script"
+            await self.info("Another script is already running.", "Already running")
+            return
+        self.running = True
+        try:
+            await self._run_row(selected_row)
+        except BaseException:
+            self.running = False  # never leave the app unable to run anything
+            raise
+
+    async def _run_row(self, selected_row: Any) -> None:
+        """run_row's work, once it's clear nothing else is running."""
         settings, env = self.run_settings_for(selected_row)
 
         # 1. Read the parsed dependency requirements array
