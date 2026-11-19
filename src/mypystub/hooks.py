@@ -16,11 +16,13 @@ import re
 import sys
 import threading
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from types import TracebackType
 from typing import Any
 
 import toga
+
+EOT, ETX = "\x04", "\x03"  # Ctrl-D and Ctrl-C, as a console delivers them
 
 # Regex pattern to match standard ANSI escape sequences (like \x1b[31m)
 ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -92,6 +94,85 @@ def report_exception(
             stream.show(text)
     else:
         stream.write(text)
+
+
+class ConsoleStdin(io.TextIOBase):
+    """``sys.stdin`` while the Experimental Console is used: what is typed.
+
+    The console delivers whole lines (and a paste's several lines at once);
+    reads wait on the script's thread until there is enough. After
+    :meth:`feed_eof` reads return what is left, then "". :meth:`interrupt`
+    makes a waiting read raise KeyboardInterrupt, as Ctrl-C would.
+    """
+
+    def __init__(self) -> None:
+        """An empty stream, open until fed EOF."""
+        self._buffer = ""
+        self._eof = False
+        self._interrupted = False
+        self._ready = threading.Condition()
+
+    def feed(self, text: str) -> None:
+        """Add typed text, waking a waiting read."""
+        with self._ready:
+            self._buffer += text
+            self._ready.notify_all()
+
+    def feed_eof(self) -> None:
+        """No more input: reads return what is left, then ""."""
+        with self._ready:
+            self._eof = True
+            self._ready.notify_all()
+
+    def interrupt(self) -> None:
+        """Make a waiting read raise KeyboardInterrupt."""
+        with self._ready:
+            self._interrupted = True
+            self._ready.notify_all()
+
+    def _wait(self, done: Callable[[], bool]) -> None:
+        with self._ready:
+            while not (done() or self._eof or self._interrupted):
+                self._ready.wait()
+            if self._interrupted:
+                self._interrupted = False
+                raise KeyboardInterrupt
+
+    def readline(self, size: int | None = -1) -> str:  # type: ignore[override]
+        """The next line, waiting for it to be typed."""
+        self._wait(lambda: "\n" in self._buffer)
+        with self._ready:
+            end = self._buffer.find("\n") + 1 or len(self._buffer)
+            if size is not None and size >= 0:
+                end = min(end, size)
+            line, self._buffer = self._buffer[:end], self._buffer[end:]
+            return line
+
+    def read(self, size: int | None = -1) -> str:
+        """`size` characters, or everything until EOF."""
+        if size is None or size < 0:
+            self._wait(lambda: False)  # until EOF
+            wanted = None
+        else:
+            wanted = size
+            self._wait(lambda: len(self._buffer) >= wanted)
+        with self._ready:
+            end = len(self._buffer) if wanted is None else wanted
+            text, self._buffer = self._buffer[:end], self._buffer[end:]
+            return text
+
+    def __iter__(self) -> Iterator[str]:
+        """Lines until EOF."""
+        while line := self.readline():
+            yield line
+
+    def readable(self) -> bool:
+        """It's an input stream."""
+        return True
+
+    def isatty(self) -> bool:
+        """Not a terminal, so input() reads a line rather than using readline."""
+        return False
 
 
 class RunStream(io.TextIOBase):
@@ -202,6 +283,13 @@ class ScriptRunner:
         self._original_streams: tuple[Any, Any] | None = None
         # Whether the current run has shown any output in the Script tab
         self.printed = False
+        # Setup's Experimental Console: a toga-console Console that shows the
+        # run's output and answers input() instead of print_field and
+        # input_field. Chosen per run by the launcher (None: not used).
+        self.console: Any = None
+        # The run's sys.stdin while the console is used, fed by what is typed
+        self._console_stdin: ConsoleStdin | None = None
+        self._original_stdin: Any = None
 
     def begin_run(self) -> None:
         """Start capturing a run's output. Call on the loop thread.
@@ -218,9 +306,22 @@ class ScriptRunner:
         self.unhook_builtins()
 
     def hook_builtins(self) -> None:
-        """Intercept input, and tee sys.stdout and sys.stderr."""
-        builtins.input = self._custom_input
+        """Intercept input and getpass, and tee sys.stdout and sys.stderr.
+
+        With the Experimental Console, input() isn't hooked: the console is
+        typeable for the whole run and feeds ``sys.stdin``, so Python's own
+        input() (and anything else reading stdin) works as at a terminal.
+        getpass() keeps its password field, since the console echoes.
+        """
         getpass.getpass = self._custom_getpass
+        if self.console is None:
+            builtins.input = self._custom_input
+        elif self._console_stdin is None:
+            self._console_stdin = ConsoleStdin()
+            self._original_stdin = sys.stdin
+            sys.stdin = self._console_stdin  # type: ignore[assignment]
+            self.console.on_input = self.handle_console_input
+            self.console.readonly = False
         if self._original_streams is None:
             self._original_streams = (sys.stdout, sys.stderr)
             sys.stdout = RunStream(sys.stdout, self.append_to_log)
@@ -230,6 +331,12 @@ class ScriptRunner:
         """Restore default terminal behavior."""
         builtins.input = self._original_input
         getpass.getpass = self._original_getpass
+        if self._console_stdin is not None:
+            self._console_stdin.feed_eof()  # a read still waiting ends
+            sys.stdin = self._original_stdin
+            self._console_stdin = None
+            if self.console is not None:
+                self.console.readonly = True
         if self._original_streams is not None:
             sys.stdout, sys.stderr = self._original_streams
             self._original_streams = None
@@ -238,6 +345,11 @@ class ScriptRunner:
         """
         The main thread operation of appending new print data to the onscreen log.
         """
+        if self.console is not None:
+            if message:
+                self.console.write(message)
+                self.printed = True
+            return
         if w := self.print_field:
             if self.toggle_print(not w.value) and message:
                 self.toggle_print(True)
@@ -263,6 +375,10 @@ class ScriptRunner:
 
     def mainthread_append_error(self, message: str) -> None:
         """The main thread part of showing stderr text."""
+        if message and self.console is not None:
+            self.console.write(message, stream="stderr")  # red, in the same view
+            self.printed = True
+            return
         if message and self.on_error_output is not None:
             self.on_error_output(message)
             self.printed = True
@@ -332,6 +448,29 @@ class ScriptRunner:
 
         # 4. Return the captured value back to the student's script
         return self._input_value
+
+    def handle_console_input(self, widget: Any, data: bytes, **kwargs: Any) -> None:
+        """The console's on_input: typed lines go to the run's ``sys.stdin``.
+
+        Ctrl-D ends stdin (EOF) and Ctrl-C interrupts a read that's waiting, as
+        at a terminal. Lines typed before the prototype asks wait their turn.
+        """
+        stdin = self._console_stdin
+        if stdin is None:
+            return
+        text = data.decode("utf-8", errors="replace")
+        if text == EOT:
+            stdin.feed_eof()
+        elif text == ETX:
+            stdin.interrupt()
+        else:
+            stdin.feed(text)
+            self._log(text)  # the console shows it; the log gets it too
+
+    def _log(self, text: str) -> None:
+        """Write `text` to the app's log only."""
+        log = (self._original_streams or (sys.stdout,))[0]
+        log.write(text)
 
     def echo_answer(self) -> None:
         """Write the question and answer, as a terminal would, to screen and log.

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -433,6 +433,7 @@ dependencies = [
     { name = "markdown" },
     { name = "pygments" },
     { name = "resolvelib" },
+    { name = "toga-console" },
     { name = "tomlkit" },
     { name = "unearth" },
 ]
@@ -460,6 +461,7 @@ requires-dist = [
     { name = "markdown" },
     { name = "pygments" },
     { name = "resolvelib" },
+    { name = "toga-console", git = "https://github.com/beeware/toga-console" },
     { name = "tomlkit" },
     { name = "unearth" },
 ]
@@ -812,6 +814,14 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1f/52/ee5646b65d98a252e807ccc37725363942372a4113072e0bce7ed22f8b84/soupsieve-4.1.1.tar.gz", hash = "sha256:b296bd2d2f65b1a78149f3d7bf6736a147d2c9e2dfbde0e4404639d748a02e03", size = 169784, upload-time = "2026-11-14T17:23:32.467Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/65/7fae69a095696195334a934eab23aeb12e2715e6c3f08025d2f91942750e/soupsieve-4.1.1-py3-none-any.whl", hash = "sha256:8ff3422dab0b720fb667ee79864d80531a0e57994a13eb701697719ffcb751f6", size = 55089, upload-time = "2026-11-14T17:23:31.001Z" },
+]
+
+[[package]]
+name = "toga-console"
+version = "0.1.dev26+g8b08eb112"
+source = { git = "https://github.com/beeware/toga-console#8b08eb11269cb8cdbbb4735d461bcf3b99269a88" }
+dependencies = [
+    { name = "toga-core" },
 ]
 
 [[package]]

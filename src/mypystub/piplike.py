@@ -314,9 +314,21 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 + ", ".join(sorted(urls))
             )
         if self.use_system and canon_id in self.system_packages:
-            raise DependencyError(
-                f"{canon_id} is bundled with the app, so a URL can't replace it."
+            # As with a version: a second copy would shadow the app's own,
+            # which is already imported. So a prototype that names the
+            # bundled package by URL (to run standalone) uses the bundled one.
+            print(
+                f"{canon_id} is bundled with the app ("
+                f"{self.system_packages[canon_id]}); using it instead of "
+                + ", ".join(sorted(urls))
             )
+            sys_cand = Candidate(
+                name=canon_id,
+                version=self.system_packages[canon_id],
+                is_system=True,
+                requested_extras=active_extras,
+            )
+            return [] if sys_cand in excluded else [sys_cand]
         requirement = direct[0]
         if direct_refs.kind_of(requirement.url or "") in ("archive", "git-host"):
             return self._source_candidates(

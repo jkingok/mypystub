@@ -23,7 +23,7 @@ def test_briefcase_requires_match_project_dependencies() -> None:
     project = set(config["project"]["dependencies"])
     requires = config["tool"]["briefcase"]["app"]["mypystub"]["requires"]
     # Toga itself comes from git head on device and from the dev group on desktop.
-    briefcase = {r for r in requires if not r.startswith(("toga", "travertino"))}
+    briefcase = {r for r in requires if not r.startswith(("toga-core", "travertino"))}
     assert project == briefcase
 
 

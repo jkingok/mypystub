@@ -20,6 +20,7 @@ from . import (
     resume,
     runner,
     scan,
+    ui_console,
     web_meta,
 )
 from . import hooks as h
@@ -167,6 +168,8 @@ class PrototypeBase:
             toggle_password=self.toggle_password,
         )
         self.script_output = OrientationBox(self.print_text, self.error_pane, flex=1)
+        # Setup's Experimental Console, made when a run first wants it
+        self.console_widget: Any = None
         self.script_activity = LabelledActivity()
         self.splash = toga.ImageView(style=Pack(flex=0))
         # Category being browsed (None: the list of categories), and the folder
@@ -308,6 +311,37 @@ class PrototypeBase:
         else:
             if negative:
                 negative()
+
+    @property
+    def experimental_console(self) -> bool:
+        """Whether runs use toga-console in the Script tab (Setup; off)."""
+        return self.settings.get_flag(ui_console.SETTING, False)
+
+    def set_experimental_console(self, on: bool) -> None:
+        """Turn the Experimental Console on or off, from the next run."""
+        self.settings.set_flag(ui_console.SETTING, on)
+
+    def choose_output(self) -> None:
+        """At the start of a run: the console or the usual output, emptied.
+
+        The choice is made per run, so the Setup switch takes effect from the
+        next one. If toga-console can't be loaded, the usual output is used.
+        """
+        wanted = None
+        if self.experimental_console:
+            if self.console_widget is None:
+                self.console_widget = ui_console.make_console()
+            wanted = self.console_widget
+        shown = wanted if wanted is not None else self.print_text
+        current = self.script_output.children[0]
+        if current is not shown:
+            self.script_output.replace(current, shown)
+            shown.style.flex = 1
+        self.script_runner.console = wanted
+        if wanted is not None:
+            wanted.clear()
+            wanted.readonly = True
+        self.print_text.value = ""
 
     @property
     def preserve_logs(self) -> bool:

@@ -303,6 +303,11 @@ class SetupMixin(PrototypeBase):
         self.set_preserve_logs(bool(widget.value))
 
     @guarded
+    def handle_console_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
+        """Show runs in toga-console instead of the usual output (experimental)."""
+        self.set_experimental_console(bool(widget.value))
+
+    @guarded
     def handle_resume_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
         """The switch for resuming where the user left off (#188)."""
         self.set_resume_enabled(bool(widget.value))
@@ -444,6 +449,12 @@ class SetupMixin(PrototypeBase):
             heading("App"),
             self.menu_entry(
                 toga.Button("Open Documents in Files", on_press=self.handle_open_files)
+            ),
+            toga.Switch(
+                "Experimental Console",  # Help says it applies from the next run
+                value=self.experimental_console,
+                on_change=self.handle_console_toggle,
+                margin=(4, 8),
             ),
             toga.Switch(
                 "Preserve Logs",

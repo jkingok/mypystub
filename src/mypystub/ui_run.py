@@ -127,6 +127,9 @@ class RunMixin(RowSettingsMixin):
             print(f"Run {run_id} ended after run {self.run_id} started; ignored")
             return
         self.script_runner.end_run()
+        if self.console_widget is not None:
+            # The console is read-only again; put its keyboard away too
+            self.close_keyboard(self.console_widget)
         self.resume_running = None  # it ended, so there is nothing to offer again
         self.remember()
         status = run_status(error)
@@ -261,7 +264,7 @@ class RunMixin(RowSettingsMixin):
         # progress there instead of leaving the list looking frozen.
         title = getattr(selected_row, "title", "script")
         self.run_title = str(title)
-        self.print_text.value = ""
+        self.choose_output()  # Experimental Console or not, and emptied
         self.error_text.value = ""
         self.hide_errors()
         # Only a prototype's own icon is shown as a splash, never a default one
