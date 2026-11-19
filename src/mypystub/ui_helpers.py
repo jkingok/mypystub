@@ -154,11 +154,18 @@ def configure_share_presentation(
 
 def open_share_sheet(w: toga.Widget, file_path: Path) -> None:
     """
-    Opens the iOS native share sheet for a specific HTML file.
+    Opens the native share sheet for a file: iOS's, or Android's (#217).
 
     :param w: The active Toga widget instance initiating the share.
     :param file_path: Absolute string path to the local file.
     """
+    if sys.platform == "android":
+        from java import jclass  # pyright: ignore[reportMissingImports]
+
+        from . import android_share
+
+        android_share.share_file(jclass, file_path)
+        return
     if sys.platform == "ios":
         from rubicon.objc import NSMakeRect
         from toga_iOS.libs import NSURL, NSMutableArray

@@ -18,6 +18,7 @@ from . import (
     logfile,
     maintenance,
     resume,
+    share_items,
 )
 from .errors import guarded
 from .pages import help_html
@@ -259,9 +260,9 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
     def show_help_page(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         if str(self.help_selection.value) == "About":
             body = about.to_html(self.about_sections())
-            # open_share_sheet() is only implemented on iOS
+            # open_share_sheet() is implemented on iOS and Android
             self.about_share.style.visibility = (
-                "visible" if sys.platform == "ios" else "hidden"
+                "visible" if share_items.share_available() else "hidden"
             )
         elif str(self.help_selection.value) == "What's New":
             changes = self.template_path / "changes.md"

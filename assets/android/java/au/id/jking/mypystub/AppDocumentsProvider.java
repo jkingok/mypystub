@@ -33,11 +33,18 @@ import java.util.Locale;
  * inside the folder. Only the flags whose methods are implemented here are
  * advertised: the framework's defaults throw for the rest (search, rename,
  * copy, move), and a file browser that calls one then crashes.
+ *
+ * Files the app shares out (Share, Backup, About) are staged in its cache, in
+ * "share/", and get IDs "share/<name>". They are read-only, never listed or
+ * searched, and reached only through the URI the app grants with its share
+ * intent: the receiving app can open and query them, nothing more.
  */
 public class AppDocumentsProvider extends DocumentsProvider {
     /** Must match android:authorities in pyproject.toml and files_app.py. */
     public static final String ROOT_ID = "mypystub";
     public static final String ROOT_DOC_ID = "root";
+    /** Must match SHARE_PREFIX in android_share.py and SHARE_FOLDER in share_items.py. */
+    public static final String SHARE_PREFIX = "share/";
 
     /** This install's authority: its application ID plus ".documents". */
     private String authority() {
@@ -79,6 +86,36 @@ public class AppDocumentsProvider extends DocumentsProvider {
             base.mkdirs();
         }
         return base;
+    }
+
+    private File shareDir() {
+        return new File(getContext().getCacheDir(), "share");
+    }
+
+    /** A shared file's ID, or null when the file isn't in the share folder. */
+    private String sharedIdFor(File file) {
+        File share = shareDir();
+        if (!inside(share, file) || inside(file, share)) {
+            return null;
+        }
+        try {
+            String path = file.getCanonicalPath();
+            return SHARE_PREFIX + path.substring(share.getCanonicalPath().length() + 1);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** The file for any readable ID: the documents folder, or a shared file. */
+    private File readableFile(String documentId) throws FileNotFoundException {
+        if (documentId != null && documentId.startsWith(SHARE_PREFIX)) {
+            File file = new File(shareDir(), documentId.substring(SHARE_PREFIX.length()));
+            if (sharedIdFor(file) == null || !file.isFile()) {
+                throw new FileNotFoundException("Not a shared file: " + documentId);
+            }
+            return file;
+        }
+        return fileFor(documentId);
     }
 
     /** The file for a document ID, refusing anything outside the folder. */
@@ -166,7 +203,20 @@ public class AppDocumentsProvider extends DocumentsProvider {
     @Override
     public Cursor queryDocument(String documentId, String[] projection) throws FileNotFoundException {
         MatrixCursor result = new MatrixCursor(projection != null ? projection : DEFAULT_DOCUMENT_PROJECTION);
-        includeFile(result, fileFor(documentId));
+        File file = readableFile(documentId);
+        String shared = sharedIdFor(file);
+        if (shared != null) {
+            // Read-only, and named as it is: no write, delete, rename, copy or move
+            MatrixCursor.RowBuilder row = result.newRow();
+            row.add(Document.COLUMN_DOCUMENT_ID, shared);
+            row.add(Document.COLUMN_DISPLAY_NAME, file.getName());
+            row.add(Document.COLUMN_SIZE, file.length());
+            row.add(Document.COLUMN_LAST_MODIFIED, file.lastModified());
+            row.add(Document.COLUMN_MIME_TYPE, typeFor(file));
+            row.add(Document.COLUMN_FLAGS, 0);
+        } else {
+            includeFile(result, file);
+        }
         return result;
     }
 
@@ -229,11 +279,12 @@ public class AppDocumentsProvider extends DocumentsProvider {
     @Override
     public ParcelFileDescriptor openDocument(String documentId, String mode, CancellationSignal signal)
             throws FileNotFoundException {
-        final File file = fileFor(documentId);
         int accessMode = ParcelFileDescriptor.parseMode(mode);
         if (mode.indexOf('w') < 0) {
-            return ParcelFileDescriptor.open(file, accessMode);
+            return ParcelFileDescriptor.open(readableFile(documentId), accessMode);
         }
+        // Writing: only in the documents folder (shared files are read-only)
+        final File file = fileFor(documentId);
         // Written: tell open listings once the writer is done (new size, time)
         try {
             Handler handler = new Handler(Looper.getMainLooper());

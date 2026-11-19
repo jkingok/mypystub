@@ -28,8 +28,8 @@ SHARE_FOLDER = "share"
 
 
 def share_available() -> bool:
-    """Whether sharing is offered: the share sheet is iOS only."""
-    return sys.platform == "ios"
+    """Whether sharing is offered: iOS's share sheet, or Android's (#217)."""
+    return sys.platform in ("ios", "android")
 
 
 def skipped(relative: Path) -> bool:
