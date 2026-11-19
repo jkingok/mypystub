@@ -21,6 +21,32 @@ from .errors import guarded
 from .run_settings import quick_start_name
 from .ui_rowsettings import RowSettingsMixin
 
+# The Script tab's last word on a run, after any dialog has been dismissed
+FINISHED = "✅ Finished"
+DEPENDENCY_FAILED = "❌ Dependency install failed"
+LOAD_FAILED = "❌ Couldn't load the script"
+
+
+def run_status(error: BaseException | None) -> str:
+    """The status a run ends with: how it ended, marked good or bad.
+
+    No error, or ``sys.exit()`` / ``sys.exit(0)``, is a normal end. Any other
+    exit status, as at a terminal, is a failure; ``sys.exit("message")``
+    exits with status 1 after printing the message, so the message is shown.
+    """
+    if error is None:
+        return FINISHED
+    if isinstance(error, SystemExit):
+        code = error.code
+        if code is None or code == 0:
+            return FINISHED
+        if isinstance(code, int):
+            return f"❌ Exited with status {code}"
+        return f"❌ Exited: {code}"
+    if isinstance(error, (runner.NotRunnable, runner.UnsupportedGui)):
+        return "⚠️ Couldn't run"
+    return f"❌ Failed: {type(error).__name__}"
+
 
 class RunMixin(RowSettingsMixin):
     """Running a prototype and noticing when its run ends."""
@@ -32,20 +58,19 @@ class RunMixin(RowSettingsMixin):
         self.ended_run = 0
         self.script_list.on_select = self.handle_row_selection
 
-    def end_script(self, run_id: int | None = None) -> None:
+    def end_script(self, run_id: int | None = None, status: str = FINISHED) -> None:
         """Tidy up after a run: back to the list unless there's output to read.
 
-        Tabs only change while the launcher is on screen; if a takeover is still
-        showing, they're left alone (#64, case C).
+        The activity row keeps `status`, how the run ended (see run_status),
+        whether the tab stays or not, so it's there to read when the Script
+        tab is next opened. Tabs only change while the launcher is on screen;
+        if a takeover is still showing, they're left alone (#64, case C).
         """
         self.splash.image = None
+        self.script_activity.update(status, on=False)
         action = runner.end_action(printed=self.script_runner.printed, error=False)
-        if action == "stay":
-            self.script_activity.update("Finished", on=False)
-        else:
-            self.script_activity.update(on=False)
-            if self.tabs.window is not None:
-                self.tabs.current_tab = "List"
+        if action != "stay" and self.tabs.window is not None:
+            self.tabs.current_tab = "List"
         self.ended_run = self.run_id if run_id is None else run_id
         # The script may have retitled the window, with or without a takeover
         self.apply_window_title()
@@ -104,11 +129,12 @@ class RunMixin(RowSettingsMixin):
         self.script_runner.end_run()
         self.resume_running = None  # it ended, so there is nothing to offer again
         self.remember()
+        status = run_status(error)
         if error is None:
-            self.end_script(run_id)
+            self.end_script(run_id, status)
             return
         traceback.print_exception(error)
-        self.script_activity.update("Failed", on=False)
+        self.script_activity.update(status, on=False)
 
         async def report() -> None:
             title = "Script Failure"
@@ -120,7 +146,7 @@ class RunMixin(RowSettingsMixin):
                 message = f"Script failed with: {error!s}"
             await self.error(message, title)
             if run_id == self.run_id:
-                self.end_script(run_id)
+                self.end_script(run_id, status)
 
         asyncio.create_task(report())
 
@@ -266,9 +292,9 @@ class RunMixin(RowSettingsMixin):
             except Exception as e:  # noqa: BLE001
                 # DependencyError, or e.g. an invalid requirement string
                 traceback.print_exc()
-                self.script_activity.update("Dependency install failed", on=False)
+                self.script_activity.update(DEPENDENCY_FAILED, on=False)
                 await self.error(str(e), "Dependency Error")
-                self.end_script()
+                self.end_script(status=DEPENDENCY_FAILED)
                 return
 
         # 3. Run it the way Python would: __main__, argv, its folder importable
@@ -280,9 +306,9 @@ class RunMixin(RowSettingsMixin):
                 user_site=target_user_packages,
             )
         except Exception as e:  # noqa: BLE001
-            self.script_activity.update(on=False)
+            self.script_activity.update(LOAD_FAILED, on=False)
             await self.error(f"Failed to execute script:\n{e!s}", "Load Failure")
-            self.end_script()
+            self.end_script(status=LOAD_FAILED)
             return
 
         self.script_activity.update(f"Running {title}")

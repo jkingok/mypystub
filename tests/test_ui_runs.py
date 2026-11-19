@@ -38,11 +38,11 @@ def test_silent_script_returns_to_list(
 def test_printing_script_stays_with_finished_status(
     proto: ui.Prototype, app: toga.App, docs: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Output keeps the Script tab open, marked Finished."""
+    """Output keeps the Script tab open, marked finished."""
     run_to_end(proto, app, docs, "print(1 + 1)\n", monkeypatch)
     assert proto.tabs.current_tab.text == "Script"
     assert proto.print_text.value == "2\n"
-    assert proto.script_activity.text.text == "Finished"
+    assert proto.script_activity.text.text == "✅ Finished"
 
 
 def test_launcher_output_during_a_run_does_not_count(
@@ -75,7 +75,12 @@ def test_error_without_output_shows_dialog_over_script_then_list(
     """The dialog appears over the Script tab, then the list returns."""
     run_to_end(proto, app, docs, "raise ValueError('boom')\n", monkeypatch)
     assert proto.dialogs == [  # type: ignore[attr-defined]
-        ("Script Failure", "Script failed with: boom", "Script", "Failed")
+        (
+            "Script Failure",
+            "Script failed with: boom",
+            "Script",
+            "❌ Failed: ValueError",
+        )
     ]
     assert proto.tabs.current_tab.text == "List"
 

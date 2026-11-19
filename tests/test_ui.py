@@ -204,7 +204,12 @@ def test_install_happens_on_script_tab_and_errors_show_over_it(
     ]
     # The dialog is shown over the Script tab, with the failure in the status line
     assert proto.dialogs == [  # type: ignore[attr-defined]
-        ("Dependency Error", "no such package", "Script", "Dependency install failed")
+        (
+            "Dependency Error",
+            "no such package",
+            "Script",
+            "❌ Dependency install failed",
+        )
     ]
     # Then, with no output, the run ends back on the list
     assert proto.tabs.current_tab.text == "List"
