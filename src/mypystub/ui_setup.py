@@ -487,9 +487,10 @@ class SetupMixin(PrototypeBase):
             ask=self.ask,
             tell=self.tell,
             ask_fields=self.ask_fields,
-            args_note="Every script and project inherits these variables. "
-            "To override them, or set arguments, swipe right on a script and "
-            "choose Setup.",
+            # The screen's title says what it is, and the Setup tab already
+            # has an Environment heading: no note, and no section to fold
+            args_note=None,
+            collapsible_sections=False,
             screen_title="Environment",
         )
         form.open()

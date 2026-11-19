@@ -174,7 +174,8 @@ class RunWithForm:
         ask: Ask,
         tell: Tell,
         ask_fields: AskFields,
-        args_note: str = "Arguments are set on each entry point.",
+        args_note: str | None = "Arguments are set on each entry point.",
+        collapsible_sections: bool = True,
         screen_title: str | None = None,
         on_quick_start: Callable[[], Awaitable[bool]] | None = None,
         is_quick_start: bool = False,
@@ -190,6 +191,10 @@ class RunWithForm:
         is whether it already is. Inherited variables (the system's alone can be
         dozens, with long values) are hidden unless `show_inherited`; the switch
         that shows them calls `on_show_inherited`, so other screens can follow.
+        `args_note`, shown where the arguments would be, is left out when None.
+        With `collapsible_sections` False the sections are always shown, with
+        no heading of their own: for a screen whose title already names its
+        one section (Setup's Environment).
         `backups`, if given, is the backup versions section (see
         :mod:`run_backups`), put above the buttons. `on_share`, if given, adds a
         Share button that calls it (the share sheet is iOS only, so it is left out elsewhere).
@@ -216,6 +221,7 @@ class RunWithForm:
         self.arg_index: int | None = None
         self.env_name: str | None = None
         self._refreshing = False
+        self.collapsible_sections = collapsible_sections
 
         self.args_list = toga.DetailedList(on_select=self._arg_selected)
         self.arg_buttons = {
@@ -290,14 +296,19 @@ class RunWithForm:
     def _section(
         self, name: str, title: str, children: Sequence[toga.Widget]
     ) -> list[toga.Widget]:
-        """A section that its switch folds away; open when the form opens."""
+        """A section that its switch folds away; open when the form opens.
+
+        Without collapsible sections it is just its children, always shown.
+        """
+        if not self.collapsible_sections:
+            return list(children)
         switch, body = collapsible(
             title, children, open=True, on_change=self._toggle_section
         )
         self.sections[name] = (switch, body)
         return [switch, body]
 
-    def _build(self, args_note: str) -> toga.Widget:
+    def _build(self, args_note: str | None) -> toga.Widget:
         children: list[toga.Widget] = []
         if self.with_args:
             # One row saves space: moves at the left, add/edit/delete at the right
@@ -308,7 +319,7 @@ class RunWithForm:
             children += self._section(
                 "args", "Arguments", [self.args_tools, self.args_list]
             )
-        else:
+        elif args_note is not None:
             children.append(toga.Label(args_note, margin=(8, 8, 0, 8)))
         self.env_tools = self._toolbar(self.add_env, self.env_buttons)
         children += self._section(
