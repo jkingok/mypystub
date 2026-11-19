@@ -55,6 +55,35 @@ if sys.platform == "ios":
     PHPhotoLibrary = ObjCClass("PHPhotoLibrary")
     PHAccessLevelAddOnly = 1  # PHAccessLevel.addOnly
 
+    from rubicon.objc import (  # pyright: ignore[reportMissingImports]
+        objc_method,
+        objc_property,
+        send_super,
+    )
+    from toga_iOS.libs import UIView
+
+    class SafeAreaObserverView(UIView):  # type: ignore[misc, valid-type]
+        """An invisible view that tells its owner when its layout or safe area changes.
+
+        safe_area.SafeArea lays two over its own view, one ending at the top of
+        the keyboard and one filling the box, and is told each time UIKit lays
+        them out again (keyboard, size, rotation, bars).
+        """
+
+        owner = objc_property(object, weak=True)
+
+        @objc_method
+        def layoutSubviews(self) -> None:
+            send_super(__class__, self, "layoutSubviews")
+            if self.owner is not None:
+                self.owner.native_changed()
+
+        @objc_method
+        def safeAreaInsetsDidChange(self) -> None:
+            send_super(__class__, self, "safeAreaInsetsDidChange")
+            if self.owner is not None:
+                self.owner.native_changed()
+
 
 # Seconds to wait for a copied file, which might have to download from iCloud
 PASTE_TIMEOUT = 120.0

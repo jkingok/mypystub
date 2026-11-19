@@ -244,9 +244,11 @@ class ScriptRunner:
             w.value += message
             if message:
                 self.printed = True
-            # self.print_field.refresh()
-            # await asyncio.sleep(0.01)
-            # self.scroll.vertical_position = self.scroll.max_vertical_position
+                # Follow the output, as a terminal does: the newest line shows
+                # even when the pane is short, such as above the keyboard
+                scroll = getattr(w, "scroll_to_bottom", None)
+                if scroll is not None:
+                    scroll()
 
     def append_to_log(self, message: str) -> None:
         """Show the prototype's stdout text in the Script tab, from any thread.

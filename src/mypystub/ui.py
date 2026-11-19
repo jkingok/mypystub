@@ -23,6 +23,7 @@ from . import (
 from .errors import guarded
 from .pages import help_html
 from .run_settings import quick_start_name
+from .safe_area import SafeColumn
 from .ui_actions import ActionsMixin
 from .ui_back import BackMixin
 from .ui_helpers import (
@@ -335,15 +336,14 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
         return scroll
 
     def _script_tab(self) -> toga.Widget:
-        """The Script tab's content; the launcher keeps hold of the boxes it moves."""
-        self.keyboard_box = toga.Box(style=Pack(flex=0))
-        self.script_box = toga.Column(
-            children=[
-                self.splash,
-                self.script_output,
-                self.keyboard_box,
-                self.script_activity,
-            ]
+        """The Script tab's content; the launcher keeps hold of the boxes it moves.
+
+        The last row is the activity, or input()'s or getpass()'s question while
+        one is asked (see toggle_box). The box is a SafeArea, so that row stays
+        above the keyboard.
+        """
+        self.script_box = SafeColumn(
+            children=[self.splash, self.script_output, self.script_activity],
         )
         return self.script_box
 
@@ -353,7 +353,9 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
             content=[
                 (
                     "List",
-                    toga.Column(children=[self.list_actions(), self.script_list]),
+                    SafeColumn(
+                        children=[self.list_actions(), self.script_list],
+                    ),
                     self.icon_path / "list.png",
                 ),
                 (
@@ -363,7 +365,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
                 ),
                 (
                     "Logs",
-                    toga.Column(
+                    SafeColumn(
                         children=[
                             self.log_text,
                             toga.Row(
@@ -388,24 +390,24 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
                                     ),
                                 ]
                             ),
-                        ]
+                        ],
                     ),
                     self.icon_path / "log-file.png",
                 ),
                 (
                     "Setup",
-                    toga.Column(children=[self.setup_scroll()]),
+                    SafeColumn(children=[self.setup_scroll()]),
                     self.icon_path / "settings-sliders.png",
                 ),
                 (
                     "Help",
-                    toga.Column(
+                    SafeColumn(
                         children=[
                             self.help_selection,
                             self.help_view,
                             self.about_share,
                             self.source_share,
-                        ]
+                        ],
                     ),
                     self.icon_path / "interrogation.png",
                 ),

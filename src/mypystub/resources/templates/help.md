@@ -43,7 +43,7 @@ Environment variables are inherited. Those set on the Setup tab's **Environment*
 
 This is the input and output of a running app until it takes over the UI itself.
 
-When a script asks a question with `input()`, the question and your answer are written to the output too, as a terminal would. `getpass.getpass()` asks with a password field and never shows or logs the password.
+When a script asks a question with `input()`, it asks at the bottom of the Script tab, in place of the status line, and stays above the keyboard. The question and your answer are written to the output too, as a terminal would. `getpass.getpass()` asks with a password field and never shows or logs the password.
 
 Everything the script writes to standard output (`print()`, `sys.stdout`) appears here. What it writes to standard error (`print(..., file=sys.stderr)`, warnings, tracebacks it prints) appears in a separate orange **Errors and warnings** pane, which only shows up once something is written to it. Uncaught errors in the script's threads and callbacks are shown there too. *Hide* tucks it away until the next write. The two panes sit side by side when the Script tab is wider than it is tall, and one above the other otherwise; the keyboard doesn't change this. Colour codes are removed from the text shown here. The Logs tab still gets everything, exactly as written.
 

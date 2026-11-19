@@ -28,6 +28,7 @@ from . import settings as s
 from .errors import guarded
 from .pages import html_page
 from .run_settings import SYSTEM, Layer, env_name_problem, env_value_problem
+from .safe_area import SafeArea, SafeColumn
 from .ui_widgets import LabelledActivity
 from .widgets import OrientationBox
 
@@ -114,25 +115,18 @@ class PrototypeBase:
         # freshly built launcher would overwrite what is about to be restored
         self.resume_ready = False
         self._resume_written: resume.Resume | None = None
-        self.script_box = toga.Column()  # the Script tab; input boxes go on top
-        self.keyboard_box = toga.Box(style=Pack(flex=0))  # pads for the keyboard
+        # The Script tab. While input() or getpass() asks, its box takes the
+        # activity row's place at the bottom (see toggle_box).
+        self.script_box = toga.Column()
         self.new_project_name: toga.TextInput | None = None
         self.input_prompt = toga.Label("Input")
-        self.input_text = toga.TextInput(
-            style=Pack(flex=1),
-            on_gain_focus=self.gain_focus,
-            on_lose_focus=self.lose_focus,
-        )
+        self.input_text = toga.TextInput(style=Pack(flex=1))
         self.input_box = toga.Column(
             children=[self.input_prompt, self.input_text], text_align="center"
         )
         # getpass() asks here instead, so the password isn't shown (#121)
         self.password_prompt = toga.Label("Password")
-        self.password_text = toga.PasswordInput(
-            style=Pack(flex=1),
-            on_gain_focus=self.gain_focus,
-            on_lose_focus=self.lose_focus,
-        )
+        self.password_text = toga.PasswordInput(style=Pack(flex=1))
         self.password_box = toga.Column(
             children=[self.password_prompt, self.password_text], text_align="center"
         )
@@ -595,8 +589,13 @@ class PrototypeBase:
         Screens go on the window's content stack like any other view. The
         floor stops a double-tapped Back from popping past this screen.
         `on_back` is what the system Back button does here: the screen's own
-        Back or Cancel, if it does more than pop (see BackMixin).
+        Back or Cancel, if it does more than pop (see BackMixin). The screen
+        is kept clear of the home indicator, notch and keyboard (SafeArea).
         """
+        if not isinstance(content, SafeArea):
+            if content.style.flex == 0:
+                content.style.flex = 1  # fill the screen, as window content does
+            content = SafeColumn(children=[content])
         self.back_actions.append(on_back or self.pop_screen)
         mw = self.app.main_window
         assert isinstance(mw, toga.MainWindow)
@@ -690,18 +689,6 @@ class PrototypeBase:
             return False
         return True
 
-    def pad_keyboard(self, on: bool) -> None:
-        # keyboard_box.style.visibility = "visible" if on else "hidden"
-        self.keyboard_box.style.flex = 1 if on else 0
-
-    @guarded
-    def gain_focus(self, widget: toga.TextInput, **kwargs: Any) -> None:
-        self.pad_keyboard(True)
-
-    @guarded
-    def lose_focus(self, widget: toga.TextInput, **kwargs: Any) -> None:
-        self.pad_keyboard(False)
-
     def toggle_input(self, on: bool) -> None:
         self.toggle_box(self.input_box, on)
 
@@ -710,14 +697,29 @@ class PrototypeBase:
         self.toggle_box(self.password_box, on)
 
     def toggle_box(self, box: toga.Box, on: bool) -> None:
-        """Show `box` at the top of the Script tab, or take it away."""
+        """Swap `box` (input's or getpass's) in for the activity row, or back.
+
+        The question goes at the bottom of the Script tab, under the output it
+        follows, as at a terminal. The keyboard doesn't hide it: on iOS the
+        tab's SafeArea keeps the tab above the keyboard, and Android keeps the
+        focused field in view. While it asks, the activity row ("Running ...")
+        gives it its place, so the output keeps the room that is left.
+        """
         script_box = self.script_box
+        activity = self.script_activity
         if on:
-            if box.parent is None:
-                script_box.insert(0, box)
+            if box.parent is not None:
+                return
+            if activity.parent is script_box:
+                script_box.replace(activity, box)
+            else:  # already asking with the other box
+                script_box.add(box)
         elif box.parent is not None:
-            script_box.remove(box)
-        self.pad_keyboard(on)
+            asking = [b for b in (self.input_box, self.password_box) if b.parent]
+            if len(asking) == 1 and activity.parent is None:
+                script_box.replace(box, activity)
+            else:
+                script_box.remove(box)
 
     def toggle_print(self, on: bool) -> None:
         if on:
