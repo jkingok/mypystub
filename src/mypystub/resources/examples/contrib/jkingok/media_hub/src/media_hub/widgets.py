@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from pathlib import Path
 
 import toga
@@ -117,13 +118,40 @@ class GenericUtils:
 
 class PlatformUtils(GenericUtils):
     def close_keyboard(widget):
-        pass
+        """Nothing to do: only iPad keeps its keyboard up after Return."""
 
     def open_share_sheet(w, html_file_path):
-        pass
+        """No share sheet on this platform: say where the page was saved."""
+        GenericUtils.info_task(
+            w,
+            "Share",
+            f"Sharing isn't available on this platform. The page is saved at "
+            f"{Path(html_file_path).resolve()}",
+        )
 
 
-if toga.platform.current_platform == "iOS":  # pyright: ignore[reportAttributeAccessIssue]
+if sys.platform == "android":
+    from java import jclass  # pyright: ignore[reportMissingImports]
+
+    class AndroidUtils(PlatformUtils):
+        def open_share_sheet(w, html_file_path):
+            """Share the page through Android's share sheet, as HTML text.
+
+            A file needs a FileProvider to share; the page's text doesn't, and
+            mail and messaging apps take it as it is.
+            """
+            Intent = jclass("android.content.Intent")
+            activity = jclass("org.beeware.android.MainActivity").singletonThis
+            html = Path(html_file_path).read_text(encoding="utf-8")
+            send = Intent(Intent.ACTION_SEND)
+            send.setType("text/html")
+            send.putExtra(Intent.EXTRA_SUBJECT, Path(html_file_path).stem)
+            send.putExtra(Intent.EXTRA_HTML_TEXT, html)
+            send.putExtra(Intent.EXTRA_TEXT, html)
+            activity.startActivity(Intent.createChooser(send, "Share"))
+
+
+if sys.platform == "ios":
     from rubicon.objc import (  # pyright: ignore[reportMissingImports]
         NSMakeRect,
         ObjCClass,
@@ -203,6 +231,9 @@ if toga.platform.current_platform == "iOS":  # pyright: ignore[reportAttributeAc
             )
 
     Utils = IOSUtils
+
+elif sys.platform == "android":
+    Utils = AndroidUtils
 
 else:
     Utils = PlatformUtils

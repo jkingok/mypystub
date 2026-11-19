@@ -1,4 +1,6 @@
+import asyncio
 import datetime as dt
+import sys
 import tempfile
 from pathlib import Path
 
@@ -108,7 +110,13 @@ class ImagePanel(toga.Box):
             if self.callback:
                 self.callback(self)
         else:
-            custom_temp.unlink()
+            Path(custom_temp.name).unlink()
+            message = (
+                "There's no image on the clipboard."
+                if sys.platform in ("ios", "android")
+                else "Pasting an image is only available on iOS and Android."
+            )
+            asyncio.create_task(button.window.dialog(toga.InfoDialog("Paste", message)))
 
     def do_open(self, button):
         pass

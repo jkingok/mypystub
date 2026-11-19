@@ -2,12 +2,14 @@ import asyncio
 import datetime as dt
 import re
 import shutil
+import sys
 from pathlib import Path
 
 import toga
 import yaml
 from markdown import markdown as md
 
+from . import functions
 from . import settings as s
 from . import widgets as ws
 from .state import state
@@ -142,6 +144,22 @@ class Prototype:
             )
 
     def paste_markdown(self, widget=None):
+        """Paste a note: Markdown text, or (on iOS) a zip of a note and attachments."""
+        if sys.platform != "ios":
+            # Android's clipboard gives text; elsewhere there's no clipboard API
+            text = functions.clipboard_text()
+            if text is None:
+                message = (
+                    "There's no text on the clipboard."
+                    if sys.platform == "android"
+                    else "Pasting is only available on iOS and Android."
+                )
+                asyncio.create_task(self.error(message))
+                return False
+            self.attachments = {}
+            self.app.widgets["markdown"].value = text
+            return True
+
         # from typing import TypedDict
         import ctypes
         import io
