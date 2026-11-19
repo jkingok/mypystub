@@ -700,10 +700,10 @@ class PrototypeBase:
         """Swap `box` (input's or getpass's) in for the activity row, or back.
 
         The question goes at the bottom of the Script tab, under the output it
-        follows, as at a terminal. The keyboard doesn't hide it: on iOS the
-        tab's SafeArea keeps the tab above the keyboard, and Android keeps the
-        focused field in view. While it asks, the activity row ("Running ...")
-        gives it its place, so the output keeps the room that is left.
+        follows, as at a terminal. The keyboard doesn't hide it: on iOS and
+        Android the tab's SafeArea keeps the tab above the keyboard. While it
+        asks, the activity row ("Running ...") gives it its place, so the output
+        keeps the room that is left.
         """
         script_box = self.script_box
         activity = self.script_activity

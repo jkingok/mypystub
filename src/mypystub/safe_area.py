@@ -8,15 +8,20 @@ has focus. :class:`SafeArea` is used in place of the Box that is a window's or
 a tab's content, and moves its children in by exactly those amounts, updating
 as they change.
 
-Elsewhere it is a plain Box: other platforms lay windows out inside their safe
-area and move content for the keyboard themselves.
+On Android the same space comes from the window insets (system bars, display
+cutout and keyboard) that Android reports to the box's view; see
+:mod:`mypystub.android_insets`. Android doesn't resize the window for the
+keyboard, so without this it covers whatever is at the bottom.
+
+Elsewhere it is a plain Box: desktop platforms lay windows out inside their
+safe area and move content for the keyboard themselves.
 """
 
 from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Iterable
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 import toga
 
@@ -31,6 +36,9 @@ class Insets(NamedTuple):
 
 
 NO_INSETS = Insets()
+
+# Platforms where SafeArea works out the padding itself
+NATIVE = ("ios", "android")
 
 # Widgets that scroll their own content, so they stay usable when they get
 # less than Toga's usual 100 point minimum height
@@ -85,6 +93,59 @@ def insets_for(
     )
 
 
+class AndroidMeasure(NamedTuple):
+    """What Android reports about a view, in pixels.
+
+    `system` is the window's system bar and display cutout insets (top, right,
+    bottom, left), `keyboard` the keyboard's height from the window's bottom
+    edge (this includes the navigation bar under it), `box` the view's left,
+    top, width and height in the window, and `window` the window's width and
+    height.
+    """
+
+    system: Insets
+    keyboard: float
+    box: tuple[float, float, float, float]
+    window: tuple[float, float]
+
+
+def android_padding(
+    measure: AndroidMeasure, density: float, keyboard: bool = True
+) -> tuple[Insets, bool]:
+    """The padding a view needs on Android, and whether the keyboard sets it.
+
+    Android reports insets for the whole window; a view only needs padding for
+    the part of each inset it actually overlaps. A tab above the navigation bar
+    has none of it to avoid, and a screen that reaches the window's edge has
+    all of it. Pixels become Toga's units by dividing by `density`. With
+    `keyboard` False the keyboard is ignored.
+    """
+    x, y, width, height = measure.box
+    if width <= 0 or height <= 0 or density <= 0:
+        return NO_INSETS, False
+    system = measure.system
+    # A box a pixel past the window's edge (rounding) has no gap, not a negative one
+    gaps = Insets(
+        *(
+            max(0.0, gap)
+            for gap in (
+                y,
+                measure.window[0] - (x + width),
+                measure.window[1] - (y + height),
+                x,
+            )
+        )
+    )
+    overlap = Insets(*(max(0.0, inset - gap) for inset, gap in zip(system, gaps)))
+    covered = max(0.0, measure.keyboard - gaps.bottom) if keyboard else 0.0
+    keyboard_up = covered > overlap.bottom + 1
+    scaled = Insets(*(value / density for value in overlap))
+    return (
+        insets_for(scaled, height / density, (height - covered) / density),
+        keyboard_up,
+    )
+
+
 class SafeArea(toga.Box):
     """A Box whose children stay where they can be seen and tapped.
 
@@ -134,14 +195,16 @@ class SafeArea(toga.Box):
         self._own_margins: dict[toga.Widget, tuple[float, float, float, float]] = {}
         self._pending: tuple[Insets, bool] | None = None
         self._squeezed: list[toga.Widget] = []
-        self._observer: Any = None
-        self._box_observer: Any = None
+        self._observer: Any = None  # the native object watching the box
+        self._box_observer: Any = None  # iOS: a second one, for the box's size
         # Squeezed text views' own top and bottom padding, by id, to put back
         self._paddings: dict[int, tuple[float, float]] = {}
         # Positionally: the launcher never names widget ids (see test_ui_app_isolation)
         super().__init__(id, style, children, **kwargs)
         if sys.platform == "ios":
             self._observe()
+        elif sys.platform == "android":
+            self._observe_android()
 
     @property
     def insets(self) -> Insets:
@@ -240,7 +303,7 @@ class SafeArea(toga.Box):
             for widget in changed
             if isinstance(widget, toga.MultilineTextInput) and widget.readonly
         ]
-        if self._observer is not None:
+        if sys.platform == "ios":
             self._native_padding(outputs, on)
         for widget in changed:
             rehint = getattr(widget._impl, "rehint", None)
@@ -261,7 +324,7 @@ class SafeArea(toga.Box):
             return
         app = toga.App.app
         loop = getattr(app, "loop", None) if app is not None else None
-        scroll = self._native_scroll if self._observer is not None else _scroll_down
+        scroll = self._native_scroll if sys.platform == "ios" else _scroll_down
         if loop is None:
             scroll(views)
         else:
@@ -369,6 +432,20 @@ class SafeArea(toga.Box):
             self.keyboard,
         )
         keyboard_up = self.keyboard and height > 0 and height - clear > safe.bottom + 1
+        self._schedule(insets, keyboard_up)
+
+    def _observe_android(self) -> None:
+        """Have Android tell this box when its insets or position change."""
+        from . import android_insets as native
+
+        self._observer = native.watch(self._impl.native, self.android_changed)
+
+    def android_changed(self, measure: AndroidMeasure, density: float) -> None:
+        """Android reported new insets or a new position: pad again."""
+        self._schedule(*android_padding(measure, density, self.keyboard))
+
+    def _schedule(self, insets: Insets, keyboard_up: bool) -> None:
+        """Apply new padding on the app's loop, not from inside the native layout."""
         wanted = (insets, keyboard_up)
         if wanted == (self._pending or (self._insets, bool(self._squeezed))):
             return
@@ -396,9 +473,11 @@ def SafeColumn(*args: Any, **kwargs: Any) -> SafeArea:
 
 
 def _scroll_down(views: list[toga.Widget]) -> None:
-    """Scroll each text view to its end, through Toga."""
+    """Scroll each text view to its end, through Toga, where it can."""
     for view in views:
-        cast(Any, view).scroll_to_bottom()
+        scroll = getattr(view, "scroll_to_bottom", None)
+        if scroll is not None:
+            scroll()
 
 
 def _value(attribute: Any) -> Any:
