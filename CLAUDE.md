@@ -63,6 +63,7 @@ Manage dependencies with `uv`. Prefer, in order: pure Python, binary wheels, the
 
 - A change a user would notice adds a fragment, `changes/<PR number>.feature.md` or `.bugfix.md` (see `changes/README.md`). Internal changes may add `.misc.md`, which isn't shown.
 - Claude identifies itself in every commit message and PR.
+- **PRs labelled `hold` are finished but deliberately not being merged.** Leave them alone unless asked about one specifically: don't review them further, push to them, or bring main into them; leave them out of merge-order planning and conflict checks; and don't include them in emulator, simulator or device test plans.
 - Use the attribution lines your session provides, with the model and session URL of the **current** session. Do not copy them from older commits or this file. The shape is:
   - Commit messages end with `Co-Authored-By: Claude <model> <noreply@anthropic.com>` and `Claude-Session: <current session URL>`.
   - PR descriptions end with `🤖 Generated with [Claude Code](https://claude.com/claude-code)` and the current session URL.
