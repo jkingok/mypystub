@@ -32,7 +32,7 @@ def paste(proto: ui.Prototype, app: toga.App) -> None:
 
 def preview_buttons(app: toga.App) -> list[str]:
     """The buttons on the preview screen currently shown."""
-    column = app.main_window.content.children[0]  # inside the screen's SafeArea
+    column = app.main_window.content.content.children[0]  # in the screen's SafeArea
     top = column.children[0]
     return [w.text for w in top.children if isinstance(w, toga.Button)]
 

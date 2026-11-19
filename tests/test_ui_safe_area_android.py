@@ -137,26 +137,31 @@ def test_new_insets_pad_the_content_and_are_reported(android: Any) -> None:
     assert seen == [Insets(24, 0, 48, 0)]
 
 
-def test_the_space_goes_on_the_first_and_last_child(android: Any) -> None:
-    """A column's top and bottom, its sides on every child (SafeArea, #290)."""
+def test_the_space_goes_on_the_content(android: Any) -> None:
+    """Android's insets become the one content box's margin (SafeArea, #290)."""
     top, middle, bottom = (toga.Label(name) for name in ("top", "middle", "bottom"))
     area = SafeColumn(children=[top, middle, bottom])
     area._observer.callback(measure((0, 0, 1080, 2400)), DENSITY)
     assert area.insets == Insets(24, 0, 48, 0)
-    assert (top.style.margin_top, middle.style.margin_top) == (24, 0)
-    assert (middle.style.margin_bottom, bottom.style.margin_bottom) == (0, 48)
+    content = area.content.style
+    assert (content.margin_top, content.margin_bottom) == (24, 48)
+    assert all(c.style.margin_top == c.style.margin_bottom == 0 for c in (top, bottom))
 
 
-def test_a_row_gets_its_space_at_its_ends(android: Any) -> None:
+def test_a_row_gets_its_space_on_the_content_too(android: Any) -> None:
     system = Insets(0, 126, 63, 126)  # landscape: bars at the sides and bottom
     first, last = toga.Label("first"), toga.Label("last")
     area = SafeRow(children=[first, last])
     area._observer.callback(
         AndroidMeasure(system, 0, (0, 0, 2400, 1080), (2400.0, 1080.0)), DENSITY
     )
-    assert (first.style.margin_left, last.style.margin_left) == (48, 0)
-    assert (first.style.margin_right, last.style.margin_right) == (0, 48)
-    assert first.style.margin_bottom == last.style.margin_bottom == 24
+    content = area.content.style
+    assert (content.margin_left, content.margin_right, content.margin_bottom) == (
+        48,
+        48,
+        24,
+    )
+    assert first.style.margin_left == last.style.margin_right == 0
 
 
 def test_the_keyboard_lets_scrolling_widgets_shrink(android: Any) -> None:

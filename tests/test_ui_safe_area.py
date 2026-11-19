@@ -60,54 +60,71 @@ def margins(widget: toga.Widget) -> tuple[float, float, float, float]:
 
 
 def test_it_is_a_box_with_boxs_arguments() -> None:
-    """Children, id and style as Box takes them; nothing wrapped inside."""
+    """Children, id and style as Box takes them; the children go in its content."""
     first, second = toga.Label("a"), toga.Label("b")
-    area = SafeArea(id="tab", direction="column", children=[first, second])
+    area = SafeArea(id="tab", direction="column", children=[first, second], flex=1)
     assert isinstance(area, toga.Box)
-    assert area.id == "tab"
-    assert area.children == [first, second]
-    assert area.style.direction == "column"
+    assert area.id == "tab" and area.style.flex == 1
+    assert area.children == [area.content]  # one child, as Toga lays it out
+    assert area.content.children == [first, second]
+    assert first.parent is area.content
+    assert area.content.style.direction == "column"
     assert area.insets == NO_INSETS
 
 
-def test_a_column_pads_its_first_and_last_child() -> None:
-    top, middle, bottom = toga.Label("t"), toga.Label("m"), toga.Label("b")
-    area = SafeArea(direction="column", children=[top, middle, bottom])
+def test_the_layout_style_goes_to_the_content() -> None:
+    """Direction, alignment and gap arrange the children, so the content has them."""
+    area = SafeArea(direction="row", align_items="center", gap=4, margin=2)
+    content = area.content.style
+    assert (content.direction, content.align_items, content.gap) == ("row", "center", 4)
+    assert content.flex == 1  # it fills the box
+    assert area.style.margin_top == 2  # the box's own style stays its own
+
+
+def test_a_style_object_is_split_the_same_way() -> None:
+    from toga.style import Pack
+
+    area = SafeArea(style=Pack(direction="row", flex=1))
+    assert area.content.style.direction == "row"
+    assert area.style.direction == "column" and area.style.flex == 1
+
+
+def test_the_insets_are_the_contents_margin_only() -> None:
+    """One child carries the space: the children keep their own margins."""
+    top, bottom = toga.Label("t", margin=(5, 6, 7, 8)), toga.Label("b")
+    area = SafeArea(direction="column", children=[top, bottom])
     area.set_insets(Insets(1, 2, 3, 4))
-    assert margins(top) == (1, 2, 0, 4)
-    assert margins(middle) == (0, 2, 0, 4)
-    assert margins(bottom) == (0, 2, 3, 4)
-
-
-def test_a_row_pads_its_first_and_last_child_across() -> None:
-    left, right = toga.Label("l"), toga.Label("r")
-    area = SafeArea(direction="row", children=[left, right])
-    area.set_insets(Insets(1, 2, 3, 4))
-    assert margins(left) == (1, 0, 3, 4)
-    assert margins(right) == (1, 2, 3, 0)
-
-
-def test_insets_add_to_a_childs_own_margin() -> None:
-    child = toga.Label("x", margin=(5, 6, 7, 8))
-    area = SafeArea(direction="column", children=[child])
-    area.set_insets(Insets(1, 2, 3, 4))
-    assert margins(child) == (6, 8, 10, 12)
+    assert margins(area.content) == (1, 2, 3, 4)
+    assert margins(top) == (5, 6, 7, 8) and margins(bottom) == (0, 0, 0, 0)
     area.set_insets(NO_INSETS)
-    assert margins(child) == (5, 6, 7, 8)
+    assert margins(area.content) == (0, 0, 0, 0)
 
 
-def test_children_that_move_are_padded_again() -> None:
-    """A replaced or removed child gets its own margin back; the new edge gets the space."""
+def test_order_and_hidden_children_change_nothing() -> None:
+    """Which children there are, where, and whether shown, is left to Toga."""
     output, activity, question = toga.Label("o"), toga.Label("a"), toga.Label("q")
     area = SafeArea(direction="column", children=[output, activity])
     area.set_insets(Insets(0, 0, 50, 0))
-    assert margins(activity)[2] == 50
+    activity.style.display = "none"
     area.replace(activity, question)
-    assert margins(question)[2] == 50 and margins(activity) == (0, 0, 0, 0)
-    area.remove(question)
-    assert margins(output)[2] == 50 and margins(question) == (0, 0, 0, 0)
-    area.add(activity)
-    assert margins(activity)[2] == 50 and margins(output)[2] == 0
+    area.insert(0, activity)
+    area.remove(output)
+    for child in (output, activity, question):
+        assert margins(child) == (0, 0, 0, 0)
+    assert margins(area.content) == (0, 0, 50, 0)
+
+
+def test_children_are_managed_as_on_a_box() -> None:
+    a, b, c = toga.Label("a"), toga.Label("b"), toga.Label("c")
+    area = SafeArea(children=[a])
+    area.add(b)
+    area.insert(0, c)
+    assert area.content.children == [c, a, b] and area.index(a) == 1
+    area.replace(a, toga.Label("z"))
+    area.remove(b)
+    assert [w.text for w in area.content.children] == ["c", "z"]
+    area.clear()
+    assert area.content.children == [] and area.children == [area.content]
 
 
 def test_on_change_reports_once() -> None:
@@ -158,6 +175,6 @@ def test_safe_row_and_column_set_the_direction() -> None:
     """Shorthands, like toga.Row and toga.Column."""
     child = toga.Label("x")
     column = SafeColumn(children=[child])
-    assert isinstance(column, SafeArea) and column.style.direction == "column"
-    assert column.children == [child]
-    assert SafeRow().style.direction == "row"
+    assert isinstance(column, SafeArea) and column.content.style.direction == "column"
+    assert column.content.children == [child]
+    assert SafeRow().content.style.direction == "row"

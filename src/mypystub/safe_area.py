@@ -146,23 +146,31 @@ def android_padding(
     )
 
 
+# Style properties that arrange a box's children: they belong to the content
+CONTENT_LAYOUT = ("direction", "align_items", "justify_content", "gap")
+
+
 class SafeArea(toga.Box):
     """A Box whose children stay where they can be seen and tapped.
 
     Use it instead of the Box that is a window's or a tab's content; it takes
     the same arguments, with `direction` and the rest of the style as usual.
-    On iOS its children are moved in by the box's safe area (status and
-    navigation bars, tab bars, the notch or Dynamic Island, the rounded
-    corners and the home indicator, in whatever orientation) and, unless
-    `keyboard` is False, by the part of the box the keyboard covers. A
+    On iOS and Android its children are moved in by the box's safe area
+    (status and navigation bars, tab bars, the notch or Dynamic Island, the
+    rounded corners and the home indicator, in whatever orientation) and,
+    unless `keyboard` is False, by the part of the box the keyboard covers. A
     hardware keyboard's shortcut bar counts as keyboard too.
 
-    The space is added to the children's own margins: along the direction
-    only the first and last child get it (the top and bottom of a column, the
-    left and right of a row); across it, every child does. It changes as the
-    safe area and keyboard do, and follows children as they are added,
-    removed or replaced. `on_change` is called with the box and the new
-    :class:`Insets` each time.
+    Like a ScrollContainer, it has exactly one child of its own, `content`: a
+    Box holding the children, laid out by the `direction`, `align_items`,
+    `justify_content` and `gap` given here. The insets are that one child's
+    margin, so which children there are, in what order, and which are hidden,
+    is left to Toga. Children are managed as on a Box: :meth:`add`,
+    :meth:`insert`, :meth:`remove`, :meth:`replace`, :meth:`clear` and
+    :meth:`index` act on `content`, and a child's `parent` is `content`.
+    (`children` itself is ``[content]``, as Toga's layout needs to see it.)
+    `on_change` is called with the box and the new :class:`Insets` each time
+    they change.
 
     While the keyboard is up, flexible widgets that scroll their own content
     (multiline text, web views, lists and scroll containers) may shrink below
@@ -191,16 +199,25 @@ class SafeArea(toga.Box):
         self.keyboard = keyboard
         self.on_change = on_change
         self._insets = NO_INSETS
-        # Each child given extra margin, with the margin it had of its own
-        self._own_margins: dict[toga.Widget, tuple[float, float, float, float]] = {}
         self._pending: tuple[Insets, bool] | None = None
         self._squeezed: list[toga.Widget] = []
         self._observer: Any = None  # the native object watching the box
         self._box_observer: Any = None  # iOS: a second one, for the box's size
         # Squeezed text views' own top and bottom padding, by id, to put back
         self._paddings: dict[int, tuple[float, float]] = {}
+        layout = {name: kwargs.pop(name) for name in CONTENT_LAYOUT if name in kwargs}
+        given = [name for name in CONTENT_LAYOUT if style is not None and name in style]
+        for name in given:
+            layout.setdefault(name, getattr(style, name))
+        # The one child: it fills the box, and the insets are its margin
+        self.content = toga.Box(children=children, flex=1, **layout)
         # Positionally: the launcher never names widget ids (see test_ui_app_isolation)
-        super().__init__(id, style, children, **kwargs)
+        super().__init__(id, style, **kwargs)
+        for name in given:  # arranging the children is the content's job
+            del self.style[name]
+        # A column, so the one child fills the box's height as well as its width
+        self.style.direction = "column"
+        toga.Box.add(self, self.content)
         if sys.platform == "ios":
             self._observe()
         elif sys.platform == "android":
@@ -211,22 +228,31 @@ class SafeArea(toga.Box):
         """The space the children are kept clear by now."""
         return self._insets
 
-    # Every change of children (replace and clear included) comes through these
+    # A Box's ways of managing children, acting on the content
 
     def add(self, *children: toga.Widget) -> None:
-        """Add children, as Box does, keeping the edges clear."""
-        super().add(*children)
-        self._place_insets()
+        """Add children to the end, as Box does."""
+        self.content.add(*children)
 
     def insert(self, index: int, child: toga.Widget) -> None:
-        """Insert a child, as Box does, keeping the edges clear."""
-        super().insert(index, child)
-        self._place_insets()
+        """Insert a child at `index`, as Box does."""
+        self.content.insert(index, child)
 
     def remove(self, *children: toga.Widget) -> None:
-        """Remove children, as Box does; they get their own margins back."""
-        super().remove(*children)
-        self._place_insets()
+        """Remove children, as Box does."""
+        self.content.remove(*children)
+
+    def replace(self, old_child: toga.Widget, new_child: toga.Widget) -> None:
+        """Put `new_child` where `old_child` is, as Box does."""
+        self.content.replace(old_child, new_child)
+
+    def clear(self) -> None:
+        """Remove every child, as Box does."""
+        self.content.clear()
+
+    def index(self, child: toga.Widget) -> int:
+        """Where `child` is among the children, as Box says."""
+        return self.content.index(child)
 
     def set_insets(self, insets: Insets, keyboard_up: bool = False) -> None:
         """Keep the children clear by `insets`; tell `on_change` if they changed.
@@ -240,56 +266,16 @@ class SafeArea(toga.Box):
         if insets == self._insets:
             return
         self._insets = insets
-        self._place_insets()
+        self.content.style.margin = tuple(insets)
         if self.on_change is not None:
             self.on_change(self, insets)
-
-    def _place_insets(self) -> None:
-        """Set each child's margin to its own plus its share of the insets."""
-        if not hasattr(self, "_own_margins"):
-            return  # Box.__init__ adding the first children
-        insets = self._insets
-        children = list(self.children)
-        row = self.style.direction == "row"
-        for index, child in enumerate(children):
-            first, last = index == 0, index == len(children) - 1
-            if row:
-                extra = (
-                    insets.top,
-                    insets.right if last else 0,
-                    insets.bottom,
-                    insets.left if first else 0,
-                )
-            else:
-                extra = (
-                    insets.top if first else 0,
-                    insets.right,
-                    insets.bottom if last else 0,
-                    insets.left,
-                )
-            if child not in self._own_margins:
-                if not any(extra):
-                    continue
-                style = child.style
-                self._own_margins[child] = (
-                    style.margin_top,
-                    style.margin_right,
-                    style.margin_bottom,
-                    style.margin_left,
-                )
-            own = self._own_margins[child]
-            child.style.margin = tuple(o + e for o, e in zip(own, extra, strict=True))
-        for child in [c for c in self._own_margins if c not in children]:
-            child.style.margin = self._own_margins.pop(child)
 
     def _squeeze(self, on: bool) -> None:
         """Let scrolling widgets shrink to nothing, or give them their minimum back."""
         if on == bool(self._squeezed):
             return
         if on:
-            self._squeezed = [
-                widget for child in self.children for widget in scrolling_widgets(child)
-            ]
+            self._squeezed = scrolling_widgets(self.content)
             for widget in self._squeezed:
                 widget._MIN_HEIGHT = 0  # pyright: ignore[reportAttributeAccessIssue]
             changed = self._squeezed

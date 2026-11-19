@@ -15,7 +15,7 @@ from tests.support_ui import tap, wait_for
 
 
 def last_row(proto: ui.Prototype) -> toga.Widget:
-    return proto.script_box.children[-1]
+    return proto.script_box.content.children[-1]
 
 
 def ask_and_check(
@@ -60,7 +60,7 @@ def test_getpass_then_input_keep_one_row(
     wait_for(app, lambda: proto.ended_run == proto.run_id)
     assert proto.print_text.value.endswith("7 Ada\n")
     assert last_row(proto) is proto.script_activity
-    rows = proto.script_box.children
+    rows = proto.script_box.content.children
     assert proto.input_box not in rows and proto.password_box not in rows
 
 
@@ -73,4 +73,4 @@ def test_both_boxes_at_once_leave_one_activity_row(proto: ui.Prototype) -> None:
     assert proto.script_activity.parent is None
     proto.toggle_password(False)
     assert last_row(proto) is proto.script_activity
-    assert proto.script_box.children.count(proto.script_activity) == 1
+    assert proto.script_box.content.children.count(proto.script_activity) == 1

@@ -71,6 +71,10 @@ PRESERVE_LOGS_SETTING = "preserve_logs"  # launcher.toml: keep the log
 RESUME_SETTING = "resume"  # launcher.toml: false starts fresh every time
 
 
+# Seconds a closed question waits for the next one before its keyboard goes
+KEYBOARD_GRACE = 0.3
+
+
 class PrototypeBase:
     """Everything the feature mixins share: widgets, dialogs, folders, screens.
 
@@ -383,12 +387,18 @@ class PrototypeBase:
         else:
             resume.clear(self.resume_path)
 
-    def close_keyboard(self, widget: toga.TextInput, **kwargs: Any) -> None:
-        """Triggered when the user presses 'Return' or 'Done' on the iPad keyboard."""
-        # Dismiss the keyboard by resigning First Responder status
-        # Check if we are running on iOS/iPadOS via the native implementation handle
+    def close_keyboard(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Put away the keyboard `widget` opened (also on Return or Done).
+
+        iOS resigns its first responder; Android hides its input method and
+        drops the focus (see android_keyboard). Elsewhere there is nothing to do.
+        """
         if sys.platform == "ios":
             widget._impl.native.resignFirstResponder()
+        elif sys.platform == "android":
+            from . import android_keyboard
+
+            android_keyboard.hide(widget._impl.native)
 
     def clear_selection(self, widget: toga.DetailedList) -> None:
         """Deselect the tapped row once it has been read.
@@ -744,16 +754,37 @@ class PrototypeBase:
         if on:
             if box.parent is not None:
                 return
-            if activity.parent is script_box:
+            if activity.parent is not None:  # it only ever sits in the Script tab
                 script_box.replace(activity, box)
             else:  # already asking with the other box
                 script_box.add(box)
         elif box.parent is not None:
+            field = self.password_text if box is self.password_box else self.input_text
+            self.close_keyboard_soon(field)
             asking = [b for b in (self.input_box, self.password_box) if b.parent]
             if len(asking) == 1 and activity.parent is None:
                 script_box.replace(box, activity)
             else:
                 script_box.remove(box)
+
+    def close_keyboard_soon(self, field: toga.Widget) -> None:
+        """Put the keyboard away if no question follows the one just answered.
+
+        Android leaves its keyboard up when the focused field is taken away,
+        and moves the focus to the tab bar, so it is closed here. A script that
+        asks again straight away (a REPL's next prompt) keeps the keyboard up,
+        so the check waits a moment for the next question first.
+        """
+
+        def unless_asking() -> None:
+            if self.input_box.parent is None and self.password_box.parent is None:
+                self.close_keyboard(field)
+
+        loop = getattr(self.app, "loop", None)
+        if loop is None:
+            unless_asking()
+        else:
+            loop.call_later(KEYBOARD_GRACE, unless_asking)
 
     def toggle_print(self, on: bool) -> None:
         if on:
