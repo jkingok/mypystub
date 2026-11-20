@@ -438,6 +438,7 @@ class SetupMixin(PrototypeBase):
             inherited=[self.system_layer()],
             show_inherited=self.show_inherited_env,
             on_show_inherited=self.set_show_inherited_env,
+            inherited_icon=self.inherited_icon,
             screens=self,
             on_save=lambda settings: self.settings.set_environment(settings.env),
             ask=self.ask,

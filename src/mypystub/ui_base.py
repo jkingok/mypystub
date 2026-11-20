@@ -105,7 +105,9 @@ class PrototypeBase:
         # What iOS (or the OS) set before this app ran: the outermost layer of the
         # environment Setup shows. Taken now, before any run changes os.environ.
         # Whether Setup screens list inherited variables; they all follow this
-        self.show_inherited_env = False
+        # Whether forms list inherited variables; None until the user chooses,
+        # so each form picks (shown when it has none of its own, #304)
+        self.show_inherited_env: bool | None = None
         self.system_env: dict[str, str] = {
             name: value
             for name, value in os.environ.items()
@@ -728,6 +730,12 @@ class PrototypeBase:
     def set_show_inherited_env(self, shown: bool) -> None:
         """Remember the choice to list inherited variables on every Setup screen."""
         self.show_inherited_env = shown
+
+    @property
+    def inherited_icon(self) -> Any:
+        """The icon marking inherited variables in Setup's lists, if bundled (#304)."""
+        path = self.icon_path / "inherited.png"
+        return self.list_icon(path, tint=True) if path.exists() else None
 
     def system_layer(self) -> Layer:
         """The environment the app started with, which iOS (or the OS) set."""

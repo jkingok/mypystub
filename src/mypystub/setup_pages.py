@@ -123,10 +123,13 @@ def packages_html(
             "<h3>Bundled with the app</h3>"
             + details(f"{len(rows)} packages", table(rows, ("Package", "Version")))
         )
+    # Folding, like Bundled and Aliases (#304); the summary stays in view
     parts.append(f"<h3>User packages</h3><p>{escape(summary)}</p>")
     if inventory:
         rows = [(name, version) for name, version in sorted(inventory.items())]
-        parts.append(table(rows, ("Package", "Version")))
+        parts.append(
+            details(f"{len(rows)} packages", table(rows, ("Package", "Version")))
+        )
     parts.append("<h3>Updates</h3>")
     if update_error is not None:
         parts.append(f"<p>Couldn't check: {escape(update_error)}</p>")

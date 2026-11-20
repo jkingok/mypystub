@@ -218,11 +218,12 @@ def test_run_with_form_environment_is_sorted_and_inherits_setup(
 ) -> None:
     """Variables stay A–Z; Setup's show as inherited and can be overridden."""
     proto.settings.set_environment({"GREETING": "Hello"})
+    proto.set_show_inherited_env(False)  # chose to hide inherited variables
     form = proto.open_run_with(row(proto, "top"))
-    assert len(form.env_list.data) == 0  # inherited variables start hidden
+    assert len(form.env_list.data) == 0
     show_inherited(form)
     assert [(r.title, r.subtitle) for r in form.env_list.data] == [
-        ("GREETING", "from Setup · Hello")
+        ("GREETING", "Setup · Hello")
     ]
     select(form.env_list, form._env_selected, 0)
     assert form.env_buttons["edit"].enabled
@@ -244,7 +245,7 @@ def test_run_with_form_environment_is_sorted_and_inherits_setup(
     assert "overrides an inherited value" in form.env_note.text
     press(app, form.env_buttons["delete"])  # the inherited value is back
     assert form.env == {"zed": "", "Alpha": ""}
-    assert form.env_list.data[1].subtitle == "from Setup · Hello"
+    assert form.env_list.data[1].subtitle == "Setup · Hello"
 
 
 def test_run_with_form_refuses_bad_names(
@@ -556,9 +557,9 @@ def test_entry_inherits_setup_then_package_then_its_own(
     form = proto.open_run_with(row(proto, "echo"))
     show_inherited(form)
     assert [(r.title, r.subtitle) for r in form.env_list.data] == [
-        ("GREETING", "from Setup · Hello"),
+        ("GREETING", "Setup · Hello"),
         ("LEVEL", "2"),
-        ("WHO", "from tools · Ada"),
+        ("WHO", "tools · Ada"),
     ]
     assert form.args == ["--loud"]
     form.done()

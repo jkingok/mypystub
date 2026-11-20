@@ -25,7 +25,8 @@ used under the Flaticon free licence, which requires this attribution.
 | `window.png` | `fi-rr-window-alt` | GUI entry point |
 | `plug.png` | `fi-rr-plug-connection` | Other or plug-in entry point |
 | `zipapp.png` | `fi-rr-subfolder` | Zipapp virtual folder |
-| `web.png` | `fi-rr-site-browser` | Web app folder | 
+| `web.png` | `fi-rr-site-browser` | Web app folder |
+| `inherited.png` | `fi-rr-sitemap` | Inherited from parent |
 
 When you add an icon, add a row here. `tests/test_credits.py` fails for any
 icon that is not listed.

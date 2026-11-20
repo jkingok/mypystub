@@ -32,14 +32,37 @@ def show_inherited(form: Any, shown: bool = True) -> None:
 def test_inherited_variables_start_hidden_with_a_count(
     proto: ui.Prototype, config: Path
 ) -> None:
-    """The system's variables alone would fill the screen, so they are off."""
+    """With variables of its own, the inherited ones (the system's alone can
+    fill the screen) start hidden, and the switch counts them."""
     proto.system_env = {"TZ": "UTC", "HOME": "/home/me"}
+    proto.settings.set_environment({"MINE": "1"})
     form = proto.open_setup_environment()
-    assert rows(form) == []
+    assert rows(form) == [("MINE", "1")]
     assert form.inherited_switch is not None
     assert form.inherited_switch.text == "Show inherited variables (2 hidden)"
     # The switch says how many are hidden; the screen has no section heading
     assert "env" not in form.sections
+    form.done()
+
+
+def test_with_none_of_its_own_inherited_variables_start_shown(
+    proto: ui.Prototype, config: Path
+) -> None:
+    """An empty screen would look as if there were nothing in effect (#304)."""
+    proto.system_env = {"TZ": "UTC"}
+    form = proto.open_setup_environment()
+    assert [name for name, _ in rows(form)] == ["TZ"]
+    assert form.inherited_switch is not None and form.inherited_switch.value
+    form.done()
+
+
+def test_the_users_choice_wins_over_the_default(
+    proto: ui.Prototype, config: Path
+) -> None:
+    proto.system_env = {"TZ": "UTC"}
+    proto.set_show_inherited_env(False)
+    form = proto.open_setup_environment()
+    assert rows(form) == []
     form.done()
 
 
@@ -51,8 +74,8 @@ def test_the_switch_lists_them_with_where_they_come_from_first(
     form = proto.open_setup_environment()
     show_inherited(form)
     assert rows(form) == [
-        ("HOME", "from the system · /home/me"),
-        ("TZ", "from the system · UTC"),
+        ("HOME", "the system · /home/me"),
+        ("TZ", "the system · UTC"),
     ]
     assert form.inherited_switch.text == "Show inherited variables"
     show_inherited(form, False)
@@ -70,7 +93,7 @@ def test_the_choice_is_shared_by_every_setup_screen(
     first.done()
     assert proto.show_inherited_env is True
     second = proto.open_run_with(row(proto, "top"))
-    assert rows(second) == [("TZ", "from the system · UTC")]
+    assert rows(second) == [("TZ", "the system · UTC")]
     assert second.inherited_switch is not None and second.inherited_switch.value
     second.done()
 
@@ -87,7 +110,7 @@ def test_overriding_loses_the_marker_and_deleting_brings_it_back(
     assert rows(form) == [("TZ", "Europe/London")]
     assert proto.settings.get_environment() == {"TZ": "Europe/London"}
     press(app, form.env_buttons["delete"])
-    assert rows(form) == [("TZ", "from the system · UTC")]
+    assert rows(form) == [("TZ", "the system · UTC")]
     assert proto.settings.get_environment() == {}
     form.done()
 
@@ -136,7 +159,7 @@ def test_unset_marks_the_variable_and_is_saved(
     assert proto.settings.get_environment() == {"TZ": None}
     assert "unset here" in form.env_note.text
     press(app, form.env_buttons["delete"])
-    assert rows(form) == [("TZ", "from the system · UTC")]
+    assert rows(form) == [("TZ", "the system · UTC")]
     form.done()
 
 
@@ -206,12 +229,13 @@ def test_a_script_sees_the_system_and_setup_layers_and_can_unset_either(
     """Both outer layers are inherited; the script's own Setup can unset them."""
     proto.system_env = {"TZ": "UTC"}
     proto.settings.set_environment({"GREETING": "Hi"})
+    proto.set_show_inherited_env(False)  # chose to hide them
     form = proto.open_run_with(row(proto, "top"))
     assert rows(form) == []
     show_inherited(form)
     assert rows(form) == [
-        ("GREETING", "from Setup · Hi"),
-        ("TZ", "from the system · UTC"),
+        ("GREETING", "Setup · Hi"),
+        ("TZ", "the system · UTC"),
     ]
     select(form.env_list, form._env_selected, 0)
     press(app, form.env_buttons["unset"])

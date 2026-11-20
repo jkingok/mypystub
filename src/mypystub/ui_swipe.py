@@ -219,6 +219,7 @@ class SwipeMixin(RowSettingsMixin):
             is_quick_start=runs and self.settings.get_quick_start() == key,
             show_inherited=self.show_inherited_env,
             on_show_inherited=self.set_show_inherited_env,
+            inherited_icon=self.inherited_icon,
             on_share=start_share if share_items.share_available() else None,
             backups=backups,
         )

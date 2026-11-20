@@ -179,10 +179,11 @@ class RunWithForm:
         screen_title: str | None = None,
         on_quick_start: Callable[[], Awaitable[bool]] | None = None,
         is_quick_start: bool = False,
-        show_inherited: bool = False,
+        show_inherited: bool | None = None,
         on_show_inherited: Callable[[bool], None] | None = None,
         on_share: Callable[[], None] | None = None,
         backups: toga.Widget | None = None,
+        inherited_icon: Any = None,
     ) -> None:
         """Build the form; call :meth:`open` to show it.
 
@@ -191,6 +192,11 @@ class RunWithForm:
         is whether it already is. Inherited variables (the system's alone can be
         dozens, with long values) are hidden unless `show_inherited`; the switch
         that shows them calls `on_show_inherited`, so other screens can follow.
+        `show_inherited` None means the user hasn't chosen yet: then they are
+        shown when there are no variables of its own, so the screen isn't
+        empty (#304). `inherited_icon`, if given, marks inherited rows in the
+        list (a row's icon, see PrototypeBase.list_icon), and their second line
+        is then just where they come from and the value.
         `args_note`, shown where the arguments would be, is left out when None.
         With `collapsible_sections` False the sections are always shown, with
         no heading of their own: for a screen whose title already names its
@@ -211,8 +217,14 @@ class RunWithForm:
         self.tell = tell
         self.ask_fields = ask_fields
         self.on_quick_start = on_quick_start
+        if show_inherited is None:
+            show_inherited = not self.env and bool(self.inherited)
         self.show_inherited = show_inherited
         self.on_show_inherited = on_show_inherited
+        self.inherited_icon = inherited_icon
+        # With only the environment's list to show, it fills the screen
+        # instead of sitting, sized to a few rows, in a scrolling column
+        self.fill = args is None and backups is None
         self.on_share = on_share
         self.backups = backups  # the backup versions section, if there are any to show
         self._is_quick_start = is_quick_start
@@ -334,13 +346,23 @@ class RunWithForm:
         )
         if self.backups is not None:
             children.append(self.backups)
-        self.scroll = toga.ScrollContainer(
-            horizontal=False, flex=1, content=toga.Column(children=children)
-        )
-        if sys.platform == "ios":
-            content = self.scroll.content
-            assert content is not None
-            refresh_on_new_width(self.scroll._impl.document_container, content.refresh)
+        if self.fill:
+            # The list scrolls itself, so nothing goes in a ScrollContainer
+            self.env_list.style.flex = 1
+            for switch, body in self.sections.values():
+                body.style.flex = 1
+            body_column = toga.Column(flex=1, children=children)
+        else:
+            self.scroll = toga.ScrollContainer(
+                horizontal=False, flex=1, content=toga.Column(children=children)
+            )
+            if sys.platform == "ios":
+                content = self.scroll.content
+                assert content is not None
+                refresh_on_new_width(
+                    self.scroll._impl.document_container, content.refresh
+                )
+            body_column = self.scroll
 
         # The buttons share the row's width and stay put below the scrolling part
         bottom: list[toga.Widget] = []
@@ -353,7 +375,7 @@ class RunWithForm:
             bottom.append(self.share_button)
         bottom.append(toga.Button("Done", on_press=self.done, margin=GAP, flex=1))
         self.button_row = toga.Row(margin=4, children=bottom)
-        return toga.Column(flex=1, children=[self.scroll, self.button_row])
+        return toga.Column(flex=1, children=[body_column, self.button_row])
 
     @guarded
     def _toggle_section(self, widget: toga.Switch, **kwargs: Any) -> None:
@@ -414,6 +436,17 @@ class RunWithForm:
             return rows
         return [row for row in rows if not row.inherited]
 
+    def row_data(self, row: EnvRow) -> dict[str, Any]:
+        """A variable's list row: inherited ones marked by the icon, if there is one."""
+        if row.inherited and self.inherited_icon is not None:
+            value = "unset" if row.unset else shown(row.value)
+            return {
+                "icon": self.inherited_icon,
+                "title": row.name,
+                "subtitle": f"{row.source} · {value}",
+            }
+        return {"title": row.name, "subtitle": self.subtitle(row)}
+
     def subtitle(self, row: EnvRow) -> str:
         """A row's second line: an inherited one says where it comes from first.
 
@@ -448,9 +481,7 @@ class RunWithForm:
                 for i, value in enumerate(self.args)
             ]
             rows = self.visible_rows()
-            self.env_list.data = [
-                {"title": row.name, "subtitle": self.subtitle(row)} for row in rows
-            ]
+            self.env_list.data = [self.row_data(row) for row in rows]
         finally:
             self._refreshing = False
         if self.arg_index is not None and self.arg_index >= len(self.args):
@@ -485,7 +516,10 @@ class RunWithForm:
                 f" ({hidden} hidden)" if hidden and not self.show_inherited else ""
             )
         visible = len(self.visible_rows())
-        fit_list(self.env_list, visible)
+        if self.fill:
+            self.env_list.style.display = "pack" if visible else "none"
+        else:
+            fit_list(self.env_list, visible)
         if "env" in self.sections:
             # The rows listed; they are still sorted A–Z
             self.sections["env"][0].text = f"Environment ({visible})"
