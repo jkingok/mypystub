@@ -19,7 +19,6 @@ from typing import Any
 from . import paste_import
 
 # UIKit constants, plain numbers that are the same wherever this is imported
-UIUserInterfaceIdiomPad = 1  # UIUserInterfaceIdiom.pad
 # A form sheet is a full-width sheet from the bottom on iPhone and a centred card
 # on iPad. Left to itself, iOS 26 shows the share sheet as a small corner panel.
 UIModalPresentationFormSheet = 2  # UIModalPresentationStyle.formSheet
@@ -83,6 +82,15 @@ if sys.platform == "ios":
             send_super(__class__, self, "safeAreaInsetsDidChange")
             if self.owner is not None:
                 self.owner.native_changed()
+
+        @objc_method
+        def didMoveToWindow(self) -> None:
+            # A tab that wasn't on screen at launch can join the window with
+            # its size and safe area already set, so UIKit wouldn't lay the
+            # observer out and its owner would never hear; ask for a layout
+            send_super(__class__, self, "didMoveToWindow")
+            if self.window is not None:
+                self.setNeedsLayout()
 
 
 # Seconds to wait for a copied file, which might have to download from iCloud

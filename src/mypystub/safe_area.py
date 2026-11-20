@@ -266,6 +266,8 @@ class SafeArea(toga.Box):
         if insets == self._insets:
             return
         self._insets = insets
+        if sys.platform == "ios":
+            self._native_no_adjustment(scrolling_widgets(self.content))
         self.content.style.margin = tuple(insets)
         print(
             f"{self.describe()} padding applied: {tuple(insets)}"
@@ -321,6 +323,22 @@ class SafeArea(toga.Box):
             loop.call_soon(scroll, views)
 
     # iOS
+
+    @staticmethod
+    def _native_no_adjustment(views: list[toga.Widget]) -> None:
+        """Stop UIKit moving scrolling views' content in by the safe area too.
+
+        The box has already moved them clear of it, so UIKit's own adjustment
+        could only count it twice; and a tab first shown under iPadOS's
+        floating tab bar was adjusted before the box moved it, which left its
+        content scrolled up under the bar.
+        """
+        never = 2  # UIScrollViewContentInsetAdjustmentNever
+        for view in views:
+            native = view._impl.native
+            native = getattr(native, "scrollView", None) or native  # a web view's
+            if native.contentInsetAdjustmentBehavior != never:
+                native.contentInsetAdjustmentBehavior = never
 
     def _native_padding(self, views: list[toga.Widget], squeezed: bool) -> None:
         """Drop a text view's top and bottom padding while it is squeezed.

@@ -28,7 +28,7 @@ from .ui_actions import ActionsMixin
 from .ui_back import BackMixin
 from .ui_helpers import (
     create_source_zip,
-    is_ipad_from_window,
+    follow_tab_sizes,
     open_share_sheet,
 )
 from .ui_resume import ResumeMixin
@@ -37,7 +37,6 @@ from .ui_setup import SetupMixin
 from .ui_swipe import SwipeMixin
 from .ui_widgets import (
     LabelledSelection,
-    NotAnOptionContainer,
     refresh_on_new_width,
     relayout,
     relayout_on_resize,
@@ -315,12 +314,15 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
             return
         android_back.install(self.handle_back)
 
-    def choose_container(self, *args: Any, **kwargs: Any) -> toga.Widget:
-        assert isinstance(self.app.main_window, toga.MainWindow)
-        if is_ipad_from_window(self.app.main_window):
-            return NotAnOptionContainer(*args, **kwargs)
-        else:
-            return toga.OptionContainer(*args, **kwargs)
+    def tab_container(self, *args: Any, **kwargs: Any) -> toga.OptionContainer:
+        """The launcher's tabs: Toga's OptionContainer, on iPad as everywhere.
+
+        A tab first shown at 0 by 0 (as iPadOS 26's floating tab bar leaves
+        it) is refreshed again once it has a size; see follow_tab_sizes.
+        """
+        tabs = toga.OptionContainer(*args, **kwargs)
+        follow_tab_sizes(tabs, on_shown=lambda: self.tab_changed(tabs))
+        return tabs
 
     def setup_scroll(self) -> toga.ScrollContainer:
         """The Setup tab's menu, which scrolls on small screens."""
@@ -349,7 +351,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
 
     def get_content(self) -> toga.Widget:
         # return toga.OptionContainer(
-        self.tabs = self.choose_container(
+        self.tabs = self.tab_container(
             content=[
                 (
                     "List",
