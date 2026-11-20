@@ -68,6 +68,8 @@ ENTRY_ICONS = {
 }
 
 
+# The window title's prefix during an Experimental Console run (#306)
+RUNNING, WAITING = "⏳", "⌨️"
 PRESERVE_LOGS_SETTING = "preserve_logs"  # launcher.toml: keep the log
 RESUME_SETTING = "resume"  # launcher.toml: false starts fresh every time
 
@@ -172,10 +174,17 @@ class PrototypeBase:
             password_label=self.password_prompt,
             password_field=self.password_text,
             toggle_password=self.toggle_password,
+            on_console_wait=self.console_waiting,
         )
         self.script_output = OrientationBox(self.print_text, self.error_pane, flex=1)
         # Setup's Experimental Console, made when a run first wants it
         self.console_widget: Any = None
+        # The window title's state while a console run is on screen (#306):
+        # RUNNING, WAITING, or "" (none); and the run's lifetime, which says
+        # whether it has taken the window over (then the title is its own)
+        self.title_prefix = ""
+        self.run_lifetime: Any = None
+        self.run_took_over = False  # sticky for the run, once it pushed a screen
         self.script_activity = LabelledActivity()
         self.splash = toga.ImageView(style=Pack(flex=0))
         # Category being browsed (None: the list of categories), and the folder
@@ -682,7 +691,37 @@ class PrototypeBase:
             return
         current: Any = self.tabs.current_tab
         on_script = current is not None and str(current.text) == "Script"
-        mw.title = self.run_title if on_script and self.run_title else self.title
+        title = self.run_title if on_script and self.run_title else self.title
+        mw.title = f"{self.title_prefix} {title}" if self.show_prefix() else title
+
+    def show_prefix(self) -> bool:
+        """Whether the title carries the console run's ⏳ or ⌨️ (#306).
+
+        Only until the run takes the window over: from then on the title is
+        the prototype's, even after its takeover is popped.
+        """
+        return bool(self.title_prefix) and not self.run_took_over
+
+    def set_title_prefix(self, prefix: str) -> None:
+        """Set the title's state (RUNNING, WAITING or "") and show it."""
+        self.title_prefix = prefix
+        self.apply_window_title()
+
+    @guarded
+    def console_waiting(self, waiting: bool) -> None:
+        """The console's stdin started (True) or stopped waiting for typing.
+
+        The title says ⌨️, and the console takes focus once, which brings up
+        the keyboard; dismissed, it stays down until the next wait. (The
+        activity row is hidden for the whole console run.) Nothing changes
+        after a takeover.
+        """
+        if not self.show_prefix():
+            return
+        self.set_title_prefix(WAITING if waiting else RUNNING)
+        console = self.script_runner.console
+        if waiting and console is not None:
+            console.focus()
 
     def pop_screen(self) -> None:
         """Go back to the screen under the last :meth:`push_screen`.

@@ -28,6 +28,7 @@ from .run_status import (  # noqa: F401  (re-exported for callers and tests)
     STOPPED,
     run_status,
 )
+from .ui_base import RUNNING
 from .ui_native import NativeMixin
 
 
@@ -54,6 +55,11 @@ class RunMixin(NativeMixin):
         """
         self.splash.image = None
         self.running = False
+        self.title_prefix = ""  # the run is over: the title loses ⏳/⌨️ (#306)
+        if watch := getattr(self, "_takeover_watch", None):
+            watch[0].remove_listener(watch[1])
+            self._takeover_watch = None
+        self.script_activity.style.display = "pack"
         self.script_activity.update(status, on=False)
         action = runner.end_action(printed=self.script_runner.printed, error=False)
         if action != "stay" and self.tabs.window is not None:
@@ -79,6 +85,23 @@ class RunMixin(NativeMixin):
             self.app.loop.call_soon_threadsafe,
             lambda error: self.finish_run(context, error, run_id),
         )
+        self.run_lifetime = lifetime
+        self.run_took_over = False
+        start_depth = len(stack)
+
+        def note_takeover(depth: int) -> None:
+            if depth > start_depth:
+                self.run_took_over = True  # stays so after the pop (#306)
+                stack.remove_listener(note_takeover)
+
+        stack.add_listener(note_takeover)
+        self._takeover_watch = (stack, note_takeover)
+        if self.script_runner.console is not None:
+            # The Experimental Console's ⏳ (#306) says it's running, so the
+            # activity row is redundant until the run ends, and would only take
+            # height above the keyboard
+            self.set_title_prefix(RUNNING)
+            self.script_activity.style.display = "none"
         self.script_runner.begin_run()
         context.open()
 

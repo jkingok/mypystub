@@ -106,10 +106,15 @@ class ConsoleStdin(io.TextIOBase):
     reads wait on the script's thread until there is enough. After
     :meth:`feed_eof` reads return what is left, then "". :meth:`interrupt`
     makes a waiting read raise KeyboardInterrupt, as Ctrl-C would.
+
+    `wait_callback`, if given, is told when a read starts waiting for typing (True)
+    and when it has what it needs (False), on the reading thread (#306). A
+    read that's already satisfied, by lines typed ahead, doesn't wait at all.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, wait_callback: Callable[[bool], None] | None = None) -> None:
         """An empty stream, open until fed EOF."""
+        self.wait_callback = wait_callback
         self._encoding = "utf-8"
         self._errors = "strict"
         self._binary = BinaryIn(self)
@@ -137,12 +142,23 @@ class ConsoleStdin(io.TextIOBase):
             self._ready.notify_all()
 
     def _wait(self, done: Callable[[], bool]) -> None:
+        def ready() -> bool:
+            return done() or self._eof or self._interrupted
+
         with self._ready:
-            while not (done() or self._eof or self._interrupted):
-                self._ready.wait()
-            if self._interrupted:
-                self._interrupted = False
-                raise KeyboardInterrupt
+            if ready():
+                waited = False
+            else:
+                waited = True
+                if self.wait_callback is not None:
+                    self.wait_callback(True)
+                while not ready():
+                    self._ready.wait()
+            interrupted, self._interrupted = self._interrupted, False
+        if waited and self.wait_callback is not None:
+            self.wait_callback(False)
+        if interrupted:
+            raise KeyboardInterrupt
 
     def readline(self, size: int | None = -1) -> str:  # type: ignore[override]
         """The next line, waiting for it to be typed."""
@@ -445,6 +461,7 @@ class ScriptRunner:
         password_label: toga.Label | None = None,
         password_field: toga.PasswordInput | None = None,
         toggle_password: Callable[[bool], None] | None = None,
+        on_console_wait: Callable[[bool], None] | None = None,
     ) -> None:
         """
         Creates the script bridge that combines hooks with access to Toga widgets
@@ -490,6 +507,9 @@ class ScriptRunner:
         # run's output and answers input() instead of print_field and
         # input_field. Chosen per run by the launcher (None: not used).
         self.console: Any = None
+        # Told on the main thread when the console's stdin starts or stops
+        # waiting for typing (#306)
+        self.on_console_wait = on_console_wait
         # The run's sys.stdin while the console is used, fed by what is typed
         self._console_stdin: ConsoleStdin | None = None
         self._original_stdin: Any = None
@@ -520,7 +540,7 @@ class ScriptRunner:
         if self.console is None:
             builtins.input = self._custom_input
         elif self._console_stdin is None:
-            self._console_stdin = ConsoleStdin()
+            self._console_stdin = ConsoleStdin(wait_callback=self._console_wait)
             self._original_stdin = sys.stdin
             sys.stdin = self._console_stdin  # type: ignore[assignment]
             self.console.on_input = self.handle_console_input
@@ -651,6 +671,11 @@ class ScriptRunner:
 
         # 4. Return the captured value back to the student's script
         return self._input_value
+
+    def _console_wait(self, waiting: bool) -> None:
+        """From the reading thread: pass the wait on to the main thread."""
+        if self.on_console_wait is not None and self.app is not None:
+            self.app.loop.call_soon_threadsafe(self.on_console_wait, waiting)
 
     def handle_console_input(self, widget: Any, data: bytes, **kwargs: Any) -> None:
         """The console's on_input: typed lines go to the run's ``sys.stdin``.
