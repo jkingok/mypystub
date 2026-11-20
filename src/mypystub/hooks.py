@@ -9,7 +9,10 @@ and what the prototype writes is also shown in the Script tab, with stderr
 shown separately (#119).
 """
 
+from __future__ import annotations
+
 import builtins
+import codecs
 import getpass
 import io
 import re
@@ -107,6 +110,9 @@ class ConsoleStdin(io.TextIOBase):
 
     def __init__(self) -> None:
         """An empty stream, open until fed EOF."""
+        self._encoding = "utf-8"
+        self._errors = "strict"
+        self._binary = BinaryIn(self)
         self._buffer = ""
         self._eof = False
         self._interrupted = False
@@ -174,6 +180,142 @@ class ConsoleStdin(io.TextIOBase):
         """Not a terminal, so input() reads a line rather than using readline."""
         return False
 
+    @property
+    def buffer(self) -> BinaryIn:
+        """The binary side, as ``sys.stdin.buffer`` is (#300)."""
+        return self._binary
+
+    @property
+    def encoding(self) -> str:  # type: ignore[override]
+        """How typed text is encoded for `buffer`."""
+        return self._encoding
+
+    @property
+    def errors(self) -> str:  # type: ignore[override]
+        """The error handler for `buffer`'s encoding."""
+        return self._errors
+
+    @property
+    def line_buffering(self) -> bool:
+        """Input is line by line anyway."""
+        return False
+
+    @property
+    def write_through(self) -> bool:
+        """Not an output stream; False, as for a real stdin."""
+        return False
+
+    def reconfigure(
+        self,
+        *,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+        line_buffering: bool | None = None,
+        write_through: bool | None = None,
+    ) -> None:
+        """As ``TextIOWrapper.reconfigure``: records the encoding and errors."""
+        if encoding is not None:
+            codecs.lookup(encoding)
+            self._encoding = encoding
+        if errors is not None:
+            codecs.lookup_error(errors)
+            self._errors = errors
+        if newline not in (None, "", "\n", "\r", "\r\n"):
+            raise ValueError(f"illegal newline value: {newline!r}")
+
+
+class BinaryIn(io.BufferedIOBase):
+    """``sys.stdin.buffer`` for :class:`ConsoleStdin`: typed text, encoded."""
+
+    def __init__(self, stream: ConsoleStdin) -> None:
+        """Bytes read here come from `stream`."""
+        super().__init__()
+        self.stream = stream
+        self._pending = b""  # encoded but not yet read (a partial read)
+
+    def _encode(self, text: str) -> bytes:
+        return text.encode(self.stream.encoding, self.stream.errors)
+
+    def read(self, size: int | None = -1) -> bytes:
+        """Up to `size` bytes, waiting for typing; everything until EOF if < 0."""
+        if size is None or size < 0:
+            data, self._pending = self._pending + self._encode(self.stream.read()), b""
+            return data
+        while len(self._pending) < size:
+            line = self.stream.readline()
+            if not line:
+                break
+            self._pending += self._encode(line)
+        data, self._pending = self._pending[:size], self._pending[size:]
+        return data
+
+    def read1(self, size: int = -1) -> bytes:
+        """What is waiting, or the next line typed: at most `size` bytes."""
+        if not self._pending:
+            self._pending = self._encode(self.stream.readline())
+        if size < 0:
+            size = len(self._pending)
+        data, self._pending = self._pending[:size], self._pending[size:]
+        return data
+
+    def readline(self, size: int | None = -1) -> bytes:
+        """The next line, as bytes."""
+        if b"\n" not in self._pending:
+            self._pending += self._encode(self.stream.readline())
+        end = self._pending.find(b"\n") + 1 or len(self._pending)
+        if size is not None and size >= 0:
+            end = min(end, size)
+        data, self._pending = self._pending[:end], self._pending[end:]
+        return data
+
+    def readinto(self, buffer: Any) -> int:
+        """Fill `buffer` with what read1() gives."""
+        view = memoryview(buffer).cast("B")
+        data = self.read1(len(view))
+        view[: len(data)] = data
+        return len(data)
+
+    def readable(self) -> bool:
+        """It's an input stream."""
+        return True
+
+
+class BinaryOut(io.BufferedIOBase):
+    """``sys.stdout.buffer`` (or ``stderr``'s) during a run: bytes to a RunStream.
+
+    Bytes are decoded as they come, keeping a character split between two
+    writes, and pass through the same show-and-log path as text. Whether they
+    are the prototype's is decided from *this* write's caller, as RunStream
+    does for text, since a wrapper between them would otherwise be the caller.
+    """
+
+    def __init__(self, stream: RunStream) -> None:
+        """Bytes written here go to `stream`."""
+        super().__init__()
+        self.stream = stream
+        self._decoder = stream.new_decoder()
+
+    def write(self, data: Any) -> int:
+        """Decode `data` and pass it on, as written to the text stream."""
+        raw = bytes(data)
+        text = self._decoder.decode(raw)
+        if text:
+            self.stream.put(text, written_by_prototype(sys._getframe(1)))
+        return len(raw)
+
+    def flush(self) -> None:
+        """Flush the text stream (the log)."""
+        self.stream.flush()
+
+    def writable(self) -> bool:
+        """It's an output stream."""
+        return True
+
+    def reset_decoder(self) -> None:
+        """Start decoding afresh, as after ``reconfigure(encoding=...)``."""
+        self._decoder = self.stream.new_decoder()
+
 
 class RunStream(io.TextIOBase):
     """``sys.stdout`` or ``sys.stderr`` during a run: a tee.
@@ -181,19 +323,32 @@ class RunStream(io.TextIOBase):
     Every write goes to the stream it replaced (the app's log) as it was.
     Writes by the prototype (see :func:`written_by_prototype`) are also passed
     to `show`.
+
+    It also has what scripts expect of a real ``sys.stdout`` (#300): a binary
+    ``buffer`` (see :class:`BinaryOut`), and ``reconfigure()``, which records the
+    encoding and errors and accepts the buffering options, which change
+    nothing here: every write goes straight through.
     """
 
     def __init__(self, target: Any, show: Callable[[str], None]) -> None:
         """Tee writes to `target` and, for the prototype's, to `show`."""
         self.target = target
         self.show = show
+        self._encoding = getattr(target, "encoding", None) or "utf-8"
+        self._errors = getattr(target, "errors", None) or "strict"
+        self._line_buffering = False
+        self._buffer = BinaryOut(self)
 
     def write(self, s: str) -> int:
         """Write to the log, and show the prototype's writes."""
-        self.target.write(s)
-        if s and written_by_prototype(sys._getframe(1)):
-            self.show(s)
+        self.put(s, bool(s) and written_by_prototype(sys._getframe(1)))
         return len(s)
+
+    def put(self, s: str, shown: bool) -> None:
+        """Write `s` to the log, and to `show` if it is the prototype's."""
+        self.target.write(s)
+        if s and shown:
+            self.show(s)
 
     def flush(self) -> None:
         """Flush the log."""
@@ -208,9 +363,57 @@ class RunStream(io.TextIOBase):
         return False
 
     @property
+    def buffer(self) -> BinaryOut:
+        """The binary side, as ``sys.stdout.buffer`` is."""
+        return self._buffer
+
+    @property
     def encoding(self) -> str:  # type: ignore[override]
-        """The log's encoding."""
-        return getattr(self.target, "encoding", None) or "utf-8"
+        """The encoding: the log's, or what reconfigure() set."""
+        return self._encoding
+
+    @property
+    def errors(self) -> str:  # type: ignore[override]
+        """The error handler: the log's, or what reconfigure() set."""
+        return self._errors
+
+    @property
+    def line_buffering(self) -> bool:
+        """As reconfigure() set it; every write goes straight through anyway."""
+        return self._line_buffering
+
+    @property
+    def write_through(self) -> bool:
+        """Always: nothing is held back."""
+        return True
+
+    def reconfigure(
+        self,
+        *,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+        line_buffering: bool | None = None,
+        write_through: bool | None = None,
+    ) -> None:
+        """As ``TextIOWrapper.reconfigure``: unknown codecs and handlers raise."""
+        if encoding is not None:
+            codecs.lookup(encoding)  # LookupError, as TextIOWrapper raises
+            self._encoding = encoding
+            if errors is None:
+                self._errors = "strict"
+        if errors is not None:
+            codecs.lookup_error(errors)
+            self._errors = errors
+        if newline not in (None, "", "\n", "\r", "\r\n"):
+            raise ValueError(f"illegal newline value: {newline!r}")
+        if line_buffering is not None:
+            self._line_buffering = bool(line_buffering)
+        self._buffer.reset_decoder()
+
+    def new_decoder(self) -> codecs.IncrementalDecoder:
+        """A decoder for bytes written to `buffer`: undecodable bytes show as \ufffd."""
+        return codecs.getincrementaldecoder(self._encoding)(errors="replace")
 
     def fileno(self) -> int:
         """The log's file descriptor, if it has one."""
