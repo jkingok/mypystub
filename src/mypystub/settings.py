@@ -92,6 +92,8 @@ class Settings:
         entry["env"] = env
         if "unset" in table:
             entry["unset"] = table["unset"]
+        if "workdir" in table:
+            entry["workdir"] = table["workdir"]
         self.config_doc[RUN_WITH][key] = entry  # type: ignore[index]
         self._save()
 

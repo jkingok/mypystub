@@ -115,11 +115,15 @@ def test_up_rows_name_the_folder_they_lead_to(
 def test_category_swipes(
     proto: ui.Prototype, app: toga.App, messages: list[tuple]
 ) -> None:
-    """Categories can't run; Examples has a README, Documents here has none."""
+    """A category's Setup is what its contents inherit (#308); Examples has a
+    README, Documents here has none."""
     proto.show_category(None)
     proto.reload_menu(proto.script_list)
     run(app, proto.run_with(row(proto, "Documents")))
-    assert messages[-1][1].startswith("Documents holds your own scripts and projects.")
+    form = proto.run_with_form
+    assert form.title == "Documents" and not form.with_args
+    assert form.pick_workdir is not None
+    form.done()
     run(app, proto.show_info(row(proto, "Documents")))
     assert "Documents has no README to show." in messages[-1][1]
 

@@ -44,6 +44,6 @@ def test_a_scripts_form_keeps_its_folding_sections(
     proto: ui.Prototype, config: Path
 ) -> None:
     form = proto.open_run_with(row(proto, "top"))
-    assert set(form.sections) == {"args", "env"}
+    assert set(form.sections) == {"args", "env", "workdir"}
     assert form.sections["env"][0].text.startswith("Environment")
     form.done()

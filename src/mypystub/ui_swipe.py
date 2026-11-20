@@ -14,6 +14,7 @@ from . import (
     row_info,
     scan,
     share_items,
+    workdirs,
 )
 from .errors import guarded
 from .pages import html_page, readme_html, without_title
@@ -22,9 +23,10 @@ from .run_settings import RunSettings, quick_start_name
 from .run_with import RunWithForm
 from .ui_helpers import open_share_sheet
 from .ui_rowsettings import RowSettingsMixin
+from .ui_workdir import WorkdirPickerMixin
 
 
-class SwipeMixin(RowSettingsMixin):
+class SwipeMixin(WorkdirPickerMixin, RowSettingsMixin):
     """Swipe left for Info, swipe right for Setup."""
 
     def __init__(self, host_app: toga.App, on_done: Callable[[Any], None]) -> None:
@@ -134,11 +136,48 @@ class SwipeMixin(RowSettingsMixin):
         """Open the Setup form, or say why a row has none."""
         kind = row_info.row_type(row)
         title = str(getattr(row, "title", ""))
+        if kind == "category":
+            self.open_category_setup(str(row.category))
+            return
         if not row_info.runnable(kind) and kind != "package":
             message = row_info.run_with_message(kind, title, self.up_destination(row))
             await self.info(message, title)
             return
         self.open_run_with(row)
+
+    def open_category_setup(self, category: str) -> RunWithForm:
+        """Setup for a whole category: what everything in it inherits (#308).
+
+        Environment variables and the working folder; Examples' folder is the
+        cache unless changed here.
+        """
+        key = self.category_key(category)
+        saved = self.settings.get_run_with(key)
+
+        def save(settings: RunSettings) -> None:
+            self.settings.set_run_with(key, settings, with_args=False)
+
+        default = workdirs.default_for(category)
+        form = RunWithForm(
+            category,
+            args=None,
+            env=saved.env,
+            inherited=[self.system_layer(), self.setup_layer()],
+            screens=self,
+            on_save=save,
+            ask=self.ask,
+            tell=self.tell,
+            ask_fields=self.ask_fields,
+            args_note=f"Everything in {category} inherits these.",
+            show_inherited=self.show_inherited_env,
+            on_show_inherited=self.set_show_inherited_env,
+            workdir=saved.workdir,
+            inherited_workdir=(default, "the default"),
+            pick_workdir=self.pick_workdir,
+        )
+        form.open()
+        self.run_with_form = form
+        return form
 
     async def make_quick_start(self, key: str, title: str) -> bool:
         """Offer `key` at launch; confirm first if another is already set.
@@ -222,6 +261,9 @@ class SwipeMixin(RowSettingsMixin):
             inherited_icon=self.inherited_icon,
             on_share=start_share if share_items.share_available() else None,
             backups=backups,
+            workdir=saved.workdir,
+            inherited_workdir=self.inherited_workdir(row),
+            pick_workdir=self.pick_workdir,
         )
         form.open()
         self.run_with_form = form

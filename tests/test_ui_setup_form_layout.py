@@ -62,7 +62,7 @@ def test_sections_scroll_above_a_fixed_row_of_buttons(
 
 def test_each_section_folds_under_its_switch(proto: ui.Prototype, config: Path) -> None:
     form = proto.open_run_with(row(proto, "top"))
-    assert set(form.sections) == {"args", "env"}
+    assert set(form.sections) == {"args", "env", "workdir"}
     for name, (switch, body) in form.sections.items():
         assert switch.value is True and body.style.display == "pack", name
         assert flip(form, name, False).style.display == "none"

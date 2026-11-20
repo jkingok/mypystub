@@ -70,7 +70,7 @@ class NativeMixin(RowSettingsMixin):
             await self.error(str(error), "Dependency Error")
             self.end_script(status=DEPENDENCY_FAILED)  # type: ignore[attr-defined]
             return
-        self.script_activity.update(f"Running {title}")
+        self.script_activity.update(self.running_text(title))  # type: ignore[attr-defined]
         self.run_id += 1  # type: ignore[has-type]
         run_id = self.run_id
         code = await self.stream(

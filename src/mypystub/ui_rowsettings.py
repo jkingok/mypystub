@@ -9,6 +9,7 @@ from typing import Any
 from . import (
     row_info,
     scan,
+    workdirs,
 )
 from .run_settings import (
     EnvValue,
@@ -67,6 +68,33 @@ class RowSettingsMixin(PrototypeBase):
             return self.category
         return f"{self.category}/{parent.as_posix()}"
 
+    @staticmethod
+    def category_key(category: str) -> str:
+        """The key a category's own Setup is saved under (#308)."""
+        return settings_key(category, PurePath())
+
+    def inherited_workdir(self, row: Any) -> tuple[str, str]:
+        """The working folder a row inherits, and where from (#308).
+
+        Its package's choice, then its category's, then the category's
+        built-in default.
+        """
+        if row_info.row_type(row) == "entry":
+            package = self.settings.get_run_with(self.row_key(row, entry=False))
+            if workdirs.is_valid(package.workdir):
+                return str(package.workdir), str(row.package_title)
+        category = self.category or ""
+        if row_info.row_type(row) != "category":
+            own = self.settings.get_run_with(self.category_key(category))
+            if workdirs.is_valid(own.workdir):
+                return str(own.workdir), category
+        return workdirs.default_for(category), "the default"
+
+    def workdir_for(self, row: Any) -> str:
+        """The working-folder choice a run of `row` uses: its own, or inherited."""
+        own = self.settings.get_run_with(self.row_key(row)).workdir
+        return str(own) if workdirs.is_valid(own) else self.inherited_workdir(row)[0]
+
     def setup_layer(self) -> Layer:
         """Setup's environment variables, inherited by every run."""
         return Layer("Setup", self.settings.get_environment())
@@ -74,12 +102,15 @@ class RowSettingsMixin(PrototypeBase):
     def inherited_layers(self, row: Any, *, system: bool = True) -> list[Layer]:
         """The environment layers a row inherits, outermost first.
 
-        The system's, then Setup's, then its package's. The system layer is
-        for showing: it already is the process environment a run starts with,
-        so a run leaves it out (`system=False`).
+        The system's, then Setup's, then its category's (#308), then its
+        package's. The system layer is for showing: it already is the process
+        environment a run starts with, so a run leaves it out (`system=False`).
         """
         layers = [self.system_layer()] if system else []
         layers.append(self.setup_layer())
+        if self.category is not None and row_info.row_type(row) != "category":
+            category = self.settings.get_run_with(self.category_key(self.category))
+            layers.append(Layer(self.category, category.env))
         if row_info.row_type(row) == "entry":
             package = self.settings.get_run_with(self.row_key(row, entry=False))
             layers.append(Layer(str(row.package_title), package.env))

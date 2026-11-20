@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -16,6 +17,7 @@ from . import (
     runner,
     scan,
     webapps,
+    workdirs,
 )
 from .errors import guarded
 from .run_settings import quick_start_name
@@ -323,7 +325,7 @@ class RunMixin(NativeMixin):
             self.end_script(status=LOAD_FAILED)
             return
 
-        self.script_activity.update(f"Running {title}")
+        self.script_activity.update(self.running_text(str(title)))
         try:
             # If the app is ended while this runs, the next launch offers it again
             self.resume_running = (self.row_key(selected_row), str(title))
@@ -333,6 +335,27 @@ class RunMixin(NativeMixin):
         self.app.loop.call_soon(lambda: self.start(context))
 
     def run_target(self, row: Any) -> runner.RunTarget:
+        """What a runnable row runs, working in its chosen folder (#308)."""
+        target = self.code_target(row)
+        choice = self.workdir_for(row)
+        folder, notice = workdirs.resolve(
+            choice,
+            script_folder=target.workdir,
+            cache=Path(self.cache_path),
+            documents_root=self.category_dirs()["Documents"],
+            key=self.row_key(row),
+        )
+        if notice:
+            asyncio.ensure_future(self.info(notice, "Working folder"))
+        self.run_workdir = workdirs.describe(choice) if folder != target.workdir else ""
+        return dataclasses.replace(target, workdir=folder)
+
+    def running_text(self, title: str) -> str:
+        """The activity row while a run goes: where it works, if not its own folder."""
+        where = getattr(self, "run_workdir", "")
+        return f"Running {title} · in {where}" if where else f"Running {title}"
+
+    def code_target(self, row: Any) -> runner.RunTarget:
         """What a runnable row runs: a file, or one of its project's entry points."""
         if entry := getattr(row, "entry", None):
             project_dir = Path(row.project_dir)

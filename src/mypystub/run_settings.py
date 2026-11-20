@@ -34,10 +34,15 @@ MOVES: tuple[Move, ...] = ("top", "up", "down", "bottom")
 
 @dataclass
 class RunSettings:
-    """The arguments and environment variables saved for one thing."""
+    """The arguments, environment variables and working folder saved for one thing.
+
+    `workdir` is a working-folder choice (see :mod:`workdirs`), or None to
+    inherit one (#308).
+    """
 
     args: list[str] = field(default_factory=list)
     env: dict[str, EnvValue] = field(default_factory=dict)
+    workdir: str | None = None
 
     @classmethod
     def from_table(cls, table: Mapping[str, Any] | None) -> RunSettings:
@@ -45,12 +50,14 @@ class RunSettings:
         table = table or {}
         args = table.get("args", [])
         env = table.get("env", {})
+        workdir = table.get("workdir")
         return cls(
             args=[str(a) for a in args] if isinstance(args, list) else [],
             env=with_unset(
                 usable_env(env) if isinstance(env, Mapping) else {},
                 table.get("unset", []),
             ),
+            workdir=str(workdir) if isinstance(workdir, str) and workdir else None,
         )
 
     def to_table(self, *, with_args: bool = True) -> dict[str, Any]:
@@ -62,6 +69,8 @@ class RunSettings:
         table["env"] = dict(sorted_env(values))
         if unset:
             table["unset"] = unset
+        if self.workdir:
+            table["workdir"] = self.workdir
         return table
 
 

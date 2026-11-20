@@ -183,6 +183,10 @@ class RunWithForm:
         on_show_inherited: Callable[[bool], None] | None = None,
         on_share: Callable[[], None] | None = None,
         backups: toga.Widget | None = None,
+        workdir: str | None = None,
+        inherited_workdir: tuple[str, str] | None = None,
+        pick_workdir: Callable[[str | None], Awaitable[tuple[bool, str | None]]]
+        | None = None,
         inherited_icon: Any = None,
     ) -> None:
         """Build the form; call :meth:`open` to show it.
@@ -202,7 +206,11 @@ class RunWithForm:
         no heading of their own: for a screen whose title already names its
         one section (Setup's Environment).
         `backups`, if given, is the backup versions section (see
-        :mod:`run_backups`), put above the buttons. `on_share`, if given, adds a
+        :mod:`run_backups`), put above the buttons. `pick_workdir`, if given,
+        adds the Working folder section (#308): `workdir` is this thing's own
+        choice (None: inherited), `inherited_workdir` the choice it would
+        inherit and where from, and `pick_workdir(current)` asks for a new one,
+        returning whether it was changed and the choice (None to inherit). `on_share`, if given, adds a
         Share button that calls it (the share sheet is iOS only, so it is left out elsewhere).
         """
         self.title = title
@@ -227,6 +235,10 @@ class RunWithForm:
         self.fill = args is None and backups is None
         self.on_share = on_share
         self.backups = backups  # the backup versions section, if there are any to show
+        self.workdir = workdir
+        self.inherited_workdir = inherited_workdir
+        self.pick_workdir = pick_workdir
+        self.workdir_label = toga.Label("", flex=1, margin=(0, 8))
         self._is_quick_start = is_quick_start
         self._qs_button: toga.Button | None = None
         self.share_button: toga.Button | None = None
@@ -344,6 +356,22 @@ class RunWithForm:
                 self.env_note,
             ],
         )
+        if self.pick_workdir is not None:
+            children += self._section(
+                "workdir",
+                "Working folder",
+                [
+                    toga.Row(
+                        align_items="center",
+                        children=[
+                            self.workdir_label,
+                            toga.Button(
+                                "Change…", on_press=self.change_workdir, margin=GAP
+                            ),
+                        ],
+                    )
+                ],
+            )
         if self.backups is not None:
             children.append(self.backups)
         if self.fill:
@@ -419,7 +447,7 @@ class RunWithForm:
 
     def settings(self) -> RunSettings:
         """The settings as edited so far."""
-        return RunSettings(list(self.args), dict(self.env))
+        return RunSettings(list(self.args), dict(self.env), self.workdir)
 
     def env_rows(self) -> list[EnvRow]:
         """The variables in effect here, alphabetised, inherited ones marked."""
@@ -467,6 +495,29 @@ class RunWithForm:
         """The selected environment row, if any."""
         return next((r for r in self.env_rows() if r.name == self.env_name), None)
 
+    def workdir_text(self) -> str:
+        """The Working folder line: the choice, and where it comes from if inherited."""
+        from .workdirs import describe
+
+        if self.workdir is not None:
+            return describe(self.workdir)
+        if self.inherited_workdir is None:
+            return "Script's folder"
+        choice, source = self.inherited_workdir
+        return f"{describe(choice)} (from {source})"
+
+    @guarded
+    async def change_workdir(
+        self, widget: toga.Widget | None = None, **kwargs: Any
+    ) -> None:
+        """Choose the working folder (#308)."""
+        if self.pick_workdir is None:
+            return
+        changed, choice = await self.pick_workdir(self.workdir)
+        if changed:
+            self.workdir = choice
+            self.changed()
+
     def changed(self) -> None:
         """Save the settings as they now are, then redraw."""
         self.on_save(self.settings())
@@ -497,6 +548,7 @@ class RunWithForm:
         self._update_buttons()
 
     def _update_buttons(self) -> None:
+        self.workdir_label.text = self.workdir_text()
         has_arg = self.arg_index is not None
         for button in self.arg_buttons.values():
             button.enabled = has_arg
