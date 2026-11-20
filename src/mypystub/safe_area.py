@@ -267,6 +267,10 @@ class SafeArea(toga.Box):
             return
         self._insets = insets
         self.content.style.margin = tuple(insets)
+        print(
+            f"{self.describe()} padding applied: {tuple(insets)}"
+            + (" (keyboard up)" if keyboard_up else "")
+        )
         if self.on_change is not None:
             self.on_change(self, insets)
 
@@ -411,6 +415,12 @@ class SafeArea(toga.Box):
         safe = native.safeAreaInsets
         height = float(native.bounds.size.height)
         clear = float(self._observer.frame.size.height)
+        self._log_reading(
+            "iOS",
+            safe=(safe.top, safe.right, safe.bottom, safe.left),
+            box=self._frame_in_window(native),
+            clear=clear,
+        )
         insets = insets_for(
             Insets(safe.top, safe.right, safe.bottom, safe.left),
             height,
@@ -428,7 +438,45 @@ class SafeArea(toga.Box):
 
     def android_changed(self, measure: AndroidMeasure, density: float) -> None:
         """Android reported new insets or a new position: pad again."""
+        self._log_reading("Android", measure=tuple(measure), density=density)
         self._schedule(*android_padding(measure, density, self.keyboard))
+
+    # Diagnostics (#305): the log says what the platform reported and what was
+    # applied, once per change, so a device or simulator run shows where
+    # padding goes missing.
+
+    def describe(self) -> str:
+        """A short name for this box in the log: its first child's type."""
+        children = self.content.children
+        return f"SafeArea[{type(children[0]).__name__ if children else 'empty'}]"
+
+    def _log_reading(self, platform: str, **reading: Any) -> None:
+        rounded = {name: _rounded(value) for name, value in reading.items()}
+        if rounded == getattr(self, "_last_reading", None):
+            return
+        self._last_reading = rounded
+        print(
+            f"{self.describe()} {platform} reading: "
+            + ", ".join(f"{name}={value}" for name, value in rounded.items())
+        )
+
+    @staticmethod
+    def _frame_in_window(native: Any) -> tuple[float, ...]:
+        """The view's frame in its window's coordinates, and the window's size."""
+        try:
+            frame = native.convertRect(native.bounds, toView=None)
+            window = _value(native.window)
+            size = window.bounds.size if window is not None else frame.size
+            return (
+                float(frame.origin.x),
+                float(frame.origin.y),
+                float(frame.size.width),
+                float(frame.size.height),
+                float(size.width),
+                float(size.height),
+            )
+        except Exception:  # noqa: BLE001  (diagnostics must never break layout)
+            return ()
 
     def _schedule(self, insets: Insets, keyboard_up: bool) -> None:
         """Apply new padding on the app's loop, not from inside the native layout."""
@@ -464,6 +512,15 @@ def _scroll_down(views: list[toga.Widget]) -> None:
         scroll = getattr(view, "scroll_to_bottom", None)
         if scroll is not None:
             scroll()
+
+
+def _rounded(value: Any) -> Any:
+    """Numbers to one decimal place, through nested tuples, for the log."""
+    if isinstance(value, tuple):
+        return tuple(_rounded(item) for item in value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return round(float(value), 1)
+    return value
 
 
 def _value(attribute: Any) -> Any:
