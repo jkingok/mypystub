@@ -14,21 +14,23 @@ import toga
 
 from . import (
     about,
+    backups,
     files_app,
     maintenance,
     native,
     permissions,
     release_check,
     setup_pages,
+    share_items,
 )
 from . import piplike as pip
 from .errors import guarded
+from .info_pages import escape
 from .pages import without_title
 from .run_settings import quick_start_name
 from .run_with import RunWithForm
 from .ui_base import PrototypeBase
 from .ui_helpers import (
-    create_nested_app_backup,
     open_share_sheet,
 )
 from .ui_widgets import LabelledActivity
@@ -50,6 +52,11 @@ class SetupMixin(PrototypeBase):
             "Update all", on_press=self.handle_update_all, enabled=False
         )
         self.setup_activity = LabelledActivity()
+        # At the foot of the Setup tab: shown only while something there works
+        # in the background (Backup), so the menu itself doesn't change
+        self.setup_tab_activity = LabelledActivity(display="none", margin=(4, 8))
+        # A backup chosen for Restore, waiting on its preview (#303)
+        self._pending_restore: tuple[Path, dict] | None = None
         self.packages_summary = ""
         self.pending_updates: list[maintenance.Update] = []
         # None until checked; the last check's error, if it failed
@@ -128,15 +135,28 @@ class SetupMixin(PrototypeBase):
         match page:
             case "packages":
                 return [
-                    toga.Button(
-                        "Check for updates", on_press=self.handle_check_updates
+                    self.iconed(
+                        toga.Button(
+                            "Check for updates", on_press=self.handle_check_updates
+                        ),
+                        "refresh.png",
                     ),
                     self.update_all_button,
-                    toga.Button("Wipe user packages…", on_press=self.handle_wipe_cache),
+                    self.iconed(
+                        toga.Button(
+                            "Wipe user packages…", on_press=self.handle_wipe_cache
+                        ),
+                        "trash.png",
+                    ),
                 ]
             case _:
                 return [
-                    toga.Button("Open Settings", on_press=self.handle_open_settings)
+                    self.iconed(
+                        toga.Button(
+                            "Open Settings", on_press=self.handle_open_settings
+                        ),
+                        "settings-sliders.png",
+                    )
                 ]
 
     def open_setup_page(self, page: str) -> None:
@@ -176,6 +196,26 @@ class SetupMixin(PrototypeBase):
         self.pop_screen()
         self.setup_page = None
         self.remember()
+
+    def iconed(self, button: toga.Button, icon_file: str) -> toga.Button:
+        """`button`, with a bundled icon beside its text where there is one.
+
+        The icon files are Flaticon UIcons in resources/icons; one that hasn't
+        been added yet leaves the button as text (see add_button_icon).
+        """
+        self.add_button_icon(button, icon_file)
+        return button
+
+    def backup_row(self) -> toga.Box:
+        """Backup and Restore, side by side, with their icons (#303)."""
+        backup = toga.Button("Backup", on_press=self.handle_backup_press, flex=1)
+        restore = toga.Button("Restore", on_press=self.handle_restore_press, flex=1)
+        return toga.Row(
+            children=[
+                self.iconed(backup, "backup.png"),
+                self.iconed(restore, "restore.png"),
+            ]
+        )
 
     @staticmethod
     def menu_entry(button: toga.Button) -> toga.Box:
@@ -381,7 +421,12 @@ class SetupMixin(PrototypeBase):
             *(self.setup_menu_button(page) for page in self.SETUP_PAGES),
             heading("App"),
             self.menu_entry(
-                toga.Button("Open Documents in Files", on_press=self.handle_open_files)
+                self.iconed(
+                    toga.Button(
+                        "Open Documents in Files", on_press=self.handle_open_files
+                    ),
+                    "folder.png",
+                )
             ),
             *(
                 [
@@ -414,9 +459,14 @@ class SetupMixin(PrototypeBase):
                 margin=(4, 8),
             ),
             self.menu_entry(
-                toga.Button("Clear Quick Start", on_press=self.handle_clear_quick_start)
+                self.iconed(
+                    toga.Button(
+                        "Clear Quick Start", on_press=self.handle_clear_quick_start
+                    ),
+                    "broom.png",
+                )
             ),
-            self.menu_entry(toga.Button("Backup", on_press=self.handle_backup_press)),
+            self.backup_row(),
             self.menu_entry(
                 toga.Button(
                     "Exit",
@@ -454,20 +504,144 @@ class SetupMixin(PrototypeBase):
         self.run_with_form = form
         return form
 
-    # Inside your Toga App class layout or commands:
     @guarded
-    def handle_backup_press(self, widget: toga.Button, **kwargs: Any) -> None:
+    async def handle_backup_press(self, widget: toga.Button, **kwargs: Any) -> None:
+        """Back up Documents and the settings to one zip, then share it (#303).
+
+        It's made on a worker thread, so the app stays responsive, and the
+        button is off until it's done. The cache isn't included: it is all
+        made again as needed.
+        """
+        widget.enabled = False
+        self.show_setup_tab_activity("Backing up…")
         try:
-            # 1. Build the nested structured zip
-            backup_file = create_nested_app_backup(self.app)
-
-            # 2. Open native iOS Share Sheet via Rubicon-ObjC
-            open_share_sheet(widget, backup_file)
-
-        except Exception as e:  # noqa: BLE001
-            asyncio.create_task(
-                self.error(
-                    f"An error occurred while creating the archive: {e}",
-                    "Backup Failed",
-                )
+            archive = await asyncio.to_thread(
+                backups.create,
+                Path(self.data_path),
+                Path(self.app.paths.config),
+                Path(self.app.paths.cache) / share_items.SHARE_FOLDER,
+                str(self.app.formal_name),
+                str(self.app.version or ""),
             )
+        except OSError as error:
+            await self.error(f"Couldn't make the backup: {error}", "Backup Failed")
+            return
+        finally:
+            widget.enabled = True
+            self.show_setup_tab_activity(None)
+        open_share_sheet(widget, archive)
+
+    def show_setup_tab_activity(self, text: str | None) -> None:
+        """Show `text` with a spinner at the foot of the Setup tab, or hide it.
+
+        The button that started the work keeps its own label and icon.
+        """
+        activity = self.setup_tab_activity
+        activity.update(text or "", on=text is not None)
+        activity.style.display = "pack" if text is not None else "none"
+
+    @guarded
+    async def handle_restore_press(self, widget: toga.Button, **kwargs: Any) -> None:
+        """Restore a backup from the clipboard, as Paste takes things (#303).
+
+        Only a MyPyStub backup (a zip with its manifest) is accepted. Its
+        preview says what it holds; Restore then puts it back, keeping what it
+        replaces in backups/.
+        """
+        from . import bridge
+
+        try:
+            content = await bridge.read_pasteboard(
+                Path(self.app.paths.cache) / "restore"
+            )
+        except (OSError, ValueError) as error:
+            await self.error(f"Couldn't read the backup: {error}", "Restore")
+            return
+        if content is None or content[0] != "file":
+            await self.info(
+                "Copy a MyPyStub backup (the .zip that Backup shared) in the "
+                "Files app, then press Restore.",
+                "Nothing to restore",
+            )
+            return
+        archive = Path(content[1])
+        try:
+            manifest = await asyncio.to_thread(backups.read_manifest, archive)
+        except backups.BackupProblem as problem:
+            await self.error(str(problem), "Not a backup")
+            return
+        self._pending_restore = (archive, manifest)
+        body = f"<h1>{escape(archive.name)}</h1>\n" + "".join(
+            f"<p>{escape(line)}</p>\n" for line in backups.summary(manifest)
+        )
+        body += (
+            "<p>What a restored item replaces is kept in its folder's "
+            "<code>backups</code>, as with Paste.</p>"
+        )
+        view = toga.WebView(flex=1, on_navigation_starting=self.open_external)
+        self.load_page(view, body)
+        top = toga.Row(
+            children=[
+                toga.Button("✕ Cancel", on_press=self.cancel_restore),
+                toga.Box(flex=1),
+                toga.Button("Restore", on_press=self.confirm_restore),
+            ]
+        )
+        self.push_screen(
+            "Restore", toga.Column(children=[top, view]), on_back=self.cancel_restore
+        )
+
+    @guarded
+    def cancel_restore(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
+        """Leave the backup alone."""
+        self._pending_restore = None
+        self.pop_screen()
+
+    @guarded
+    async def confirm_restore(
+        self, widget: toga.Widget | None = None, **kwargs: Any
+    ) -> None:
+        """Put the previewed backup back."""
+        pending = self._pending_restore
+        self._pending_restore = None
+        self.pop_screen()
+        if pending is None:
+            return
+        archive, manifest = pending
+        settings = bool(manifest.get("config")) and await self.confirm(
+            "Also replace your settings (Setup, aliases and each script's run "
+            "settings) with the backup's? Yours are kept in backups/.",
+            "Restore settings",
+        )
+        try:
+            done = await asyncio.to_thread(
+                backups.restore,
+                archive,
+                Path(self.data_path),
+                Path(self.app.paths.config),
+                settings=settings,
+            )
+        except (OSError, ValueError) as error:
+            await self.error(f"Couldn't restore: {error}", "Restore")
+            return
+        if done.config:
+            self.settings.config_doc = self.settings._load()
+        self.reload_menu(self.script_list)
+        await self.info(restored_message(done), "Restored")
+
+
+def restored_message(done: backups.Restored) -> str:
+    """What a restore did, in a sentence or two."""
+    parts = []
+    if done.added:
+        parts.append(f"Added {', '.join(done.added)}.")
+    if done.replaced:
+        parts.append(
+            f"Replaced {', '.join(done.replaced)}; the versions they replaced are "
+            "in backups/."
+        )
+    if done.unchanged:
+        parts.append(f"{', '.join(done.unchanged)} already matched the backup.")
+    if done.config:
+        parts.append("Settings restored.")
+    return " ".join(parts) or "There was nothing to restore."

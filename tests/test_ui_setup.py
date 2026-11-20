@@ -314,11 +314,12 @@ def test_every_menu_button_fills_its_own_row(proto: ui.Prototype) -> None:
     rows = [
         w
         for w in proto.setup_sections()
-        if w.style.direction == "row" and len(w.children) == 1
+        if w.style.direction == "row"
+        and w.children
+        and all(isinstance(c, toga.Button) for c in w.children)
     ]
-    buttons = [row.children[0] for row in rows]
-    assert all(isinstance(b, toga.Button) for b in buttons)
-    assert {b.text for b in buttons} >= {"Environment ›", "Backup"}
+    buttons = [button for row in rows for button in row.children]
+    assert {b.text for b in buttons} >= {"Environment ›", "Backup", "Restore"}
     assert all(b.style.flex == 1 for b in buttons)
 
 

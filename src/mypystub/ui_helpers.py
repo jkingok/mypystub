@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import io
 import sys
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -32,67 +30,6 @@ def is_ipad_from_window(toga_window: toga.Window) -> bool:
         and toga_window._impl.native.traitCollection.userInterfaceIdiom
         == UIUserInterfaceIdiomPad
     )  # pyright: ignore[reportPrivateUsage]
-
-
-def zip_directory_to_bytes(source_dir: Path) -> bytes:
-    """Recursively archives a directory into a zip file stored in memory as bytes."""
-    zip_buffer = io.BytesIO()
-
-    if source_dir.exists():
-        with ZipFile(zip_buffer, "w", ZIP_DEFLATED) as zip_file:
-            # rglob("*") grabs everything recursively
-            for item in source_dir.rglob("*"):
-                if item.is_file():
-                    # relative_to ensures we don't include absolute iOS system paths
-                    archive_name = item.relative_to(source_dir)
-                    zip_file.write(item, archive_name)
-
-    return zip_buffer.getvalue()
-
-
-def create_nested_app_backup(app: toga.App) -> Path:
-    """
-    Creates a master backup zip containing data.zip and config.zip in memory,
-    then writes the master file out to the app's cache directory.
-
-    Args:
-        app: The running toga.App instance (e.g., self inside an app class)
-
-    Returns:
-        Path: The location of the final master zip file on disk.
-    """
-    # 1. Resolve Toga's native paths
-    cache_dir = app.paths.cache
-    config_dir = app.paths.config
-    data_dir = getattr(app, "user_documents_dir", app.paths.data)
-
-    # 2. Build sub-archives in memory as bytes
-    print(f"Archiving cache directory: {cache_dir}")
-    cache_zip_bytes = zip_directory_to_bytes(cache_dir)
-
-    print(f"Archiving config directory: {config_dir}")
-    config_zip_bytes = zip_directory_to_bytes(config_dir)
-
-    print(f"Archiving data directory: {data_dir}")
-    data_zip_bytes = zip_directory_to_bytes(data_dir)
-
-    # 3. Create the master zip filename using the app's identifier and timestamp
-    timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
-    master_filename = f"{app.formal_name.lower().replace(' ', '_')}-{timestamp}.zip"
-
-    # We write the final file to the app's cache directory (safe for transient shares)
-    master_zip_path = app.paths.cache / master_filename
-    app.paths.cache.mkdir(parents=True, exist_ok=True)
-
-    # 4. Pack the memory archives into the final master zip on disk
-    with ZipFile(master_zip_path, "w", ZIP_DEFLATED) as master_zip:
-        # writestr allows passing raw bytes and assigning an internal archive filename
-        master_zip.writestr("cache.zip", cache_zip_bytes)
-        master_zip.writestr("config.zip", config_zip_bytes)
-        master_zip.writestr("data.zip", data_zip_bytes)
-
-    print(f"Structured master archive created at: {master_zip_path}")
-    return master_zip_path
 
 
 def create_source_zip(app: toga.App) -> Path:

@@ -26,6 +26,11 @@ used under the Flaticon free licence, which requires this attribution.
 | `plug.png` | `fi-rr-plug-connection` | Other or plug-in entry point |
 | `zipapp.png` | `fi-rr-subfolder` | Zipapp virtual folder |
 | `web.png` | `fi-rr-site-browser` | Web app folder |
+| `backup.png` | `fi-rr-site-inbox-out` | Backup data |
+| `restore.png` | `fi-rr-site-inbox-in` | Restore data |
+| `refresh.png` | `fi-rr-site-refresh` | Check for updates |
+| `trash.png` | `fi-rr-site-trash` | Wipe data |
+| `broom.png` | `fi-rr-site-broom` | Clear preferences |
 | `inherited.png` | `fi-rr-sitemap` | Inherited from parent |
 
 When you add an icon, add a row here. `tests/test_credits.py` fails for any

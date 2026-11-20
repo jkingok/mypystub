@@ -704,6 +704,31 @@ class PrototypeBase:
                 stack.floor = self.screen_bases[-1]
         self.apply_window_title()
 
+    def add_button_icon(
+        self, button: toga.Button, icon_file: str, size: int = 20
+    ) -> None:
+        """On iOS, draw a bundled icon beside a button's text, tinted like it.
+
+        Toga won't give a button both text and an icon, so the image is set
+        natively (the same call toga-iOS makes), as a template so it follows
+        the button's colour and dark mode. Nothing happens if the icon file
+        hasn't been added, or off iOS.
+        """
+        path = self.icon_path / icon_file
+        if sys.platform != "ios" or not path.exists():
+            return
+        from toga_iOS.libs import UIControlStateNormal
+
+        image = (
+            toga.Icon(path)
+            ._impl._as_size(size)
+            .imageWithRenderingMode(2)  # UIImageRenderingModeAlwaysTemplate
+        )
+        button._impl.native.setImage(image, forState=UIControlStateNormal)
+        # Toga measured the button from its text alone; measure it again now
+        # that the image is there, or the label can be squeezed ("P...te")
+        button.refresh()
+
     def load_page(self, view: toga.WebView, body: str) -> None:
         """Show an HTML fragment in a web view, unless it already shows that page.
 

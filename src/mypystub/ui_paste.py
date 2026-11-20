@@ -35,31 +35,6 @@ class PasteMixin(PrototypeBase):
         self._pending_stem: str | None = None
         self.import_button: toga.Button | None = None
 
-    def add_button_icon(
-        self, button: toga.Button, icon_file: str, size: int = 20
-    ) -> None:
-        """On iOS, draw a bundled icon beside a button's text, tinted like it.
-
-        Toga won't give a button both text and an icon, so the image is set
-        natively (the same call toga-iOS makes), as a template so it follows
-        the button's colour and dark mode. Nothing happens if the icon file
-        hasn't been added, or off iOS.
-        """
-        path = self.icon_path / icon_file
-        if sys.platform != "ios" or not path.exists():
-            return
-        from toga_iOS.libs import UIControlStateNormal
-
-        image = (
-            toga.Icon(path)
-            ._impl._as_size(size)
-            .imageWithRenderingMode(2)  # UIImageRenderingModeAlwaysTemplate
-        )
-        button._impl.native.setImage(image, forState=UIControlStateNormal)
-        # Toga measured the button from its text alone; measure it again now
-        # that the image is there, or the label can be squeezed ("P...te")
-        button.refresh()
-
     async def ask_text(self, title: str, label: str, initial: str) -> str | None:
         """Ask for a line of text; None if cancelled."""
         texts = await self.ask_fields(title, "", [prompts.Field(label, initial)])

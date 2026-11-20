@@ -396,7 +396,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
                 ),
                 (
                     "Setup",
-                    SafeColumn(children=[self.setup_scroll()]),
+                    SafeColumn(children=[self.setup_scroll(), self.setup_tab_activity]),
                     self.icon_path / "settings-sliders.png",
                 ),
                 (

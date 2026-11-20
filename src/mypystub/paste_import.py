@@ -226,17 +226,26 @@ def store_archive(archive: Path, folder: Path, now: datetime | None = None) -> I
     """
     with tempfile.TemporaryDirectory(dir=folder, prefix=".stage_") as staging:
         unpacked = extract_archive(archive, Path(staging))
-        target = folder / unpacked.name
-        previous = None
-        if target.is_dir():
-            if versions.same_content(target, unpacked):
-                return Imported(target, unchanged=True)
-            previous = versions.back_up(target, now or datetime.now())
-            shutil.rmtree(target)
-        elif target.exists():
-            previous = versions.back_up(target, now or datetime.now())
-            target.unlink()
-        shutil.move(str(unpacked), str(target))
+        return place_folder(unpacked, folder, now)
+
+
+def place_folder(unpacked: Path, folder: Path, now: datetime | None = None) -> Imported:
+    """Move the folder `unpacked` into `folder`, backing up what it replaces.
+
+    One already there under that name is zipped into ``backups/`` first,
+    unless its content is identical (then nothing changes).
+    """
+    target = folder / unpacked.name
+    previous = None
+    if target.is_dir():
+        if versions.same_content(target, unpacked):
+            return Imported(target, unchanged=True)
+        previous = versions.back_up(target, now or datetime.now())
+        shutil.rmtree(target)
+    elif target.exists():
+        previous = versions.back_up(target, now or datetime.now())
+        target.unlink()
+    shutil.move(str(unpacked), str(target))
     return Imported(target, previous)
 
 
