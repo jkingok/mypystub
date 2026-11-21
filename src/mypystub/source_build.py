@@ -101,9 +101,9 @@ def isolated(paths: list[Path], cwd: Path, env: Mapping[str, str]) -> Iterator[N
     saved_cwd = os.getcwd()
     blocked: list[tuple[Any, str, Any]] = [
         (subprocess, "Popen", subprocess.Popen),
-        (os, "system", os.system),
     ]
-    for name in ("posix_spawn", "posix_spawnp", "fork", "execv", "execve"):
+    # Only those this platform has: iOS's Python has no os.system at all
+    for name in ("system", "posix_spawn", "posix_spawnp", "fork", "execv", "execve"):
         if hasattr(os, name):
             blocked.append((os, name, getattr(os, name)))
     try:
