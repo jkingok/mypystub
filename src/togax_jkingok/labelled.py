@@ -17,6 +17,7 @@ class LabelledProgress(toga.Box):
         """Make the bar and its label; `kwargs` style the row."""
         self.bar = toga.ProgressBar(flex=1)
         self.text = toga.Label("")
+        kwargs.setdefault("align_items", "center")  # the bar and its count level
         super().__init__(direction="row", children=[self.bar, self.text], **kwargs)
 
     def start(self, limit: int = 0) -> None:
@@ -59,6 +60,7 @@ class LabelledActivity(toga.Box):
         self.text = toga.Label("")
         self.progress = LabelledProgress(display="none")
         self.column = toga.Column(flex=1, children=[self.text, self.progress])
+        kwargs.setdefault("align_items", "center")  # the indicator beside the text
         super().__init__(
             direction="row",
             children=[self.activity, self.column],

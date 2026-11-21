@@ -16,7 +16,16 @@ from typing import Any
 
 import toga
 
-from .lists import MOVES, Move, can_move, fit_list, keep_selection, move, select_row
+from .lists import (
+    MOVES,
+    ROW_HEIGHT,
+    Move,
+    can_move,
+    fit_list,
+    keep_selection,
+    move,
+    select_row,
+)
 
 # Monochrome symbols, not colour emoji: iOS greys out a disabled button by
 # tinting its text, and emoji ignore the tint
@@ -46,6 +55,7 @@ class EditableList(toga.Box):
         on_change: Callable[[list[Any]], None] | None = None,
         movable: bool = False,
         tools: Sequence[toga.Widget] = (),
+        row_height: int = ROW_HEIGHT,
         **kwargs: Any,
     ) -> None:
         """Edit `items` (in place), showing each as ``row(index, item)``.
@@ -53,13 +63,15 @@ class EditableList(toga.Box):
         `on_add` and `on_edit` (given the item) ask for an item and return it,
         or None if the user gave up. `on_change` gets the items after any
         change. `movable` adds the move buttons. `tools` go after the others.
-        `kwargs` style the whole box.
+        `row_height` is a row's height when the list is sized to its rows: less
+        for rows with no subtitle. `kwargs` style the whole box.
         """
         self.items = items
         self.row = row
         self.on_add = on_add
         self.on_edit = on_edit
         self.on_change = on_change
+        self.row_height = row_height
         self.selected: int | None = None
         self._refreshing = False
         self.list = toga.DetailedList(on_select=self._selected)
@@ -107,7 +119,7 @@ class EditableList(toga.Box):
         if self.style.flex:
             self.list.style.flex = 1  # filling: the list scrolls itself
         else:
-            fit_list(self.list, len(self.items))
+            fit_list(self.list, len(self.items), row=self.row_height)
         self.update_buttons()
 
     def update_buttons(self) -> None:

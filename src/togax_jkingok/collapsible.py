@@ -4,6 +4,8 @@ Toga has no disclosure widget, and a Switch is native on every platform, so the
 heading is a bold Switch with the section's title. Its body is hidden while the
 switch is off, and also while the section has nothing to show
 (:attr:`Collapsible.has_content`), so an empty section is just its heading.
+An empty section's switch is also off and disabled, as flipping it would show
+or hide nothing; it goes back to what the user chose when content appears.
 """
 
 from __future__ import annotations
@@ -38,6 +40,8 @@ class Collapsible(toga.Box):
         `kwargs` style the whole section.
         """
         self._has_content = has_content
+        self._wanted = open  # what the user chose, kept while there's no content
+        self._syncing = False
         self._on_change: Any = None
         self.toggle = toga.Switch(
             title,
@@ -52,6 +56,7 @@ class Collapsible(toga.Box):
         )
         self.on_change = on_change
         self._show()
+        self._sync_switch()
 
     @property
     def title(self) -> str:
@@ -64,12 +69,16 @@ class Collapsible(toga.Box):
 
     @property
     def open(self) -> bool:
-        """Whether the section is open (its switch is on)."""
-        return bool(self.toggle.value)
+        """Whether the section is open: what the user chose, shown or not."""
+        return self._wanted
 
     @open.setter
     def open(self, value: bool) -> None:
-        self.toggle.value = value  # the switch's on_change shows or hides it
+        self._wanted = value
+        if self._has_content:
+            self.toggle.value = value  # the switch's on_change shows or hides it
+        else:
+            self._show()
 
     @property
     def has_content(self) -> bool:
@@ -79,6 +88,7 @@ class Collapsible(toga.Box):
     @has_content.setter
     def has_content(self, value: bool) -> None:
         self._has_content = value
+        self._sync_switch()
         self._show()
 
     @property
@@ -93,12 +103,24 @@ class Collapsible(toga.Box):
     @property
     def shown(self) -> bool:
         """Whether the body is showing: open, with something to show."""
-        return self.open and self._has_content
+        return self._wanted and self._has_content
 
     def _show(self) -> None:
         self.body.style.display = "pack" if self.shown else "none"
 
+    def _sync_switch(self) -> None:
+        """Off and disabled with nothing to show; as chosen once there is."""
+        self._syncing = True
+        try:
+            self.toggle.enabled = self._has_content
+            self.toggle.value = self._wanted if self._has_content else False
+        finally:
+            self._syncing = False
+
     def _toggled(self, widget: toga.Switch, **kwargs: Any) -> None:
+        if self._syncing:
+            return
+        self._wanted = bool(self.toggle.value)
         self._show()
         if self._on_change is not None:
             self._on_change()

@@ -74,8 +74,8 @@ def test_the_switch_lists_them_with_where_they_come_from_first(
     form = proto.open_setup_environment()
     show_inherited(form)
     assert rows(form) == [
-        ("HOME", "the system · /home/me"),
-        ("TZ", "the system · UTC"),
+        ("HOME", "/home/me"),
+        ("TZ", "UTC"),
     ]
     assert form.inherited_switch.text == "Show inherited variables"
     show_inherited(form, False)
@@ -93,7 +93,7 @@ def test_the_choice_is_shared_by_every_setup_screen(
     first.done()
     assert proto.show_inherited_env is True
     second = proto.open_run_with(row(proto, "top"))
-    assert rows(second) == [("TZ", "the system · UTC")]
+    assert rows(second) == [("TZ", "UTC")]
     assert second.inherited_switch is not None and second.inherited_switch.value
     second.done()
 
@@ -110,7 +110,7 @@ def test_overriding_loses_the_marker_and_deleting_brings_it_back(
     assert rows(form) == [("TZ", "Europe/London")]
     assert proto.settings.get_environment() == {"TZ": "Europe/London"}
     press(app, form.env_buttons["delete"])
-    assert rows(form) == [("TZ", "the system · UTC")]
+    assert rows(form) == [("TZ", "UTC")]
     assert proto.settings.get_environment() == {}
     form.done()
 
@@ -159,7 +159,7 @@ def test_unset_marks_the_variable_and_is_saved(
     assert proto.settings.get_environment() == {"TZ": None}
     assert "unset here" in form.env_note.text
     press(app, form.env_buttons["delete"])
-    assert rows(form) == [("TZ", "the system · UTC")]
+    assert rows(form) == [("TZ", "UTC")]
     form.done()
 
 
@@ -234,8 +234,8 @@ def test_a_script_sees_the_system_and_setup_layers_and_can_unset_either(
     assert rows(form) == []
     show_inherited(form)
     assert rows(form) == [
-        ("GREETING", "Setup · Hi"),
-        ("TZ", "the system · UTC"),
+        ("GREETING", "Hi"),
+        ("TZ", "UTC"),
     ]
     select(form.env_list, form._env_selected, 0)
     press(app, form.env_buttons["unset"])

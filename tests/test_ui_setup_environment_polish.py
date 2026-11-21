@@ -47,7 +47,7 @@ def test_inherited_rows_carry_the_icon(
     form.refresh()
     by_name = {r.title: r for r in form.env_list.data}
     assert by_name["TZ"].icon is marker
-    assert by_name["TZ"].subtitle == "the system · UTC"  # no "from": the icon says it
+    assert by_name["TZ"].subtitle == "UTC"  # the icon says it; the ⓘ gives the source
     assert by_name["MINE"].subtitle == "1"
     form.done()
 

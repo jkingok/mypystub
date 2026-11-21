@@ -85,7 +85,7 @@ def test_a_newer_build_is_reported_first_and_the_deeper_checks_are_skipped(
     assert "Python and package checks skipped" in html
     assert 'href="https://github.com/jkingok/mypystub/releases/tag/2026.11.9.2"' in html
     assert "A shiny thing." in html
-    assert "App: ⚠ A newer build" in proto.setup_activity.text.text
+    assert "📱 ⚠️ new build" in proto.setup_activity.text.text
 
 
 def test_the_latest_build_goes_on_to_the_deeper_checks(

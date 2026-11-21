@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 import platform
 from collections.abc import Callable
 from datetime import datetime
@@ -27,6 +28,7 @@ from . import (
     release_check,
     setup_pages,
     share_items,
+    status_text,
     update_cache,
 )
 from . import piplike as pip
@@ -325,7 +327,9 @@ class SetupMixin(PrototypeBase):
         self.update_all_button.enabled = False
         self.refresh_packages()
         self.render_setup_page()
-        self.setup_activity.update("User packages deleted", on=False)
+        self.setup_activity.update(
+            f"{status_text.DELETED} {status_text.PACKAGES} deleted", on=False
+        )
 
     @guarded
     async def handle_check_updates(self, widget: toga.Widget, **kwargs: Any) -> None:
@@ -335,7 +339,7 @@ class SetupMixin(PrototypeBase):
         other's result is still shown. Each request is counted on the progress
         bar: one per package, plus GitHub's Releases and python.org.
         """
-        self.setup_activity.update("Checking PyPI and python.org")
+        self.setup_activity.update(status_text.checking("PyPI and python.org"))
         user = pip.get_package_inventory(self.site_packages)
         bundled = pip.get_bundled_inventory(self.site_packages)
         tick = self.check_counter(len(user) + len(bundled) + 2)
@@ -348,7 +352,7 @@ class SetupMixin(PrototypeBase):
         await asyncio.to_thread(cache.save, self.last_checked)
         self.render_setup_page()
         self.setup_activity.update(
-            "; ".join(m for m in (user_message, health_message) if m), on=False
+            status_text.join(user_message, health_message), on=False
         )
 
     def check_counter(self, total: int) -> Callable[[str], None]:
@@ -359,7 +363,7 @@ class SetupMixin(PrototypeBase):
         done = [0]
 
         def show(name: str, number: int) -> None:
-            self.setup_activity.update(f"Checking {name}")
+            self.setup_activity.update(status_text.checking(name))
             self.setup_activity.count(number, total)
 
         def tick(name: str) -> None:
@@ -406,13 +410,14 @@ class SetupMixin(PrototypeBase):
             self.pending_updates = []
             self.update_error = str(e)
             self.update_all_button.enabled = False
-            return str(e)
+            log.warning(f"Couldn't check packages: {e}")
+            return status_text.could_not_check(status_text.PACKAGES)
         self.pending_updates = updates
         self.checked_updates = updates
         self.update_error = None
         found = len(updates) + len(self.git_user_updates)
         self.update_all_button.enabled = bool(found)
-        return f"{found} package update(s)" if found else "Packages up to date"
+        return status_text.packages_result(found)
 
     def user_check(
         self,
@@ -473,7 +478,7 @@ class SetupMixin(PrototypeBase):
         if build is not None and build.newer:
             self.health = maintenance.Health(None, [], build)
             self.health_error = None
-            return f"App: {self.health.summary}"
+            return status_text.app_result(0, newer_build=True)
         bundled = pip.get_bundled_inventory(self.site_packages)
 
         def check(client: httpx2.Client) -> maintenance.Health:
@@ -483,10 +488,11 @@ class SetupMixin(PrototypeBase):
             health = await asyncio.to_thread(self.with_client, check)
         except maintenance.MaintenanceError as e:
             self.health_error = str(e)
-            return ""
+            log.warning(f"Couldn't check the app: {e}")
+            return status_text.could_not_check(status_text.APP)
         self.health = health
         self.health_error = None
-        return f"App: {health.summary}"
+        return status_text.app_result(health.count)
 
     def health_check(
         self,
@@ -553,7 +559,9 @@ class SetupMixin(PrototypeBase):
                 on_count=self.setup_activity.count,
             )
         except Exception as e:  # noqa: BLE001
-            self.setup_activity.update("Update failed", on=False)
+            self.setup_activity.update(
+                f"{status_text.PACKAGES} {status_text.FAILED} update failed", on=False
+            )
             await self.error(str(e), "Update failed")
             return
         self.pending_updates = []
@@ -562,7 +570,9 @@ class SetupMixin(PrototypeBase):
         self.update_all_button.enabled = False
         self.refresh_packages()
         self.render_setup_page()
-        self.setup_activity.update("Packages updated", on=False)
+        self.setup_activity.update(
+            f"{status_text.PACKAGES} {status_text.OK} updated", on=False
+        )
 
     def setup_sections(self) -> list[toga.Widget]:
         """The Setup tab: a short menu; details open on their own pages."""
@@ -804,3 +814,6 @@ def restored_message(done: backups.Restored) -> str:
     if done.config:
         parts.append("Settings restored.")
     return " ".join(parts) or "There was nothing to restore."
+
+
+log = logging.getLogger(__name__)

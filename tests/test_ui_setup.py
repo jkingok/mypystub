@@ -155,7 +155,8 @@ def test_check_updates_offline_says_so(
     monkeypatch.setattr(maintenance, "check_python", fake_python)
     proto.open_setup_page("packages")
     run(app, proto.handle_check_updates(proto.update_all_button))
-    assert "Couldn't reach PyPI: offline" in proto.setup_activity.text.text
+    # The row is short; the reason is on the page
+    assert proto.setup_activity.text.text == "📦 ❌ no answer · 📱 ❌ no answer"
     assert "check: Couldn&#x27;t reach PyPI: offline" in proto.setup_html
     assert not proto.update_all_button.enabled
 
@@ -180,8 +181,7 @@ def test_one_check_covers_packages_and_app_health(
     assert "✓ Up to date" in proto.setup_html  # user packages
     assert "⚠ 1 update needs a new app build" in proto.setup_html
     assert "Python 3.15.1 → 3.15.2 available" in proto.setup_html
-    assert "Packages up to date" in proto.setup_activity.text.text
-    assert "App: ⚠ 1 update needs" in proto.setup_activity.text.text
+    assert proto.setup_activity.text.text == "📦 ✅ up to date · 📱 ⚠️ 1 behind"
 
 
 def test_one_failed_check_does_not_hide_the_other(

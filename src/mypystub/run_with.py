@@ -35,7 +35,12 @@ from mypystub.run_settings import (
 )
 from togax_jkingok import Collapsible, EditableList, refresh_on_new_width
 from togax_jkingok.editable_list import ADD, DELETE, EDIT, GAP, tool
-from togax_jkingok.lists import fit_list, keep_selection, select_row
+from togax_jkingok.lists import (
+    ONE_LINE_ROW_HEIGHT,
+    fit_list,
+    keep_selection,
+    select_row,
+)
 
 # More toolbar symbols, beside EditableList's (the Help page says what each
 # one does)
@@ -137,11 +142,12 @@ class RunWithForm:
         # The arguments' editor owns the list; the form saves it on each change
         self.args_editor = EditableList(
             list(args or []),
-            lambda i, value: {"title": shown(value), "subtitle": f"Argument {i + 1}"},
+            lambda i, value: {"title": shown(value)},  # the order says the rest
             on_add=self._ask_arg,
             on_edit=self._ask_edit_arg,
             on_change=lambda items: self.changed(),
             movable=True,
+            row_height=ONE_LINE_ROW_HEIGHT,
         )
         self.args = self.args_editor.items
         self.env = dict(env)
@@ -376,14 +382,14 @@ class RunWithForm:
         return [row for row in rows if not row.inherited]
 
     def row_data(self, row: EnvRow) -> dict[str, Any]:
-        """A variable's list row: inherited ones marked by the icon, if there is one."""
+        """A variable's list row: inherited ones marked by the icon, if there is one.
+
+        With the icon the row says only the value; where it is inherited from
+        is in the ⓘ details. Without it, the origin still leads.
+        """
         if row.inherited and self.inherited_icon is not None:
             value = "unset" if row.unset else shown(row.value)
-            return {
-                "icon": self.inherited_icon,
-                "title": row.name,
-                "subtitle": f"{row.source} · {value}",
-            }
+            return {"icon": self.inherited_icon, "title": row.name, "subtitle": value}
         return {"title": row.name, "subtitle": self.subtitle(row)}
 
     def subtitle(self, row: EnvRow) -> str:

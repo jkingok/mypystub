@@ -52,10 +52,10 @@ def test_check_for_updates_counts_every_request(
 
     total = len(user) + len(bundled) + 2  # GitHub Releases and python.org
     assert counts == [(done, total) for done in range(total)]
-    assert "Checking humanize" in texts
-    assert "Checking GitHub Releases" in texts
-    assert "Checking python.org" in texts
-    assert "Checking toga-core" in texts
+    assert "🔍 humanize" in texts
+    assert "🔍 GitHub Releases" in texts
+    assert "🔍 python.org" in texts
+    assert "🔍 toga-core" in texts
     assert not proto.setup_activity.counting  # gone once the check is done
 
 

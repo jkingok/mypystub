@@ -184,11 +184,8 @@ def test_run_with_form_edits_arguments(
     assert asked[0] == ("Add argument", [("Argument", "")])
     assert form.args == ["--name", "Ada", "x"]
     assert form.arg_index == 2  # the new row is selected
-    assert [r.subtitle for r in form.args_list.data] == [
-        "Argument 1",
-        "Argument 2",
-        "Argument 3",
-    ]
+    assert [r.title for r in form.args_list.data] == ["--name", "Ada", "x"]
+    assert all(getattr(r, "subtitle", None) in (None, "") for r in form.args_list.data)
 
     select(form.args_list, form.args_editor._selected, 0)
     enabled = {w: b.enabled for w, b in form.move_buttons.items()}
@@ -226,7 +223,7 @@ def test_run_with_form_environment_is_sorted_and_inherits_setup(
     assert len(form.env_list.data) == 0
     show_inherited(form)
     assert [(r.title, r.subtitle) for r in form.env_list.data] == [
-        ("GREETING", "Setup · Hello")
+        ("GREETING", "Hello")
     ]
     select(form.env_list, form._env_selected, 0)
     assert form.env_buttons["edit"].enabled
@@ -248,7 +245,7 @@ def test_run_with_form_environment_is_sorted_and_inherits_setup(
     assert "overrides an inherited value" in form.env_note.text
     press(app, form.env_buttons["delete"])  # the inherited value is back
     assert form.env == {"zed": "", "Alpha": ""}
-    assert form.env_list.data[1].subtitle == "Setup · Hello"
+    assert form.env_list.data[1].subtitle == "Hello"
 
 
 def test_run_with_form_refuses_bad_names(
@@ -545,9 +542,9 @@ def test_entry_inherits_setup_then_package_then_its_own(
     form = proto.open_run_with(row(proto, "echo"))
     show_inherited(form)
     assert [(r.title, r.subtitle) for r in form.env_list.data] == [
-        ("GREETING", "Setup · Hello"),
+        ("GREETING", "Hello"),
         ("LEVEL", "2"),
-        ("WHO", "tools · Ada"),
+        ("WHO", "Ada"),
     ]
     assert form.args == ["--loud"]
     form.done()

@@ -90,10 +90,10 @@ def test_lists_are_sized_to_their_rows(proto: ui.Prototype, config: Path) -> Non
     form.args += ["one", "two"]
     form.changed()
     assert form.args_list.style.display == "pack"
-    assert form.args_list.style.height == 2 * lists.ROW_HEIGHT
+    assert form.args_list.style.height == 2 * lists.ONE_LINE_ROW_HEIGHT  # no subtitle
     form.args += [str(n) for n in range(10)]
     form.changed()
-    assert form.args_list.style.height == lists.MOST_ROWS * lists.ROW_HEIGHT
+    assert form.args_list.style.height == lists.MOST_ROWS * lists.ONE_LINE_ROW_HEIGHT
     form.done()
 
 

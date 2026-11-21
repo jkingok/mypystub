@@ -19,6 +19,8 @@ MOVES: tuple[Move, ...] = ("top", "up", "down", "bottom")
 # A DetailedList row with a subtitle is about this tall; a list sized to its
 # rows shows up to a few, and scrolls within that for more
 ROW_HEIGHT = 60
+# A row with only a title is about this tall
+ONE_LINE_ROW_HEIGHT = 44
 MOST_ROWS = 5
 
 
@@ -75,7 +77,12 @@ def list_height(rows: int, most: int = MOST_ROWS, row: int = ROW_HEIGHT) -> int:
     return max(1, min(rows, most)) * row
 
 
-def fit_list(widget: toga.DetailedList, rows: int, most: int = MOST_ROWS) -> None:
-    """Size a list to its rows, or hide it when it has none."""
-    widget.style.height = list_height(rows, most)
+def fit_list(
+    widget: toga.DetailedList,
+    rows: int,
+    most: int = MOST_ROWS,
+    row: int = ROW_HEIGHT,
+) -> None:
+    """Size a list to its rows (each `row` high), or hide it when it has none."""
+    widget.style.height = list_height(rows, most, row)
     widget.style.display = "pack" if rows else "none"

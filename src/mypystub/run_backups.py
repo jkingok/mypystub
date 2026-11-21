@@ -83,7 +83,6 @@ class BackupsSection:
         self.section.title = (
             f"Backup versions ({count})" if count else "Backup versions"
         )
-        self.switch.enabled = count > 0 or self.section.open
         fit_list(self.list, count)
         self.section.has_content = count > 0
 
