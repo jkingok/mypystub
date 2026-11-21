@@ -222,8 +222,16 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             skip = {(c.name, c.version) for c in local}
             found = []
             if not (substitute and substitute.when == "always"):
+                # A package with a substitute isn't built from source: the
+                # substitute is the answer for a platform with no wheel for it
                 found = self._pypi_candidates(
-                    canon_id, canon_id, req_specs, excluded, active_extras, skip
+                    canon_id,
+                    canon_id,
+                    req_specs,
+                    excluded,
+                    active_extras,
+                    skip,
+                    allow_source=substitute is None,
                 )
                 yield from found
             if substitute and not found:
@@ -261,8 +269,13 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         excluded: set[Candidate],
         active_extras: frozenset[str],
         skip: set[tuple[str, Version]],
+        allow_source: bool = True,
     ) -> list[Candidate]:
-        """Index candidates for `canon_id`, satisfying `identifier`, newest first."""
+        """Index candidates for `canon_id`, satisfying `identifier`, newest first.
+
+        With no usable wheel, a source distribution is built unless
+        `allow_source` is False.
+        """
         try:
             matches = self.finder.find_matches(canon_id)
         except Exception as exc:
@@ -273,6 +286,7 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             ) from exc
 
         candidates: list[Candidate] = []
+        sources: list[Any] = []  # source distributions, for when no wheel will do
         for match in matches:
             if not match.version:
                 continue
@@ -280,6 +294,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 continue
 
             filename = match.link.filename.lower()
+            if filename.endswith(source_installs.ARCHIVE_SUFFIXES):
+                sources.append(match)
+                continue
 
             if filename.endswith(".whl"):
                 # Strip '.whl' and get the platform tag (the final hyphen-separated segment)
@@ -303,7 +320,55 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 candidates.append(cand)
 
         candidates.sort(key=lambda c: c.version, reverse=True)
+        if not candidates and sources and allow_source:
+            candidates = self._built_candidates(
+                canon_id, identifier, req_specs, excluded, active_extras, sources
+            )
         return candidates[: self.max_candidates]
+
+    def _built_candidates(
+        self,
+        canon_id: str,
+        identifier: str,
+        req_specs: list[Requirement],
+        excluded: set[Candidate],
+        active_extras: frozenset[str],
+        sources: list[Any],
+    ) -> list[Candidate]:
+        """A wheel built from the newest source distribution that fits (#257).
+
+        Only when the index has no usable wheel of the package, as building
+        takes longer than downloading. Built in-process with the project's own
+        build backend, like a source archive a requirement names; a pure
+        Python result installs, anything else is refused as it would be if it
+        had been a wheel.
+        """
+        for match in sorted(sources, key=lambda m: Version(m.version), reverse=True):
+            probe = Candidate(
+                name=canonicalize_name(match.name),
+                version=Version(match.version),
+                requested_extras=active_extras,
+                identifier=identifier,
+            )
+            if probe in excluded or not all(
+                self.is_satisfied_by(req, probe) for req in req_specs
+            ):
+                continue
+            url = match.link.url
+            wheel_url = self._prepare_source(url, Requirement(canon_id))
+            wheel = direct_refs.cache_path(self.cache_dir, wheel_url)
+            name, version, _, _ = parse_wheel_filename(wheel.name)
+            return [
+                Candidate(
+                    name=name,
+                    version=version,
+                    link=Link(wheel_url),
+                    is_direct=True,
+                    requested_extras=active_extras,
+                    identifier=identifier,
+                )
+            ]
+        return []
 
     def _direct_candidates(
         self,
@@ -976,7 +1041,9 @@ async def resolve_and_install_async(
             finder = PackageFinder(
                 index_urls=indexes,
                 target_python=TargetPython(),
-                only_binary={":all:"},
+                # Wheels first; a package with none is built from its source
+                # distribution (_built_candidates)
+                prefer_binary={":all:"},
             )
 
             # 2. Enforce strict timeout on unearth's internal session to prevent infinite hanging

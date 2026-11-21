@@ -124,7 +124,7 @@ Your own scripts can do the same, in the same way, with nothing specific to MyPy
 
 ## Packages with compiled parts
 
-The launcher installs your prototypes' dependencies from [PyPI](https://pypi.org) as pure-Python wheels. Packages with compiled (binary) parts need a wheel built specifically for iOS or Android, which most projects don't publish yet. BeeWare tracks which packages have one in its [mobile wheels](https://beeware.org/mobile-wheels/) project. Projects build them with [cibuildwheel](https://cibuildwheel.pypa.io/), which supports iOS and Android. Binary wheels can't be added to the app after it's built, so the useful ones are bundled with it.
+The launcher installs your prototypes' dependencies from [PyPI](https://pypi.org) as pure-Python wheels. A pure-Python package that has no wheel, only source, is built on the device with its own build backend, which takes a little longer. Packages with compiled (binary) parts need a wheel built specifically for iOS or Android, which most projects don't publish yet. BeeWare tracks which packages have one in its [mobile wheels](https://beeware.org/mobile-wheels/) project. Projects build them with [cibuildwheel](https://cibuildwheel.pypa.io/), which supports iOS and Android. Binary wheels can't be added to the app after it's built, so the useful ones are bundled with it.
 
 Where a pure-Python replacement exists, the launcher can use it instead. These **aliases** are listed on the Packages page in Setup:
 
