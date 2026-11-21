@@ -9,7 +9,7 @@ pytest.importorskip("toga_dummy")
 
 import toga
 
-from mypystub import maintenance, piplike, release_check, ui
+from mypystub import git_updates, maintenance, piplike, release_check, ui
 from tests.support_ui import run
 
 
@@ -32,6 +32,7 @@ def test_check_for_updates_counts_every_request(
     monkeypatch.setattr(release_check, "check_build", lambda client, version: None)
     monkeypatch.setattr(maintenance, "check_python", lambda client, current: None)
     monkeypatch.setattr(maintenance, "find_updates", fake_find_updates)
+    monkeypatch.setattr(git_updates, "bundled_from_git", lambda inventory: {})
     counts: list[tuple[int, int]] = []
     texts: list[str] = []
     count, update = proto.setup_activity.count, proto.setup_activity.update

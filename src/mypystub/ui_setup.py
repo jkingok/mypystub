@@ -11,6 +11,7 @@ from typing import Any, ClassVar
 
 import httpx2
 import toga
+from packaging.utils import canonicalize_name
 
 from togax_jkingok import LabelledActivity
 
@@ -18,6 +19,7 @@ from . import (
     about,
     backups,
     files_app,
+    git_updates,
     maintenance,
     native,
     permissions,
@@ -394,15 +396,26 @@ class SetupMixin(PrototypeBase):
             self.health_error = None
             return f"App: {self.health.summary}"
         bundled = pip.get_bundled_inventory(self.site_packages)
+        # Bundled from git (Toga, toga-console): their commits are compared
+        # with their branch instead of their versions with PyPI (#328)
+        from_git = git_updates.bundled_from_git(bundled)
+        from_pypi = {
+            name: version
+            for name, version in bundled.items()
+            if canonicalize_name(name) not in from_git
+        }
 
         def check(client: httpx2.Client) -> maintenance.Health:
             if tick is not None:
                 tick("python.org")
             python = maintenance.check_python(client, platform.python_version())
             updates = maintenance.find_updates(
-                client, bundled, critical=maintenance.APP_CRITICAL, on_check=tick
+                client, from_pypi, critical=maintenance.APP_CRITICAL, on_check=tick
             )
-            return maintenance.Health(python, updates, build)
+            newer = git_updates.find_git_updates(
+                client, from_git, critical=maintenance.APP_CRITICAL, on_check=tick
+            )
+            return maintenance.Health(python, updates, build, newer)
 
         try:
             health = await asyncio.to_thread(self.with_client, check)

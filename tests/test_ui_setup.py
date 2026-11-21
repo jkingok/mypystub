@@ -164,7 +164,10 @@ def test_one_check_covers_packages_and_app_health(
     proto: ui.Prototype, app: toga.App, site: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Check for updates asks about user packages and the app, on one page."""
-    from mypystub import maintenance
+    from mypystub import git_updates, maintenance
+
+    # Nothing bundled from git here; tests/test_ui_setup_git_updates.py has that
+    monkeypatch.setattr(git_updates, "bundled_from_git", lambda inventory: {})
 
     status = maintenance.PythonStatus(
         Version("3.15.1"), Version("3.15.2"), None, Version("3.16.0b1")

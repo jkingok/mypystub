@@ -79,6 +79,13 @@ def health_section(
         if found:
             items = "".join(f"<li>{escape(line)}</li>" for line in found)
             parts.append(f"<ul>{items}</ul>")
+        links = [
+            f'<a href="{escape(u.compare_url)}">{escape(u.name)}</a>'
+            for u in health.git_updates
+            if u.compare_url
+        ]
+        if links:
+            parts.append(f"<p>What changed: {', '.join(links)}</p>")
         parts.append(build_notes(health))
     parts.append(
         "<p>The app's own Python and bundled packages can only be updated by a "

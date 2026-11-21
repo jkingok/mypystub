@@ -15,7 +15,7 @@ os.environ["TOGA_BACKEND"] = "toga_dummy"
 
 import toga
 
-from mypystub import maintenance, release_check, ui
+from mypystub import git_updates, maintenance, release_check, ui
 from tests.support_ui import run
 
 RELEASE = {
@@ -54,6 +54,8 @@ def world(proto: ui.Prototype, app: toga.App, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(release_check, "check_build", check_build)
     monkeypatch.setattr(maintenance, "check_python", check_python)
     monkeypatch.setattr(maintenance, "find_updates", find_updates)
+    # Nothing bundled from git here; tests/test_ui_setup_git_updates.py has that
+    monkeypatch.setattr(git_updates, "bundled_from_git", lambda inventory: {})
     monkeypatch.setattr(toga.App, "version", property(lambda self: state["running"]))
     state["running"] = "2026.11.9.1"
     return state

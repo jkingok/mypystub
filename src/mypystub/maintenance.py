@@ -36,6 +36,7 @@ RELEASE_NAME = re.compile(r"Python (\d+\.\d+\.\d+\S*)")
 
 
 if TYPE_CHECKING:
+    from .git_updates import GitUpdate
     from .release_check import BuildStatus
 
 
@@ -228,11 +229,13 @@ class Health:
     `build` is how this build compares with the newest GitHub Release (see
     ``release_check``); if a newer build exists the Python and package checks
     are skipped (`python` is None), since the new build is what fixes them.
+    `git_updates` are bundled packages from git whose branch has moved on.
     """
 
     python: PythonStatus | None
     bundled_updates: list[Update] = field(default_factory=list)
     build: BuildStatus | None = None
+    git_updates: list[GitUpdate] = field(default_factory=list)
 
     @property
     def count(self) -> int:
@@ -242,7 +245,7 @@ class Health:
         if python is not None:
             found = int(python.patch_behind) + int(bool(python.newer_stable))
         newer = int(self.build is not None and self.build.newer)
-        return found + len(self.bundled_updates) + newer
+        return found + len(self.bundled_updates) + len(self.git_updates) + newer
 
     @property
     def summary(self) -> str:
@@ -275,4 +278,6 @@ class Health:
         for update in sorted(self.bundled_updates, key=lambda u: not u.critical):
             note = " (app-critical)" if update.critical else ""
             lines.append(f"{update.name} {update.installed} → {update.latest}{note}")
+        for git in sorted(self.git_updates, key=lambda u: not u.critical):
+            lines.append(git.line())
         return lines
