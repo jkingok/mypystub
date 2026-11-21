@@ -132,6 +132,7 @@ def test_aliases_section_describes_each_alias(tmp_path: Path) -> None:
     )
     assert section(sections, "Package aliases") == [
         ("fast", "fast-pure (always)"),
+        ("python-magic", "python-magic-pure (bundled with the app)"),
         ("pyyaml", "pyyaml-pure (when no compatible wheel)"),
         ("toga", "toga-core (bundled with the app)"),
     ]

@@ -47,6 +47,12 @@ ALIASES = {
     # PyYAML's wheels are compiled and none are built for iOS; pyyaml-pure
     # provides the same `yaml` package (safe_load, dump, YAMLError, loaders)
     "pyyaml": Alias("substitute", "pyyaml-pure"),
+    # python-magic needs libmagic, which a phone doesn't have (its wheel installs
+    # and then fails on import). python-magic-pure provides the same `magic`
+    # module for from_file and from_buffer, the only calls it supports. The app
+    # bundles it, as Paste uses it to name pasted text (#333), so a script's
+    # `import magic` finds it with nothing to build or download.
+    "python-magic": Alias("bundled", "python-magic-pure"),
 }
 
 

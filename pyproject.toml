@@ -13,6 +13,9 @@ dependencies = [
     "markdown",
     # Syntax highlighting for code in the Help page (pure Python)
     "pygments",
+    # Names the kind of pasted text (magic.from_buffer); also what scripts get
+    # for `import magic` (a "bundled" alias for python-magic, package_aliases.py)
+    "python-magic-pure",
     "resolvelib",
     "tomlkit",
     # Setup's Experimental Console (pure Python; no PyPI release yet)
@@ -97,6 +100,9 @@ requires = [
     "markdown",
     # Syntax highlighting for code in the Help page (pure Python)
     "pygments",
+    # Names the kind of pasted text (magic.from_buffer); also what scripts get
+    # for `import magic` (a "bundled" alias for python-magic, package_aliases.py)
+    "python-magic-pure",
     "resolvelib",
     "tomlkit",
     # Setup's Experimental Console (pure Python; no PyPI release yet)

@@ -14,7 +14,7 @@ import shutil
 import tarfile
 import tempfile
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -115,6 +115,33 @@ def suggested_stem(suggested: str | None, now: datetime) -> str:
     return cleaned[: -len(".py")]
 
 
+def _sanitized(typed: str) -> str | None:
+    """`typed` as one safe file name part: no folders or control characters."""
+    name = "".join(ch for ch in typed if ch >= " " and ch != "\x7f")
+    name = PurePosixPath(name.replace("\\", "/")).name.strip()
+    return None if name in ("", ".", "..") else name
+
+
+def clean_text_name(
+    typed: str, extension: str, accept: Sequence[str] = ()
+) -> str | None:
+    """A safe file name for pasted text that isn't Python, or None.
+
+    The name ends in `extension` unless it already ends in one of `accept`
+    (for when the user is asked what the text is and names it themselves).
+    ``page.html.html`` is ``page.html``. None means nothing usable was typed.
+    """
+    name = _sanitized(typed)
+    if name is None:
+        return None
+    name = collapse_repeated_extension(name)
+    lowered = name.lower()
+    for ending in (extension, *accept):
+        if lowered.endswith(ending):
+            return name if name[: -len(ending)].strip(".") else None
+    return name + extension
+
+
 def clean_filename(typed: str) -> str | None:
     """A safe file name for pasted Python from what the user typed, or None.
 
@@ -123,9 +150,8 @@ def clean_filename(typed: str) -> str | None:
     ``test.py.py`` and ``notes.txt`` give ``test.py`` and ``notes.py``, while other
     extensions are part of the name. None means nothing usable was typed.
     """
-    name = "".join(ch for ch in typed if ch >= " " and ch != "\x7f")
-    name = PurePosixPath(name.replace("\\", "/")).name.strip()
-    if name in ("", ".", ".."):
+    name = _sanitized(typed)
+    if name is None:
         return None
     name = collapse_repeated_extension(name)
     stem = SCRIPT_ENDINGS.sub("", name)

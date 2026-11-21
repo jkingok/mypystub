@@ -13,7 +13,7 @@ from zipfile import BadZipFile
 
 import toga
 
-from . import archive_preview, info_pages, paste_import, prompts
+from . import archive_preview, info_pages, paste_import, prompts, text_kinds
 from .errors import guarded
 from .ui_base import PrototypeBase
 
@@ -33,6 +33,9 @@ class PasteMixin(PrototypeBase):
         # Pasted text's offered name, fixed when Paste was pressed, so the
         # preview and the name prompt agree however long the preview stays up
         self._pending_stem: str | None = None
+        # What pasted text was taken to be (None: unsure), worked out once per paste
+        self._pending_kind: text_kinds.TextKind | None = None
+        self._kind_known = False
         self.import_button: toga.Button | None = None
 
     async def ask_text(self, title: str, label: str, initial: str) -> str | None:
@@ -81,6 +84,7 @@ class PasteMixin(PrototypeBase):
             return
         kind, value = content
         folder = self.get_current_dir()
+        self._kind_known = False  # pasted text isn't always Python (#333)
         self._pending_suggestion = bridge.suggested_name() if kind == "text" else None
         self._pending_stem = (
             paste_import.suggested_stem(self._pending_suggestion, datetime.now())
@@ -94,8 +98,19 @@ class PasteMixin(PrototypeBase):
     def import_preview(self, kind: str, value: str) -> tuple[str, str, bool]:
         """A paste's screen title, Info HTML, and whether it can be imported."""
         if kind != "file":
-            # The Info page the script will have once it is imported (#189)
             stem = self.pasted_text_stem()
+            detected = self.pasted_text_kind(value)
+            if detected is not text_kinds.PYTHON:
+                # Not a script, or not sure: say what it looks like (#333)
+                ext = (detected or text_kinds.PLAIN).extension
+                return (
+                    "Paste",
+                    info_pages.pasted_text_info(
+                        detected.label if detected else None, value, f"{stem}{ext}"
+                    ),
+                    True,
+                )
+            # The Info page the script will have once it is imported (#189)
             return (
                 "Paste",
                 info_pages.script_info_from_source(value, stem, f"{stem}.py"),
@@ -223,16 +238,44 @@ class PasteMixin(PrototypeBase):
             )
         return self._pending_stem
 
+    def pasted_text_kind(self, text: str) -> text_kinds.TextKind | None:
+        """What pasted `text` is taken to be (None: unsure), worked out once."""
+        if not self._kind_known:
+            self._pending_kind = text_kinds.detect(text)
+            self._kind_known = True
+        return self._pending_kind
+
     async def paste_text(self, text: str, folder: Path) -> paste_import.Imported | None:
-        """Save pasted text, taken to be Python, under a name the user gives."""
+        """Save pasted text under a name the user gives, with its kind's extension.
+
+        Python (and what can't be told, which was always taken to be Python
+        before) keeps the ``.py`` prompt; a web page is saved as ``.html``,
+        Markdown as ``.md`` and so on. When it can't be told, the name the
+        user types decides: one ending in ``.py``, ``.html``, ``.md``... is kept,
+        and without one it is saved as ``.txt``.
+        """
+        detected = self.pasted_text_kind(text)
         suggestion = self.pasted_text_stem()
+        if detected is None:
+            label = "Name it, ending in .py, .html, .md, .json… (else .txt)"
+            suggestion = suggestion.removesuffix(".txt")
+        elif detected is text_kinds.PYTHON:
+            label = "Name for the pasted code (saved as .py)"
+        else:
+            label = f"Name for the pasted text (saved as {detected.extension})"
+            suggestion = suggestion.removesuffix(detected.extension)
         while True:
-            typed = await self.ask_text(
-                "Paste", "Name for the pasted code (saved as .py)", suggestion
-            )
+            typed = await self.ask_text("Paste", label, suggestion)
             if typed is None:
                 return None
-            name = paste_import.clean_filename(typed)
+            if detected is text_kinds.PYTHON:
+                name = paste_import.clean_filename(typed)
+            elif detected is None:
+                name = paste_import.clean_text_name(
+                    typed, text_kinds.PLAIN.extension, text_kinds.EXTENSIONS
+                )
+            else:
+                name = paste_import.clean_text_name(typed, detected.extension)
             if name is not None:
                 break
             await self.info("Enter a file name.", "Paste")

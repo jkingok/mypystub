@@ -39,6 +39,36 @@ def escape(text: object) -> str:
     return html.escape(str(text), quote=True)
 
 
+EXCERPT_LINES = 30
+EXCERPT_CHARS = 2000
+
+
+def pasted_text_info(label: str | None, text: str, name: str) -> str:
+    """The preview of pasted text that isn't a Python script (#333).
+
+    `label` says what it looks like (a web page, Markdown, ...), or is None when
+    it can't be told. `name` is the file name offered, extension included.
+    """
+    lines = text.splitlines()
+    excerpt = "\n".join(lines[:EXCERPT_LINES])[:EXCERPT_CHARS]
+    more = "\n…" if len(lines) > EXCERPT_LINES or len(excerpt) < len(text) else ""
+    if label is None:
+        head = (
+            "<h1>Pasted text</h1>\n"
+            "<p>I can't tell what kind of text this is, so you'll be asked for a "
+            "name. End it in <code>.py</code> for a script, <code>.html</code>, "
+            "<code>.md</code>, <code>.json</code> and so on for others, or it "
+            "is saved as <code>.txt</code>.</p>"
+        )
+    else:
+        head = (
+            f"<h1>{escape(name)}</h1>\n"
+            f"<p>This looks like {escape(label)}, so it will be saved as "
+            f"<code>{escape(name)}</code>, not as a Python script.</p>"
+        )
+    return f"{head}\n<pre>{escape(excerpt)}{more}</pre>"
+
+
 def section(heading: str, body: str) -> str:
     """A titled section, or nothing if there's nothing to show."""
     return f"<h2>{escape(heading)}</h2>\n{body}\n" if body else ""
