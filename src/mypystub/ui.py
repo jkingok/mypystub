@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -13,6 +14,7 @@ from toga.style import Pack
 
 from togax_jkingok import (
     LabelledSelection,
+    SafeColumn,
     refresh_on_new_width,
     relayout,
     relayout_on_resize,
@@ -30,7 +32,6 @@ from . import (
 from .errors import guarded
 from .pages import help_html
 from .run_settings import quick_start_name
-from .safe_area import SafeColumn
 from .ui_actions import ActionsMixin
 from .ui_back import BackMixin
 from .ui_helpers import (
@@ -42,6 +43,8 @@ from .ui_resume import ResumeMixin
 from .ui_run import RunMixin
 from .ui_setup import SetupMixin
 from .ui_swipe import SwipeMixin
+
+log = logging.getLogger(__name__)
 
 # The Logs tab's buttons: monochrome symbols, like the Setup toolbars, so the
 # row looks quiet (Help says what each does). Reload, jump to the newest line,
@@ -311,7 +314,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
         try:
             from . import android_back
         except ImportError as error:  # built without the static proxy
-            print(f"Back isn't hooked up: {error}")
+            log.warning(f"Back isn't hooked up: {error}")
             return
         android_back.install(self.handle_back)
 

@@ -130,17 +130,18 @@ def test_a_wheel_that_does_not_fit_is_refused(
 
 
 def test_a_bundled_package_named_by_url_uses_the_bundled_one(
-    tmp_path: Path, capsys
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A second copy would shadow the app's own, so the bundled one is used.
 
     A prototype may name a package by URL so that it also runs standalone
     (toga-console, bundled for the Experimental Console, has no PyPI release).
     """
+    caplog.set_level("INFO", logger="mypystub")  # the note is logged at INFO
     p = provider(tmp_path, {}, system={"foo": Version("1.0")})
     pins = resolve(p, f"foo @ {HOST}/foo-1.0-py3-none-any.whl")
     assert pins["foo"].is_system and pins["foo"].version == Version("1.0")
-    assert "bundled" in capsys.readouterr().out
+    assert "bundled" in caplog.text
 
 
 def test_two_different_urls_for_one_name_are_refused(tmp_path: Path) -> None:

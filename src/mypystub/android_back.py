@@ -17,6 +17,7 @@ caller.
 MyPyStub's project template uses this same file (see new_items).
 """
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -24,6 +25,8 @@ from java import (  # pyright: ignore[reportMissingImports]
     dynamic_proxy,
     jclass,
 )
+
+log = logging.getLogger(__name__)
 
 PyBackCallback = jclass("au.id.jking.mypystub.PyBackCallback")
 
@@ -42,7 +45,7 @@ class BackHandler(dynamic_proxy(PyBackCallback.Handler)):  # type: ignore[misc]
         try:
             handled = bool(self.handler())
         except Exception as error:  # noqa: BLE001  (never leave Back dead)
-            print(f"Back handler failed: {error}")
+            log.warning(f"Back handler failed: {error}")
             handled = False
         if not handled:
             # The documented way to fall through: step aside and dispatch again

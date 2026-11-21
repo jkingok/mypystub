@@ -32,6 +32,16 @@ All Toga code and widgets must come from the subset supported on iOS. Do not use
 
 Import Objective-C classes from `toga_iOS.libs` (inside `sys.platform == "ios"` branches, since desktop and CI only install `toga-core`). In the app, only classes or frameworks that toga_iOS doesn't provide go in `src/mypystub/bridge.py`; never call rubicon's `ObjCClass` or `load_library` anywhere else (`tests/test_objc_usage.py` enforces this). Examples must not import `bridge.py`. They use `toga_iOS.libs` directly, and like `bridge.py` they may use `ObjCClass` for classes it doesn't provide, never for ones it does.
 
+## Simulator and emulator testing
+
+- **Switches:** the iOS Simulator tool's normal tap doesn't flip a `UISwitch`. Tap with `duration` 0.2.
+- **Text:** pasting from the macOS clipboard into the Simulator doesn't work. Type with the tool's `text` action (Android: `adb shell input text`).
+- **Coordinates:** taps are in device points. Work them out from the screenshot's fraction of the point size, not from the tap space the tool reports, which is wrong on some devices (the iPhone 13 mini reports 360×780 but is 375×812). Landscape screenshots may come back turned, so map the coordinates.
+- **iOS 26.x simulators:** rotation is unreliable and can stay in landscape. Prefer iOS 27 devices for rotation tests.
+- **Output:** launch with `xcrun simctl launch --console-pty <udid> <bundle id>` to see the app's stdout. On Android, stdout goes to `app_runtime.log` (the Logs tab), not logcat. Launch the app ID in `build/mypystub/android/gradle/app/build.gradle`; an older build with another ID may also be installed.
+- **Builds:** move `build/mypystub` between worktrees and run `briefcase build iOS -u` (or `android -u -r`) instead of creating again. For Android, run `uv run scripts/pin_git_requirements.py` first, then restore `pyproject.toml` and `git checkout uv.lock`.
+- **Layout:** check each tab the first time it's opened after a cold launch. Tabs not on screen at launch start at 0×0, notably on iPad. SafeArea's readings are in the Logs tab.
+
 ## Standards
 
 Two tiers. Desktop and CI use industry-standard tools. The on-device pipeline is the exception and uses a limited set.
@@ -39,6 +49,7 @@ Two tiers. Desktop and CI use industry-standard tools. The on-device pipeline is
 - **Desktop and CI (industry standard):** ruff for lint and format, pyright for types, pytest for tests. These run in `pr-gate.yml` and in pre-commit (`.pre-commit-config.yaml`). The same versions and configuration must run on desktop and in CI.
 - **On device (embeddable only):** `devtools.py` uses Black, pyflakes, pycodestyle, and mypy, which are importable Python modules. Nothing on device may be a separate executable, because the App Store and TestFlight will reject the build.
 - Type hints on all functions. Docstrings on public modules, classes, and functions.
+- **Log, don't print.** Launcher and `togax_jkingok` code reports with `logging.getLogger(__name__)`, never `print()`: while a script runs, stdout is its output. `logfile.install` makes the log file logging's handler of last resort, so every record lands there unless a script configures logging itself (`tests/test_logfile_togax_logging.py` checks both).
 - Line length 88.
 - Tests: pytest. Add tests for logic before changing it.
 - **Tests for a new, distinct feature go in a new file**, named `tests/test_<area>_<feature>.py` (for example `tests/test_ui_zipapps.py`; pytest only finds `test_*.py`), not appended to a busy file such as `tests/test_ui.py`. Tests added at the end of a shared file are where branches conflict. Edit an existing test file only to change the behaviour it already covers.

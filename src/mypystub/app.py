@@ -6,6 +6,7 @@ disk (see :mod:`logfile`).
 """
 
 import asyncio
+import logging
 import os
 import sys
 import threading
@@ -18,6 +19,8 @@ from typing import Any, cast
 import toga
 
 from . import hooks, logfile, ui
+
+log = logging.getLogger(__name__)
 
 
 class MyApp(toga.App):
@@ -202,7 +205,7 @@ def export_ssl_cert_bundle() -> None:
     try:
         import certifi
     except ImportError as e:
-        print(f"certifi unavailable, SSL_CERT_FILE not exported: {e}")
+        log.warning(f"certifi unavailable, SSL_CERT_FILE not exported: {e}")
         return
     os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 
@@ -252,9 +255,9 @@ def bootstrap_application() -> Any:
                 " and you may place Python scripts, projects or zipapps here."
             )
         except OSError as e:
-            print(f"Failed to write placeholder: {e}")
+            log.warning(f"Failed to write placeholder: {e}")
 
-    print(f"creating MyApp with user_documents_dir: {user_documents_dir}")
+    log.info(f"creating MyApp with user_documents_dir: {user_documents_dir}")
     return MyApp(user_documents_dir)
 
 
@@ -287,7 +290,7 @@ def main() -> toga.App | None:
         return bootstrap_application()
     elif activity_was_recreated(a):
         # Build the UI again, for the new Activity, as a first launch does
-        print("Android recreated the Activity: building the UI again")
+        log.info("Android recreated the Activity: building the UI again")
         for old in list(a.windows):  # Android allows only one window; the old
             a.windows.discard(old)  # one belongs to the Activity that was destroyed
         # Startup has run once: a window made now would build menus through a

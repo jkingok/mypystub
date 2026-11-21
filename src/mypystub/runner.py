@@ -14,6 +14,7 @@ Kept free of Toga imports so it can be unit tested on desktop.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import re
 import runpy
@@ -23,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Literal, Self
+
+log = logging.getLogger(__name__)
 
 # How a target runs: as a file or module (``python script.py``, ``python -m``),
 # or as an entry point of a project's [project.scripts] (cli),
@@ -341,6 +344,14 @@ class RunContext:
             "path": list(sys.path),
             "modules": set(sys.modules),
             "stdin": sys.stdin,
+            # A script may configure logging (basicConfig and the like): its
+            # handlers write to its output, and mustn't outlive it
+            "logging": (
+                list(logging.root.handlers),
+                logging.root.level,
+                logging.lastResort,
+                logging.root.manager.disable,
+            ),
         }
         if sys.stdin is not None:
             sys.stdin = StdinGuard(sys.stdin)  # type: ignore[assignment]
@@ -390,6 +401,11 @@ class RunContext:
         os.environ.update(saved["environ"])
         os.chdir(saved["cwd"])
         sys.path[:] = saved["path"]
+        handlers, level, last_resort, disabled = saved["logging"]
+        logging.root.handlers[:] = handlers
+        logging.root.setLevel(level)
+        logging.lastResort = last_resort
+        logging.disable(disabled)
         for name in set(sys.modules) - saved["modules"]:
             if self._from_purge_roots(sys.modules.get(name)):
                 del sys.modules[name]
@@ -469,7 +485,7 @@ class ObservableStack(list):
         if len(self) <= self.floor:
             if self.window is None:
                 raise IndexError("pop below the content stack's floor")
-            print("[Launcher] Ignored an extra pop of the content stack")
+            log.warning("[Launcher] Ignored an extra pop of the content stack")
             return (self.window.title, self.window.content)
         item = super().pop(index)
         self._changed()

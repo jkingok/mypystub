@@ -8,6 +8,7 @@ is :mod:`mypystub.piplike`; this only looks.
 import ast
 import configparser
 import email
+import logging
 import platform
 import re
 import tomllib
@@ -23,6 +24,8 @@ from packaging.version import Version
 from . import versions, webapps
 from .piplike import parse_aliases
 from .titles import clean_title, distinguishing_parts
+
+log = logging.getLogger(__name__)
 
 PEP723_BLOCK = re.compile(
     r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
@@ -88,7 +91,7 @@ def scan_script(item: Path) -> dict[str, Any] | None:
         if requires_python := config.get("requires-python"):
             current = platform.python_version()
             if Version(current) not in SpecifierSet(requires_python):
-                print(
+                log.warning(
                     f"Skipping {item.name} needs Python {requires_python} not {current}"
                 )
                 return None
@@ -113,7 +116,7 @@ def _icon_within(folder: Path, relative: str | None) -> Path | None:
         return None
     icon = folder / relative
     if not icon.resolve().is_relative_to(folder.resolve()):
-        print(f"Ignoring icon outside {folder}: {relative}")
+        log.warning(f"Ignoring icon outside {folder}: {relative}")
         return None
     return icon
 
@@ -431,7 +434,7 @@ def scan_all_prototypes(
     """
     folders: list[Mapping[str, Any]] = []
     prototypes: list[Mapping[str, Any]] = []
-    print(f"Scanning for launcher prototypes in: {base_dir}")
+    log.info(f"Scanning for launcher prototypes in: {base_dir}")
 
     if not base_dir.is_dir():
         return prototypes
@@ -466,7 +469,7 @@ def scan_all_prototypes(
                 folders.append(scan_folder(item))
         except (OSError, ValueError) as e:
             # ValueError covers TOMLDecodeError, bad specifiers and bad versions
-            print(f"Skipping malformed prototype {item.name}: {e}")
+            log.warning(f"Skipping malformed prototype {item.name}: {e}")
 
     folders.sort(key=lambda r: str(r.get("title")).casefold())
     return folders + distinct_titles(prototypes)

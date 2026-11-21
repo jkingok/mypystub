@@ -17,12 +17,15 @@ The URL is built here, free of Toga, so it can be unit tested on desktop.
 
 from __future__ import annotations
 
+import logging
 import sys
 import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+
+log = logging.getLogger(__name__)
 
 SCHEME = "shareddocuments://"
 
@@ -64,7 +67,7 @@ def open_android_files(jclass: Callable[[str], Any]) -> bool:
         activity.startActivity(view)
         return True
     except Exception as error:  # noqa: BLE001  (ActivityNotFoundException, ...)
-        print(f"Viewing the documents root failed ({error}); opening the picker")
+        log.warning(f"Viewing the documents root failed ({error}); opening the picker")
 
     pick = intent_class(intent_class.ACTION_OPEN_DOCUMENT)
     pick.addCategory(intent_class.CATEGORY_OPENABLE)
@@ -77,7 +80,7 @@ def open_android_files(jclass: Callable[[str], Any]) -> bool:
         activity.startActivity(pick)
         return True
     except Exception as error:  # noqa: BLE001
-        print(f"Opening the file picker failed: {error}")
+        log.warning(f"Opening the file picker failed: {error}")
         return False
 
 

@@ -14,7 +14,10 @@ behaviour then applies. It only works on Android, where that module exists.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 _installed = False
 
@@ -78,7 +81,7 @@ def install() -> bool:
             detailedlist
         )
     except (ImportError, AttributeError) as error:
-        print(f"Long press still selects the row: {error}")
+        log.warning(f"Long press still selects the row: {error}")
         return False
     _installed = True
     return True

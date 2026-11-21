@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -30,6 +31,8 @@ from .run_status import (  # noqa: F401  (re-exported for callers and tests)
 )
 from .ui_base import RUNNING
 from .ui_native import NativeMixin
+
+log = logging.getLogger(__name__)
 
 
 class RunMixin(NativeMixin):
@@ -74,7 +77,7 @@ class RunMixin(NativeMixin):
         The run ends when the body returns, or, if it took over the window, when
         its takeover is popped off the content stack (see runner.RunLifetime).
         """
-        print("Starting...")
+        log.info("Starting...")
         self.run_id += 1
         run_id = self.run_id
         stack = self.content_stack()
@@ -134,7 +137,7 @@ class RunMixin(NativeMixin):
         context.close()
         run_id = self.run_id if run_id is None else run_id
         if run_id != self.run_id:
-            print(f"Run {run_id} ended after run {self.run_id} started; ignored")
+            log.warning(f"Run {run_id} ended after run {self.run_id} started; ignored")
             return
         self.script_runner.end_run()
         if self.console_widget is not None:
@@ -383,13 +386,13 @@ class RunMixin(NativeMixin):
         if entry := getattr(row, "entry", None):
             project_dir = Path(row.project_dir)
             folder_root = Path(getattr(row, "folder_root", project_dir))
-            print(f"Launching {entry.name} ({entry.reference}) from {project_dir}")
+            log.info(f"Launching {entry.name} ({entry.reference}) from {project_dir}")
             return runner.entry_target(
                 entry.name, entry.reference, entry.kind, project_dir, folder_root
             )
         entry_point = Path(row.entry_point)
         folder_root = Path(getattr(row, "folder_root", entry_point.parent))
-        print(f"Launching {row.title} from path: {entry_point}")
+        log.info(f"Launching {row.title} from path: {entry_point}")
         if not entry_point.is_file():
             raise FileNotFoundError(f"Entry point not found: {entry_point}")
         return runner.target_for(entry_point, folder_root)

@@ -6,7 +6,8 @@ from typing import Any
 
 import toga
 
-from mypystub.safe_area import (
+from tests import support_ui  # noqa: F401 (selects the dummy backend)
+from togax_jkingok.safe_area import (
     NO_INSETS,
     Insets,
     SafeArea,
@@ -15,7 +16,6 @@ from mypystub.safe_area import (
     insets_for,
     scrolling_widgets,
 )
-from tests import support_ui  # noqa: F401 (selects the dummy backend)
 
 
 def test_insets_without_a_keyboard_are_the_safe_area() -> None:

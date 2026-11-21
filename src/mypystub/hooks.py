@@ -15,6 +15,7 @@ import builtins
 import codecs
 import getpass
 import io
+import logging
 import re
 import sys
 import threading
@@ -24,6 +25,8 @@ from types import TracebackType
 from typing import Any
 
 import toga
+
+log = logging.getLogger(__name__)
 
 EOT, ETX = "\x04", "\x03"  # Ctrl-D and Ctrl-C, as a console delivers them
 
@@ -739,12 +742,12 @@ class ScriptRunner:
             """
             The synchronous operation of the secondary Python script occurs here.
             """
-            print("In worker...")
+            log.debug("In worker...")
             try:
                 script_func()
             finally:
-                print("Back out of worker")
+                log.debug("Back out of worker")
 
         thread = threading.Thread(target=worker, daemon=True)
-        print("About to start worker...")
+        log.debug("About to start worker...")
         thread.start()

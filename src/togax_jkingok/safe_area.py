@@ -10,7 +10,7 @@ as they change.
 
 On Android the same space comes from the window insets (system bars, display
 cutout and keyboard) that Android reports to the box's view; see
-:mod:`mypystub.android_insets`. Android doesn't resize the window for the
+:mod:`togax_jkingok._android_insets`. Android doesn't resize the window for the
 keyboard, so without this it covers whatever is at the bottom.
 
 Elsewhere it is a plain Box: desktop platforms lay windows out inside their
@@ -19,11 +19,17 @@ safe area and move content for the keyboard themselves.
 
 from __future__ import annotations
 
+import logging
 import sys
 from collections.abc import Callable, Iterable
 from typing import Any, NamedTuple
 
 import toga
+
+# What the platform reports and the padding applied, for diagnosing layouts
+# (#305). Silent unless the app routes it: a print would land in whatever
+# stdout is at the time, such as a running script's output.
+log = logging.getLogger(__name__)
 
 
 class Insets(NamedTuple):
@@ -269,9 +275,11 @@ class SafeArea(toga.Box):
         if sys.platform == "ios":
             self._native_no_adjustment(scrolling_widgets(self.content))
         self.content.style.margin = tuple(insets)
-        print(
-            f"{self.describe()} padding applied: {tuple(insets)}"
-            + (" (keyboard up)" if keyboard_up else "")
+        log.info(
+            "%s padding applied: %s%s",
+            self.describe(),
+            tuple(insets),
+            " (keyboard up)" if keyboard_up else "",
         )
         if self.on_change is not None:
             self.on_change(self, insets)
@@ -394,9 +402,9 @@ class SafeArea(toga.Box):
         keyboard up, Toga can resize the box after the keyboard has settled,
         which leaves the first one's size, and so its layout, unchanged.
         """
-        from . import bridge
+        from . import _ios_observer
 
-        observer_class: Any = getattr(bridge, "SafeAreaObserverView")  # noqa: B009
+        observer_class: Any = getattr(_ios_observer, "SafeAreaObserverView")  # noqa: B009
 
         native = self._impl.native
         bottoms = [
@@ -450,7 +458,7 @@ class SafeArea(toga.Box):
 
     def _observe_android(self) -> None:
         """Have Android tell this box when its insets or position change."""
-        from . import android_insets as native
+        from . import _android_insets as native
 
         self._observer = native.watch(self._impl.native, self.android_changed)
 
@@ -473,9 +481,11 @@ class SafeArea(toga.Box):
         if rounded == getattr(self, "_last_reading", None):
             return
         self._last_reading = rounded
-        print(
-            f"{self.describe()} {platform} reading: "
-            + ", ".join(f"{name}={value}" for name, value in rounded.items())
+        log.info(
+            "%s %s reading: %s",
+            self.describe(),
+            platform,
+            ", ".join(f"{name}={value}" for name, value in rounded.items()),
         )
 
     @staticmethod

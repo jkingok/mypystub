@@ -6,6 +6,9 @@ fresh interpreter that, once Toga itself is imported, reports the platform's
 ``sys.platform`` and refuses
 every backend's native libraries, so a module-level import that isn't behind
 a platform check fails here.
+
+Private modules (``_android_insets``) hold one platform's code and are only
+imported, lazily, on that platform, so they're left out.
 """
 
 import json
@@ -42,7 +45,8 @@ sys.meta_path.insert(0, Refuse())
 sys.platform = sys.argv[1]
 import togax_jkingok
 for module in pkgutil.iter_modules(togax_jkingok.__path__):
-    importlib.import_module(f"togax_jkingok.{module.name}")
+    if not module.name.startswith("_"):  # private: imported on its platform only
+        importlib.import_module(f"togax_jkingok.{module.name}")
 """
 
 

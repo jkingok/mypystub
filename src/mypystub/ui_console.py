@@ -14,7 +14,10 @@ console on a phone isn't handled yet.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 SETTING = "experimental_console"  # launcher.toml flag, off by default
 
@@ -24,6 +27,6 @@ def make_console() -> Any | None:
     try:
         from toga_console import Console  # pyright: ignore[reportMissingImports]
     except ImportError as error:
-        print(f"Experimental Console unavailable: {error}")
+        log.warning(f"Experimental Console unavailable: {error}")
         return None
     return Console(readonly=True, follow=True, flex=1)

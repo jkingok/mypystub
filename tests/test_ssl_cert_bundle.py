@@ -24,7 +24,7 @@ def test_keeps_existing_ssl_cert_file(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_missing_certifi_logs_and_does_not_raise(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """If certifi cannot be imported, a message is printed and nothing is set."""
     monkeypatch.delenv("SSL_CERT_FILE", raising=False)
@@ -32,4 +32,4 @@ def test_missing_certifi_logs_and_does_not_raise(
     monkeypatch.setitem(sys.modules, "certifi", None)
     export_ssl_cert_bundle()
     assert "SSL_CERT_FILE" not in os.environ
-    assert "certifi unavailable" in capsys.readouterr().out
+    assert "certifi unavailable" in caplog.text

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from . import resume
 from .ui_base import PrototypeBase
+
+log = logging.getLogger(__name__)
 
 
 class ResumeMixin(PrototypeBase):
@@ -53,7 +56,7 @@ class ResumeMixin(PrototypeBase):
         try:
             state = self.resume_snapshot()
         except Exception as error:  # noqa: BLE001 - saving must never break the UI
-            print(f"Couldn't work out where to resume: {error}")
+            log.warning(f"Couldn't work out where to resume: {error}")
             return
         if state != self._resume_written and resume.save(self.resume_path, state):
             self._resume_written = state

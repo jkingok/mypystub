@@ -12,6 +12,7 @@ Kept free of Toga imports so it can be unit tested on desktop.
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 from pathlib import Path
@@ -83,12 +84,52 @@ class LogRedirector:
 _current: LogRedirector | None = None
 
 
+# The app's own packages log at INFO; everything else keeps logging's default
+# (WARNING). These are levels only: where records go is decided once, for
+# every logger, by the handler of last resort (see install)
+APP_LOGGERS = ("mypystub", "togax_jkingok")
+LOG_FORMAT = "%(levelname)s %(name)s: %(message)s"
+
+
+class LogFileHandler(logging.Handler):
+    """Writes log records to the log file (through `redirector`), never stdout.
+
+    ``sys.stdout`` is a running script's output while it runs, so a handler
+    on it (as logging's own default, on stderr) would show the launcher's
+    diagnostics among the script's. This one holds the redirector itself.
+    """
+
+    def __init__(self, redirector: LogRedirector) -> None:
+        """Write to `redirector`'s log file (and its terminal echo)."""
+        super().__init__(logging.NOTSET)
+        self.redirector = redirector
+        self.setFormatter(logging.Formatter(LOG_FORMAT))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Write one record as a line."""
+        try:
+            self.redirector.write(self.format(record) + "\n")
+        except Exception:  # noqa: BLE001  (logging must never raise)
+            self.handleError(record)
+
+
 def install(log_path: Path) -> LogRedirector:
-    """Make a redirector for `log_path` the app's stdout and stderr."""
+    """Make a redirector for `log_path` the app's stdout and stderr.
+
+    Logging goes to the log file too, from every logger: the redirector
+    becomes logging's handler of last resort (``logging.lastResort``), which
+    handles any record that no configured handler takes. So nothing logged
+    reaches stdout or stderr unless someone configures it to, as a script
+    can (``logging.basicConfig()`` and the like); the runner puts logging
+    back as it was when the script ends.
+    """
     global _current
     _current = LogRedirector(log_path)
     sys.stdout = _current  # type: ignore[assignment]
     sys.stderr = _current  # type: ignore[assignment]
+    logging.lastResort = LogFileHandler(_current)
+    for name in APP_LOGGERS:
+        logging.getLogger(name).setLevel(logging.INFO)
     return _current
 
 

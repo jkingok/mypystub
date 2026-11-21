@@ -12,6 +12,7 @@ The listener is an interface, so Chaquopy gives it to Java through a dynamic
 proxy. This module imports Java at its top, so it is only imported on Android.
 """
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -25,6 +26,8 @@ from java import (  # pyright: ignore[reportMissingImports]
 )
 
 from .safe_area import AndroidMeasure, Insets
+
+log = logging.getLogger(__name__)
 
 SDK_INT = jclass("android.os.Build$VERSION").SDK_INT
 TYPE_IME_FIRST_SDK = 30  # WindowInsets.Type, and the insets it names, arrived here
@@ -93,7 +96,7 @@ class InsetsWatcher:
         try:
             self.callback(measure, self.density)
         except Exception as error:  # noqa: BLE001  (don't break Android's layout)
-            print(f"Insets callback failed: {error}")
+            log.warning(f"Insets callback failed: {error}")
 
 
 def layout_origin(view: Any) -> tuple[float, float]:

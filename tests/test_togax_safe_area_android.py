@@ -15,8 +15,9 @@ from typing import Any
 import pytest
 import toga
 
-from mypystub import safe_area
-from mypystub.safe_area import (
+from tests import support_ui  # noqa: F401 (selects the dummy backend)
+from togax_jkingok import safe_area
+from togax_jkingok.safe_area import (
     NO_INSETS,
     AndroidMeasure,
     Insets,
@@ -24,7 +25,6 @@ from mypystub.safe_area import (
     SafeRow,
     android_padding,
 )
-from tests import support_ui  # noqa: F401 (selects the dummy backend)
 
 # A 1080x2400 phone at 2.625x density: status bar 63 px, navigation bar 126 px
 WINDOW = (1080.0, 2400.0)
@@ -95,7 +95,7 @@ def test_a_view_not_laid_out_yet_has_no_insets() -> None:
     assert android_padding(measure((0, 0, 100, 100)), 0) == (NO_INSETS, False)
 
 
-# SafeArea itself, with a stand-in for android_insets
+# SafeArea itself, with a stand-in for _android_insets
 
 
 class Watcher:
@@ -105,17 +105,17 @@ class Watcher:
 
 @pytest.fixture
 def android(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
-    """The platform set to Android, with a recording android_insets module."""
-    module = types.ModuleType("mypystub.android_insets")
+    """The platform set to Android, with a recording _android_insets module."""
+    module = types.ModuleType("togax_jkingok._android_insets")
     module.watch = Watcher  # type: ignore[attr-defined]
     from toga_dummy.widgets.box import Box
 
     monkeypatch.setattr(Box, "native", object(), raising=False)  # the Android view
     monkeypatch.setattr(toga.App, "app", None)  # no loop: changes apply at once
     monkeypatch.setattr(safe_area.sys, "platform", "android")
-    monkeypatch.setitem(sys.modules, "mypystub.android_insets", module)
+    monkeypatch.setitem(sys.modules, "togax_jkingok._android_insets", module)
     monkeypatch.setattr(
-        sys.modules["mypystub"], "android_insets", module, raising=False
+        sys.modules["togax_jkingok"], "_android_insets", module, raising=False
     )
     yield module
 
@@ -285,10 +285,10 @@ def native(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
     monkeypatch.setitem(sys.modules, "java", java)
     monkeypatch.setitem(sys.modules, "android", android)
     monkeypatch.setitem(sys.modules, "android.view", view)
-    monkeypatch.delitem(sys.modules, "mypystub.android_insets", raising=False)
-    module = importlib.import_module("mypystub.android_insets")
+    monkeypatch.delitem(sys.modules, "togax_jkingok._android_insets", raising=False)
+    module = importlib.import_module("togax_jkingok._android_insets")
     yield module
-    sys.modules.pop("mypystub.android_insets", None)
+    sys.modules.pop("togax_jkingok._android_insets", None)
 
 
 def test_watching_sets_both_listeners_and_asks_for_insets(native: Any) -> None:
@@ -323,7 +323,7 @@ def test_a_layout_change_reports_again_with_the_last_insets(native: Any) -> None
 
 
 def test_a_failing_callback_does_not_break_layout(
-    native: Any, capsys: pytest.CaptureFixture[str]
+    native: Any, caplog: pytest.LogCaptureFixture
 ) -> None:
     def broken(m: Any, density: float) -> None:
         raise RuntimeError("oops")
@@ -331,7 +331,7 @@ def test_a_failing_callback_does_not_break_layout(
     view = FakeView()
     native.watch(view, broken)
     view.apply.onApplyWindowInsets(view, WindowInsets())
-    assert "Insets callback failed: oops" in capsys.readouterr().out
+    assert "Insets callback failed: oops" in caplog.text
 
 
 def test_before_android_11_the_older_insets_are_used(

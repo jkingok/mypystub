@@ -146,19 +146,19 @@ def test_installing_twice_changes_nothing(toga_module: types.ModuleType) -> None
 
 
 def test_a_changed_toga_is_left_alone(
-    toga_module: types.ModuleType, capsys: pytest.CaptureFixture[str]
+    toga_module: types.ModuleType, caplog: pytest.LogCaptureFixture
 ) -> None:
     del toga_module.DetailedListActionListener  # type: ignore[attr-defined]
     original = ToganLongClick.onLongClick
     assert android_list.install() is False
     assert ToganLongClick.onLongClick is original
-    assert "still selects" in capsys.readouterr().out
+    assert "still selects" in caplog.text
 
 
 def test_without_toga_android_it_says_so(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr(android_list, "_installed", False)
     monkeypatch.delitem(sys.modules, "toga_android", raising=False)
     assert android_list.install() is False
-    assert "still selects" in capsys.readouterr().out
+    assert "still selects" in caplog.text

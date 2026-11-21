@@ -263,7 +263,7 @@ def test_find_matches_applies_specifier(index: FakeIndex, tmp_path: Path) -> Non
 
 
 def test_bundled_package_wins_over_conflicting_specifier(
-    index: FakeIndex, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    index: FakeIndex, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A pin the bundled copy doesn't meet is warned about, not downloaded (#66).
 
@@ -274,7 +274,7 @@ def test_bundled_package_wins_over_conflicting_specifier(
     pins = resolve(provider, "pkg<2")
     assert pins["pkg"].is_system and str(pins["pkg"].version) == "3.0"
     assert index.lookups == []
-    assert "bundled pkg 3.0 does not satisfy pkg<2" in capsys.readouterr().out
+    assert "bundled pkg 3.0 does not satisfy pkg<2" in caplog.text
 
 
 def test_find_matches_rejects_iphoneos_wheels(index: FakeIndex, tmp_path: Path) -> None:
@@ -809,9 +809,10 @@ def test_substitute_unused_when_the_original_has_a_wheel(
 
 
 def test_substitute_used_when_the_original_has_no_wheel(
-    index: FakeIndex, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    index: FakeIndex, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """With only an iPhoneOS-device wheel, pyyaml-pure is used, specifier dropped."""
+    caplog.set_level("INFO", logger="mypystub")  # the note is logged at INFO
     index.add("pyyaml", "6.0.3", filename=IPHONEOS_ONLY)
     index.add("pyyaml-pure", "0.1.0")
     pins = resolve(make_provider(index, tmp_path), "PyYAML>=6")
@@ -819,7 +820,7 @@ def test_substitute_used_when_the_original_has_no_wheel(
         "pyyaml-pure",
         "0.1.0",
     )
-    out = capsys.readouterr().out
+    out = caplog.text
     assert "pyyaml → pyyaml-pure (no compatible wheel for this platform)" in out
     assert "ignoring >=6" in out
 

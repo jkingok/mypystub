@@ -10,6 +10,7 @@ its own window; the run ends when its process does.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -21,6 +22,8 @@ from .errors import guarded
 from .run_settings import EnvValue
 from .run_status import DEPENDENCY_FAILED, STOPPED, exit_status
 from .ui_rowsettings import RowSettingsMixin
+
+log = logging.getLogger(__name__)
 
 EOT_BYTE, ETX_BYTE = b"\x04", b"\x03"  # Ctrl-D and Ctrl-C, from the console
 CHUNK = 4096  # read output in pieces, not lines: input() prompts have no newline
@@ -105,7 +108,7 @@ class NativeMixin(RowSettingsMixin):
 
         With `interactive`, the input field stays up and sends lines to stdin.
         """
-        print(f"Native: {' '.join(command[:4])} …")
+        log.info(f"Native: {' '.join(command[:4])} …")
         self.script_runner.begin_run()
         process = await asyncio.create_subprocess_exec(
             *command,

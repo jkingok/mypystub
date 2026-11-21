@@ -13,22 +13,28 @@ Platform support:
   a phone-only feature doesn't apply (SafeArea is then a plain Box).
 - **Web and Textual: limited or none,** but never broken on import.
 
-Whatever the platform, ``import togax_jkingok`` (and each module in it) must
-succeed, even with no backend's native libraries installed
-(``tests/test_togax_platforms.py`` imports it as each platform).
+Whatever the platform, ``import togax_jkingok`` (and each public module in it)
+must succeed, even with no backend's native libraries installed
+(``tests/test_togax_platforms.py`` imports it as each platform). A private
+module (``_android_insets``) holds one platform's native code, and is imported
+only on that platform, when a widget needs it.
 """
 
 from .collapsible import Collapsible
 from .labelled import LabelledActivity, LabelledProgress, LabelledSelection
 from .layout import refresh_on_new_width, relayout, relayout_on_resize
 from .orientation import OrientationBox
+from .safe_area import Insets, SafeArea, SafeColumn
 
 __all__ = [
     "Collapsible",
+    "Insets",
     "LabelledActivity",
     "LabelledProgress",
     "LabelledSelection",
     "OrientationBox",
+    "SafeArea",
+    "SafeColumn",
     "refresh_on_new_width",
     "relayout",
     "relayout_on_resize",

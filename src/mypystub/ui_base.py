@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from collections.abc import Callable
@@ -13,7 +14,7 @@ from typing import Any
 import toga
 from toga.style import Pack
 
-from togax_jkingok import LabelledActivity, OrientationBox
+from togax_jkingok import LabelledActivity, OrientationBox, SafeArea, SafeColumn
 
 from . import (
     examples_copy,
@@ -32,7 +33,8 @@ from . import settings as s
 from .errors import guarded
 from .pages import html_page
 from .run_settings import SYSTEM, Layer, env_name_problem, env_value_problem
-from .safe_area import SafeArea, SafeColumn
+
+log = logging.getLogger(__name__)
 
 # Text colour for a run's stderr: an orange that reads as a warning, with
 # enough contrast on both the light and the dark background
@@ -98,7 +100,7 @@ class PrototypeBase:
         self.cache_path = self.app.paths.cache
         self.fetching_icons: set[str] = set()  # online web app icons being fetched
         self.data_path = getattr(self.app, "user_documents_dir", self.app.paths.data)
-        print(f"Prototype initialized with data_path: {self.data_path}")
+        log.info(f"Prototype initialized with data_path: {self.data_path}")
         self.this_path = Path(__file__).resolve().parent
         self.examples_path = self.examples_location()
         self.icon_path = self.this_path / "resources" / "icons"
@@ -446,7 +448,7 @@ class PrototypeBase:
                 source, Path(self.cache_path), sys.platform
             )
         except OSError as e:
-            print(f"Couldn't copy the examples; using the bundled ones: {e}")
+            log.warning(f"Couldn't copy the examples; using the bundled ones: {e}")
             return Path(str(source))
 
     def category_dirs(self) -> dict[str, Path]:
@@ -787,7 +789,7 @@ class PrototypeBase:
             table = self.settings.get_table("aliases")
             return pip.parse_aliases(table)
         except (ValueError, OSError) as e:
-            print(f"Ignoring [aliases] in launcher.toml: {e}")
+            log.warning(f"Ignoring [aliases] in launcher.toml: {e}")
             return {}
 
     @guarded

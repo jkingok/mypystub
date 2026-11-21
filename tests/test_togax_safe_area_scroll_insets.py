@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 import toga
 
-from mypystub.safe_area import Insets, SafeArea, SafeColumn
 from tests import support_ui  # noqa: F401 (selects the dummy backend)
+from togax_jkingok.safe_area import Insets, SafeArea, SafeColumn
 
 NEVER = 2  # UIScrollViewContentInsetAdjustmentNever
 AUTOMATIC = 0
