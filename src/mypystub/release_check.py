@@ -61,10 +61,7 @@ class BuildStatus:
             case "newer":
                 when = f" ({self.published})" if self.published else ""
                 return [
-                    (
-                        f"Build {self.latest}{when} is available in TestFlight; "
-                        f"this is {self.running}."
-                    )
+                    (f"Build {self.latest}{when} is available; this is {self.running}.")
                 ]
             case "ahead":
                 return [

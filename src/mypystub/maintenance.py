@@ -38,6 +38,7 @@ RELEASE_NAME = re.compile(r"Python (\d+\.\d+\.\d+\S*)")
 if TYPE_CHECKING:
     from .git_updates import GitUpdate
     from .release_check import BuildStatus
+    from .update_cache import UpdateCache
 
 
 class MaintenanceError(Exception):
@@ -152,6 +153,31 @@ def check_python(client: httpx2.Client, current: str) -> PythonStatus:
     return python_status(fetch_json(client, PYTHON_RELEASES_URL, "python.org"), current)
 
 
+def check_python_cached(
+    client: httpx2.Client,
+    current: str,
+    cache: UpdateCache | None = None,
+    offline: bool = False,
+) -> PythonStatus | None:
+    """:func:`check_python`, using today's answer for this Python if there is one.
+
+    `offline` never asks: it gives the last answer, or None.
+    """
+    remembered = None
+    if cache is not None:
+        remembered = (cache.last if offline else cache.get)("python", "python", current)
+    if remembered is not None:
+        newest = [Version(v) if v else None for v in remembered]
+        return PythonStatus(Version(current), *newest)
+    if offline:
+        return None
+    status = check_python(client, current)
+    if cache is not None and status is not None:
+        found = (status.latest_patch, status.newer_stable, status.upcoming)
+        cache.put("python", "python", [str(v) if v else "" for v in found], current)
+    return status
+
+
 # ---------------------------------------------------------------------------
 # Package versions
 # ---------------------------------------------------------------------------
@@ -188,18 +214,23 @@ def find_updates(
     inventory: Mapping[str, str],
     critical: Iterable[str] = (),
     on_check: Callable[[str], None] | None = None,
+    cache: UpdateCache | None = None,
+    offline: bool = False,
 ) -> list[Update]:
     """Packages in `inventory` (name -> version) with a newer version on PyPI.
 
     `on_check` is called with each package's name as it is checked, one request
-    each, so a caller can count them (from the thread this runs on).
+    each, so a caller can count them (from the thread this runs on). With a
+    `cache`, a package already asked about today at this version isn't asked
+    again. `offline` never asks: packages with no remembered answer are left
+    out.
     """
     critical_names = {canonicalize_name(n) for n in critical}
     updates: list[Update] = []
     for name, version in sorted(inventory.items()):
         if on_check is not None:
             on_check(name)
-        latest = latest_on_pypi(client, name)
+        latest = _latest(client, name, version, cache, offline)
         try:
             installed = Version(version)
         except InvalidVersion:
@@ -210,6 +241,30 @@ def find_updates(
                 Update(canonical, installed, latest, canonical in critical_names)
             )
     return updates
+
+
+def _latest(
+    client: httpx2.Client,
+    name: str,
+    version: str,
+    cache: UpdateCache | None,
+    offline: bool,
+) -> Version | None:
+    """PyPI's latest version of `name`, from the cache when it can be."""
+    key = canonicalize_name(name)
+    if cache is not None:
+        remembered = (cache.last if offline else cache.get)("pypi", key, version)
+        if remembered is not None:
+            try:
+                return Version(remembered) if remembered else None
+            except InvalidVersion:
+                pass
+    if offline:
+        return None
+    latest = latest_on_pypi(client, name)
+    if cache is not None:
+        cache.put("pypi", key, str(latest) if latest else "", version)
+    return latest
 
 
 def upgrade_requirements(updates: Iterable[Update]) -> list[str]:
@@ -224,7 +279,7 @@ def upgrade_requirements(updates: Iterable[Update]) -> list[str]:
 
 @dataclass(frozen=True)
 class Health:
-    """Things that only a new app build (TestFlight) can update.
+    """Things that only a new app build can update.
 
     `build` is how this build compares with the newest GitHub Release (see
     ``release_check``); if a newer build exists the Python and package checks
@@ -251,11 +306,11 @@ class Health:
     def summary(self) -> str:
         """One line for the Setup view."""
         if self.build is not None and self.build.newer:
-            return f"⚠ A newer build, {self.build.latest}, is available (TestFlight)"
+            return f"⚠ A newer build, {self.build.latest}, is available"
         if not self.count:
             return "✓ Up to date"
         noun = "update needs" if self.count == 1 else "updates need"
-        return f"⚠ {self.count} {noun} a new app build (TestFlight)"
+        return f"⚠ {self.count} {noun} a new app build"
 
     def details(self) -> list[str]:
         """One line per finding, most important first."""

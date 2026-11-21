@@ -21,7 +21,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlsplit
 
 import httpx2
@@ -29,6 +29,9 @@ from packaging.utils import canonicalize_name
 
 from .git_hosts import host_of
 from .maintenance import MaintenanceError
+
+if TYPE_CHECKING:
+    from .update_cache import UpdateCache
 
 FULL_SHA = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
 # The commit as plain text, from GitHub's commits API
@@ -175,6 +178,26 @@ def latest_commit(client: httpx2.Client, source: GitSource) -> str | None:
     return None
 
 
+def _latest(
+    client: httpx2.Client,
+    source: GitSource,
+    key: str,
+    cache: UpdateCache | None,
+    offline: bool,
+) -> str | None:
+    """The branch's newest commit, from the cache when it can be."""
+    if cache is not None:
+        remembered = (cache.last if offline else cache.get)("git", key)
+        if remembered is not None:
+            return str(remembered) or None
+    if offline:
+        return None
+    latest = latest_commit(client, source)
+    if cache is not None:
+        cache.put("git", key, latest or "")
+    return latest
+
+
 def compare_url(source: GitSource, latest: str) -> str | None:
     """The host's page comparing the installed commit with `latest`."""
     path, old = "/".join(source.path), source.commit
@@ -193,11 +216,15 @@ def find_git_updates(
     sources: Mapping[str, GitSource],
     critical: Iterable[str] = (),
     on_check: Callable[[str], None] | None = None,
+    cache: UpdateCache | None = None,
+    offline: bool = False,
 ) -> list[GitUpdate]:
     """Sources whose branch has moved on, sorted by name.
 
     Packages from the same repository and branch (Toga's) share one request.
-    `on_check` is called with each package's name as it is checked.
+    `on_check` is called with each package's name as it is checked. With a
+    `cache`, a branch already asked about today isn't asked again; `offline`
+    never asks, and uses the last answer if there is one.
     """
     critical_names = {canonicalize_name(n) for n in critical}
     asked: dict[tuple[str, str | None], str | None] = {}
@@ -209,7 +236,9 @@ def find_git_updates(
             continue
         key = (source.url.lower().removesuffix(".git"), source.ref)
         if key not in asked:
-            asked[key] = latest_commit(client, source)
+            asked[key] = _latest(
+                client, source, "|".join(map(str, key)), cache, offline
+            )
         latest = asked[key]
         if latest and latest.lower() != source.commit.lower():
             updates.append(

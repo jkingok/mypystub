@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import platform
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -26,6 +27,7 @@ from . import (
     release_check,
     setup_pages,
     share_items,
+    update_cache,
 )
 from . import piplike as pip
 from .errors import guarded
@@ -68,6 +70,8 @@ class SetupMixin(PrototypeBase):
         self.health: maintenance.Health | None = None
         self.health_error: str | None = None
         self.build_error: str | None = None  # why the newer-build check failed
+        # When the shown results were found: by a check, or a remembered one
+        self.last_checked: datetime | None = None
 
     async def confirm(self, text: str, title: str) -> bool:
         """Ask a yes/no question; True if the user said yes."""
@@ -120,6 +124,7 @@ class SetupMixin(PrototypeBase):
                     health=self.health,
                     health_error=self.health_error,
                     build_error=self.build_error,
+                    last_checked=self.last_checked,
                 )
             case _:
                 return setup_pages.permissions_html(permissions.status(self.app))
@@ -170,6 +175,8 @@ class SetupMixin(PrototypeBase):
         """
         if page == "packages":
             self.refresh_packages()
+            if self.last_checked is None:
+                self.show_last_check()
         actions = self.setup_actions(page)
         # These widgets are reused, so take them out of the last page first
         for widget in (self.setup_view, self.setup_activity, *actions):
@@ -327,8 +334,13 @@ class SetupMixin(PrototypeBase):
         user = pip.get_package_inventory(self.site_packages)
         bundled = pip.get_bundled_inventory(self.site_packages)
         tick = self.check_counter(len(user) + len(bundled) + 2)
-        user_message = await self.check_user_packages(tick)
-        health_message = await self.check_app_health(tick)
+        # Answers given today are used again: each package is asked about at
+        # most once a day per version
+        cache = self.new_update_cache()
+        user_message = await self.check_user_packages(tick, cache)
+        health_message = await self.check_app_health(tick, cache)
+        self.last_checked = datetime.now()
+        await asyncio.to_thread(cache.save, self.last_checked)
         self.render_setup_page()
         self.setup_activity.update(
             "; ".join(m for m in (user_message, health_message) if m), on=False
@@ -351,8 +363,31 @@ class SetupMixin(PrototypeBase):
 
         return tick
 
+    def new_update_cache(self) -> update_cache.UpdateCache:
+        """The remembered answers of earlier checks, fresh for today."""
+        return update_cache.UpdateCache(Path(self.cache_path) / update_cache.CACHE_NAME)
+
+    def show_last_check(self) -> None:
+        """Show the last check's results, as remembered, without asking anyone.
+
+        Packages with no remembered answer are left out until the next check.
+        """
+        cache = self.new_update_cache()
+        if cache.checked is None:
+            return
+        user = pip.get_package_inventory(self.site_packages)
+        bundled = pip.get_bundled_inventory(self.site_packages)
+        no_client: Any = None  # offline: nothing is asked
+        updates = maintenance.find_updates(no_client, user, cache=cache, offline=True)
+        self.pending_updates = self.checked_updates = updates
+        self.update_all_button.enabled = bool(updates)
+        self.health = self.health_check(no_client, bundled, None, None, cache, True)
+        self.last_checked = cache.checked
+
     async def check_user_packages(
-        self, tick: Callable[[str], None] | None = None
+        self,
+        tick: Callable[[str], None] | None = None,
+        cache: update_cache.UpdateCache | None = None,
     ) -> str:
         """Ask PyPI whether user packages have newer versions; a status line."""
         inventory = pip.get_package_inventory(self.site_packages)
@@ -360,7 +395,7 @@ class SetupMixin(PrototypeBase):
             updates = await asyncio.to_thread(
                 self.with_client,
                 lambda client: maintenance.find_updates(
-                    client, inventory, on_check=tick
+                    client, inventory, on_check=tick, cache=cache
                 ),
             )
         except maintenance.MaintenanceError as e:
@@ -374,7 +409,11 @@ class SetupMixin(PrototypeBase):
         self.update_all_button.enabled = bool(updates)
         return f"{len(updates)} package update(s)" if updates else "Packages up to date"
 
-    async def check_app_health(self, tick: Callable[[str], None] | None = None) -> str:
+    async def check_app_health(
+        self,
+        tick: Callable[[str], None] | None = None,
+        cache: update_cache.UpdateCache | None = None,
+    ) -> str:
         """Is this the latest build? If so, check Python and the bundled packages.
 
         GitHub's Releases are asked first: one cheap request. If a newer build
@@ -396,26 +435,9 @@ class SetupMixin(PrototypeBase):
             self.health_error = None
             return f"App: {self.health.summary}"
         bundled = pip.get_bundled_inventory(self.site_packages)
-        # Bundled from git (Toga, toga-console): their commits are compared
-        # with their branch instead of their versions with PyPI (#328)
-        from_git = git_updates.bundled_from_git(bundled)
-        from_pypi = {
-            name: version
-            for name, version in bundled.items()
-            if canonicalize_name(name) not in from_git
-        }
 
         def check(client: httpx2.Client) -> maintenance.Health:
-            if tick is not None:
-                tick("python.org")
-            python = maintenance.check_python(client, platform.python_version())
-            updates = maintenance.find_updates(
-                client, from_pypi, critical=maintenance.APP_CRITICAL, on_check=tick
-            )
-            newer = git_updates.find_git_updates(
-                client, from_git, critical=maintenance.APP_CRITICAL, on_check=tick
-            )
-            return maintenance.Health(python, updates, build, newer)
+            return self.health_check(client, bundled, build, tick, cache)
 
         try:
             health = await asyncio.to_thread(self.with_client, check)
@@ -425,6 +447,49 @@ class SetupMixin(PrototypeBase):
         self.health = health
         self.health_error = None
         return f"App: {health.summary}"
+
+    def health_check(
+        self,
+        client: httpx2.Client,
+        bundled: dict[str, str],
+        build: Any,
+        tick: Callable[[str], None] | None,
+        cache: update_cache.UpdateCache | None,
+        offline: bool = False,
+    ) -> maintenance.Health:
+        """Python and the bundled packages, compared with what's newest.
+
+        Packages bundled from git (Toga, toga-console) are compared with their
+        branch instead of their version with PyPI (#328).
+        """
+        from_git = git_updates.bundled_from_git(bundled)
+        from_pypi = {
+            name: version
+            for name, version in bundled.items()
+            if canonicalize_name(name) not in from_git
+        }
+        if tick is not None:
+            tick("python.org")
+        python = maintenance.check_python_cached(
+            client, platform.python_version(), cache, offline
+        )
+        updates = maintenance.find_updates(
+            client,
+            from_pypi,
+            critical=maintenance.APP_CRITICAL,
+            on_check=tick,
+            cache=cache,
+            offline=offline,
+        )
+        newer = git_updates.find_git_updates(
+            client,
+            from_git,
+            critical=maintenance.APP_CRITICAL,
+            on_check=tick,
+            cache=cache,
+            offline=offline,
+        )
+        return maintenance.Health(python, updates, build, newer)
 
     @guarded
     async def handle_update_all(self, widget: toga.Widget, **kwargs: Any) -> None:

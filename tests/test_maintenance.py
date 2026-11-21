@@ -177,7 +177,7 @@ def test_health_summary_states() -> None:
 
     assert m.Health(current, []).summary == "✓ Up to date"
     summary = m.Health(behind, [certifi]).summary
-    assert summary == "⚠ 2 updates need a new app build (TestFlight)"
+    assert summary == "⚠ 2 updates need a new app build"
     assert m.Health(current, [certifi]).summary.startswith("⚠ 1 update need")
 
 

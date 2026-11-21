@@ -178,7 +178,7 @@ def test_one_check_covers_packages_and_app_health(
     assert setup_pages.NOT_CHECKED in proto.setup_html
     run(app, proto.handle_check_updates(proto.update_all_button))
     assert "✓ Up to date" in proto.setup_html  # user packages
-    assert "⚠ 1 update needs a new app build (TestFlight)" in proto.setup_html
+    assert "⚠ 1 update needs a new app build" in proto.setup_html
     assert "Python 3.15.1 → 3.15.2 available" in proto.setup_html
     assert "Packages up to date" in proto.setup_activity.text.text
     assert "App: ⚠ 1 update needs" in proto.setup_activity.text.text

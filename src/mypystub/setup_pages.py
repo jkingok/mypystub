@@ -7,6 +7,7 @@ desktop.
 """
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from html import escape
 
 from .maintenance import Health, Update
@@ -89,7 +90,7 @@ def health_section(
         parts.append(build_notes(health))
     parts.append(
         "<p>The app's own Python and bundled packages can only be updated by a "
-        "new app build (TestFlight), so there's nothing to do about them here "
+        "new app build, so there's nothing to do about them here "
         "except check.</p>"
     )
     return "".join(parts)
@@ -107,6 +108,7 @@ def packages_html(
     health: Health | None = None,
     health_error: str | None = None,
     build_error: str | None = None,
+    last_checked: datetime | None = None,
 ) -> str:
     """The Packages page: everything about the Python and packages in this app.
 
@@ -120,6 +122,7 @@ def packages_html(
     :param health: The app health result from the last check, if any.
     :param health_error: Why the last health check failed, if it did.
     :param build_error: Why checking for a newer build failed, if it did.
+    :param last_checked: When the results shown were found, if they were.
     """
     parts = ["<h2>Packages</h2>"]
     if python:
@@ -138,6 +141,12 @@ def packages_html(
             details(f"{len(rows)} packages", table(rows, ("Package", "Version")))
         )
     parts.append("<h3>Updates</h3>")
+    if last_checked is not None:
+        parts.append(
+            f"<p>Last checked {last_checked:%d %b %Y, %H:%M}. Answers are kept "
+            "for the day, so checking again today asks only about what's "
+            "changed.</p>"
+        )
     if update_error is not None:
         parts.append(f"<p>Couldn't check: {escape(update_error)}</p>")
     elif updates is None:

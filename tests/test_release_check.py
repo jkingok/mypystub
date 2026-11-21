@@ -89,7 +89,7 @@ def test_a_newer_build_carries_its_page_date_and_notes() -> None:
     assert status.newer and status.published == "2026-11-09"
     assert status.url.endswith("/releases/tag/2026.11.9.2")
     assert "A thing." in status.notes
-    assert "2026.11.9.2 (2026-11-09) is available in TestFlight" in status.lines()[0]
+    assert "2026.11.9.2 (2026-11-09) is available;" in status.lines()[0]
 
 
 def test_long_notes_are_cut_short() -> None:
@@ -168,7 +168,7 @@ def test_health_counts_a_newer_build_and_skips_the_rest() -> None:
     status = release_check.check_build(client(answering(RELEASE)), "2026.11.9.1")
     health = maintenance.Health(None, [], status)
     assert health.count == 1
-    assert health.summary == "⚠ A newer build, 2026.11.9.2, is available (TestFlight)"
+    assert health.summary == "⚠ A newer build, 2026.11.9.2, is available"
     lines = health.details()
     assert lines[0].startswith("Build 2026.11.9.2")
     assert lines[-1] == "Python and package checks skipped: update the app first."

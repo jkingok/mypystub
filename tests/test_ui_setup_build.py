@@ -5,6 +5,7 @@ Skipped where toga_dummy isn't installed, such as on device.
 
 import json
 import os
+from pathlib import Path
 
 import httpx2
 import pytest
@@ -27,8 +28,14 @@ RELEASE = {
 
 
 @pytest.fixture
-def world(proto: ui.Prototype, app: toga.App, monkeypatch: pytest.MonkeyPatch) -> dict:
+def world(
+    proto: ui.Prototype,
+    app: toga.App,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> dict:
     """Fake GitHub, python.org and PyPI, recording which were asked."""
+    proto.cache_path = tmp_path / "cache"  # no remembered answers from elsewhere
     state: dict = {"asked": [], "github": RELEASE, "github_down": False}
 
     real_check_build = release_check.check_build
@@ -74,7 +81,7 @@ def test_a_newer_build_is_reported_first_and_the_deeper_checks_are_skipped(
     check(proto, app)
     assert "python.org" not in world["asked"] and "pypi (app)" not in world["asked"]
     html = proto.setup_html
-    assert "A newer build, 2026.11.9.2, is available (TestFlight)" in html
+    assert "A newer build, 2026.11.9.2, is available" in html
     assert "Python and package checks skipped" in html
     assert 'href="https://github.com/jkingok/mypystub/releases/tag/2026.11.9.2"' in html
     assert "A shiny thing." in html
