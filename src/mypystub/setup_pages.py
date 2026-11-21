@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from html import escape
 
+from .git_updates import GitUpdate
 from .maintenance import Health, Update
 from .pages import readme_html
 
@@ -109,6 +110,7 @@ def packages_html(
     health_error: str | None = None,
     build_error: str | None = None,
     last_checked: datetime | None = None,
+    git_updates: Sequence[GitUpdate] = (),
 ) -> str:
     """The Packages page: everything about the Python and packages in this app.
 
@@ -123,6 +125,7 @@ def packages_html(
     :param health_error: Why the last health check failed, if it did.
     :param build_error: Why checking for a newer build failed, if it did.
     :param last_checked: When the results shown were found, if they were.
+    :param git_updates: User packages from git with newer commits on their branch.
     """
     parts = ["<h2>Packages</h2>"]
     if python:
@@ -154,12 +157,26 @@ def packages_html(
             f"<p>{NOT_CHECKED} <b>Check for updates</b> asks PyPI about your "
             "user packages, and python.org and PyPI about the app.</p>"
         )
-    elif not updates:
+    elif not updates and not git_updates:
         parts.append("<p>✓ Up to date</p>")
     else:
         rows = [(u.name, f"{u.installed} → {u.latest}") for u in updates]
+        rows += [
+            (u.name, f"{u.installed[:7]} → {u.latest[:7]} on {u.branch}")
+            for u in git_updates
+        ]
         parts.append(table(rows, ("Package", "Update")))
-        parts.append("<p><b>Update all</b> installs these versions.</p>")
+        links = [
+            f'<a href="{escape(u.compare_url)}">{escape(u.name)}</a>'
+            for u in git_updates
+            if u.compare_url
+        ]
+        if links:
+            parts.append(f"<p>What changed: {', '.join(links)}</p>")
+        parts.append(
+            "<p><b>Update all</b> installs these versions; packages from git are "
+            "installed from their branch again.</p>"
+        )
     parts.append(health_section(health, health_error, build_error))
     if aliases:
         parts.append(

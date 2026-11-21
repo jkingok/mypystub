@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from importlib import metadata
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qs, quote, urldefrag, urlsplit
 
 import httpx2
 from packaging.utils import canonicalize_name
@@ -111,6 +111,54 @@ def source_from(name: str, direct_url: str | None) -> GitSource | None:
         vcs.get("requested_revision") or None,
         data.get("subdirectory") or None,
     )
+
+
+def requested(name: str, url: str) -> GitSource | None:
+    """What a ``git+https://`` requirement URL asks for, with no commit yet.
+
+    ``git+https://github.com/o/r@v1#subdirectory=pkg`` gives the repository
+    ``https://github.com/o/r``, ref ``v1`` and subdirectory ``pkg``. None for
+    anything else, or a host :mod:`git_hosts` doesn't know.
+    """
+    base, fragment = urldefrag(url)
+    parts = urlsplit(base)
+    if parts.scheme.lower() not in ("git+https", "git+http"):
+        return None
+    path, _, ref = parts.path.partition("@")
+    repository = f"{parts.scheme.removeprefix('git+')}://{parts.netloc}{path}"
+    sub = parse_qs(fragment).get("subdirectory", [""])[0].strip("/")
+    source = GitSource(
+        canonicalize_name(name), repository, "", ref or None, sub or None
+    )
+    return source if source.host is not None and len(source.path) >= 2 else None
+
+
+def at_commit(url: str, commit: str) -> str:
+    """The ``git+https://`` requirement URL `url`, pinned to `commit`."""
+    base, fragment = urldefrag(url)
+    parts = urlsplit(base)
+    path = parts.path.partition("@")[0]
+    pinned = f"{parts.scheme}://{parts.netloc}{path}@{commit}"
+    return f"{pinned}#{fragment}" if fragment else pinned
+
+
+def direct_url_json(source: GitSource, commit: str) -> str:
+    """The ``direct_url.json`` (PEP 610) for `source` installed at `commit`."""
+    vcs: dict[str, str] = {"vcs": "git", "commit_id": commit}
+    if source.ref:
+        vcs["requested_revision"] = source.ref
+    data: dict[str, Any] = {"url": source.url, "vcs_info": vcs}
+    if source.subdirectory:
+        data["subdirectory"] = source.subdirectory
+    return json.dumps(data)
+
+
+def requirement_for(source: GitSource) -> str:
+    """The requirement that installs `source`'s branch again, at its newest."""
+    url = f"git+{source.url}" + (f"@{source.ref}" if source.ref else "")
+    if source.subdirectory:
+        url += f"#subdirectory={source.subdirectory}"
+    return f"{source.name} @ {url}"
 
 
 def git_sources(paths: Iterable[str] | None = None) -> dict[str, GitSource]:

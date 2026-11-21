@@ -64,6 +64,10 @@ class SetupMixin(PrototypeBase):
         self._pending_restore: tuple[Path, dict] | None = None
         self.packages_summary = ""
         self.pending_updates: list[maintenance.Update] = []
+        # User packages from git that are behind their branch, and where each
+        # came from (Update all installs the branch again, #328)
+        self.git_user_updates: list[git_updates.GitUpdate] = []
+        self.git_user_sources: dict[str, git_updates.GitSource] = {}
         # None until checked; the last check's error, if it failed
         self.checked_updates: list[maintenance.Update] | None = None
         self.update_error: str | None = None
@@ -112,6 +116,7 @@ class SetupMixin(PrototypeBase):
                     pip.get_package_inventory(self.site_packages),
                     self.checked_updates,
                     self.update_error,
+                    git_updates=self.git_user_updates,
                     python=[
                         ("Version", platform.python_version()),
                         ("Implementation", platform.python_implementation()),
@@ -375,12 +380,11 @@ class SetupMixin(PrototypeBase):
         cache = self.new_update_cache()
         if cache.checked is None:
             return
-        user = pip.get_package_inventory(self.site_packages)
         bundled = pip.get_bundled_inventory(self.site_packages)
         no_client: Any = None  # offline: nothing is asked
-        updates = maintenance.find_updates(no_client, user, cache=cache, offline=True)
+        updates = self.user_check(no_client, None, cache, offline=True)
         self.pending_updates = self.checked_updates = updates
-        self.update_all_button.enabled = bool(updates)
+        self.update_all_button.enabled = bool(updates or self.git_user_updates)
         self.health = self.health_check(no_client, bundled, None, None, cache, True)
         self.last_checked = cache.checked
 
@@ -389,14 +393,14 @@ class SetupMixin(PrototypeBase):
         tick: Callable[[str], None] | None = None,
         cache: update_cache.UpdateCache | None = None,
     ) -> str:
-        """Ask PyPI whether user packages have newer versions; a status line."""
-        inventory = pip.get_package_inventory(self.site_packages)
+        """Ask PyPI whether user packages have newer versions; a status line.
+
+        User packages installed from git are asked about on their branch.
+        """
         try:
             updates = await asyncio.to_thread(
                 self.with_client,
-                lambda client: maintenance.find_updates(
-                    client, inventory, on_check=tick, cache=cache
-                ),
+                lambda client: self.user_check(client, tick, cache),
             )
         except maintenance.MaintenanceError as e:
             self.pending_updates = []
@@ -406,8 +410,44 @@ class SetupMixin(PrototypeBase):
         self.pending_updates = updates
         self.checked_updates = updates
         self.update_error = None
-        self.update_all_button.enabled = bool(updates)
-        return f"{len(updates)} package update(s)" if updates else "Packages up to date"
+        found = len(updates) + len(self.git_user_updates)
+        self.update_all_button.enabled = bool(found)
+        return f"{found} package update(s)" if found else "Packages up to date"
+
+    def user_check(
+        self,
+        client: httpx2.Client,
+        tick: Callable[[str], None] | None,
+        cache: update_cache.UpdateCache | None,
+        offline: bool = False,
+    ) -> list[maintenance.Update]:
+        """User packages with newer versions on PyPI; from git, newer commits.
+
+        The git ones are kept in ``git_user_updates`` (and their sources in
+        ``git_user_sources``); the PyPI ones are returned.
+        """
+        inventory = pip.get_package_inventory(self.site_packages)
+        names = {canonicalize_name(name) for name in inventory}
+        from_git = {
+            name: source
+            for name, source in git_updates.git_sources(
+                [str(self.site_packages)]
+            ).items()
+            if name in names
+        }
+        from_pypi = {
+            name: version
+            for name, version in inventory.items()
+            if canonicalize_name(name) not in from_git
+        }
+        updates = maintenance.find_updates(
+            client, from_pypi, on_check=tick, cache=cache, offline=offline
+        )
+        self.git_user_updates = git_updates.find_git_updates(
+            client, from_git, on_check=tick, cache=cache, offline=offline
+        )
+        self.git_user_sources = from_git
+        return updates
 
     async def check_app_health(
         self,
@@ -493,10 +533,18 @@ class SetupMixin(PrototypeBase):
 
     @guarded
     async def handle_update_all(self, widget: toga.Widget, **kwargs: Any) -> None:
-        """Install the versions found by the last update check."""
-        if not self.pending_updates:
+        """Install the versions found by the last update check.
+
+        Packages from git are installed from their branch again, at its newest
+        commit.
+        """
+        if not self.pending_updates and not self.git_user_updates:
             return
-        requirements = maintenance.upgrade_requirements(self.pending_updates)
+        requirements = maintenance.upgrade_requirements(self.pending_updates) + [
+            git_updates.requirement_for(self.git_user_sources[u.name])
+            for u in self.git_user_updates
+            if u.name in self.git_user_sources
+        ]
         try:
             await pip.resolve_and_install_async(
                 requirements,
@@ -510,6 +558,7 @@ class SetupMixin(PrototypeBase):
             return
         self.pending_updates = []
         self.checked_updates = []
+        self.git_user_updates = []
         self.update_all_button.enabled = False
         self.refresh_packages()
         self.render_setup_page()

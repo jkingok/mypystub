@@ -127,7 +127,10 @@ def version_hint(root: Path, url: str, commit: str = "") -> str | None:
     else ``0+g<commit>``, else ``0+unknown``. Version plugins (setuptools-scm, hatch-vcs) are told
     it, as they can't run ``git`` here.
     """
-    for text in (version_from_archival(root), ref_of(url).removeprefix("v")):
+    ref = ref_of(url)
+    if re.fullmatch(r"[0-9a-fA-F]{40}", ref):
+        ref = ""  # a commit, not a version, even when it starts with a digit
+    for text in (version_from_archival(root), ref.removeprefix("v")):
         if text and re.match(r"\d", text):
             return text
     return f"0+g{commit[:7]}" if commit else "0+unknown"

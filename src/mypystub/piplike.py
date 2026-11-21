@@ -9,7 +9,7 @@ import tempfile
 import zipfile
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +26,9 @@ from packaging.version import Version
 from unearth import PackageFinder, TargetPython
 from unearth.link import Link
 
-from . import direct_refs, git_hosts, purity, source_build, source_installs
+from . import direct_refs, git_hosts, git_updates, purity, source_build, source_installs
 from .direct_refs import unsupported_message
+from .maintenance import MaintenanceError
 from .package_aliases import ALIASES, Alias, parse_aliases  # noqa: F401
 
 log = logging.getLogger(__name__)
@@ -52,6 +53,9 @@ class Candidate:
     # The requirement name this candidate satisfies; differs from `name` when an
     # alias substitutes another distribution (pyyaml satisfied by pyyaml-pure)
     identifier: str = ""
+    # The direct_url.json (PEP 610) to record when it's installed: where a
+    # package from git came from, and the commit (#328). Not part of equality
+    direct_url: str = field(default="", compare=False)
 
     def __post_init__(self):
         object.__setattr__(self, "name", canonicalize_name(self.name))
@@ -369,8 +373,18 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
         Once built, it is a wheel at a URL like any other (#171): its metadata,
         purity check and install all take that path.
         """
-        url = git_hosts.archive_url(requirement.url or "") or (requirement.url or "")
-        wheel_url = self._prepare_source(url, requirement)
+        given = requirement.url or ""
+        git = git_updates.requested(canon_id, given)
+        commit = self._branch_commit(git) if git is not None else ""
+        # The archive of the exact commit, so what's recorded is what's built
+        pinned = git_updates.at_commit(given, commit) if commit else given
+        url = git_hosts.archive_url(pinned) or given
+        hint = git_hosts.archive_url(given) or given  # the ref names the version
+        wheel_url = self._prepare_source(url, requirement, hint, commit)
+        if git is not None and not commit:
+            # The host couldn't say; a GitHub zip keeps its commit itself
+            archive = direct_refs.cache_path(self.cache_dir, url)
+            commit = source_installs.commit_of(archive)
         wheel = direct_refs.cache_path(self.cache_dir, wheel_url)
         name, version, _, _ = parse_wheel_filename(wheel.name)
         candidate = Candidate(
@@ -380,6 +394,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             is_direct=True,
             requested_extras=active_extras,
             identifier=canon_id,
+            direct_url=git_updates.direct_url_json(git, commit)
+            if git is not None and commit
+            else "",
         )
         plain = [r for r in req_specs if not r.url]
         if candidate in excluded or not all(
@@ -388,7 +405,26 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
             return []
         return [candidate]
 
-    def _prepare_source(self, url: str, requirement: Requirement) -> str:
+    def _branch_commit(self, source: git_updates.GitSource) -> str:
+        """The commit `source`'s ref names now, or "" if the host can't say.
+
+        A commit given in the requirement is used as it is.
+        """
+        if source.ref and git_updates.FULL_SHA.fullmatch(source.ref):
+            return source.ref.lower()
+        try:
+            return git_updates.latest_commit(self.http_client, source) or ""
+        except MaintenanceError as error:
+            log.warning(f"Couldn't find {source.url}'s commit: {error}")
+            return ""
+
+    def _prepare_source(
+        self,
+        url: str,
+        requirement: Requirement,
+        hint_url: str | None = None,
+        commit: str = "",
+    ) -> str:
         """Download, unpack and build a source archive (cached); the wheel's URL.
 
         The wheel is kept where a wheel at its URL would be (``cache_path``),
@@ -417,7 +453,9 @@ class PyPIWheelProvider(resolvelib.AbstractProvider):
                 site,
                 archive.parent / "built",
                 source_installs.version_hint(
-                    root, url, source_installs.commit_of(archive)
+                    root,
+                    hint_url or url,
+                    commit or source_installs.commit_of(archive),
                 ),
                 system,
             )
@@ -715,7 +753,29 @@ async def download_wheel_async(
         raise DependencyError(f"Async download failed for {url}: {exc}") from exc
 
 
-def unpack_wheel(wheel_path: Path, target_site_packages: Path) -> None:
+def moved_on(installed: importlib.metadata.Distribution, candidate: Candidate) -> bool:
+    """Whether a package from git is installed at another commit than `candidate`.
+
+    Its version can stay the same from commit to commit, so the commit
+    recorded in ``direct_url.json`` decides (#328).
+    """
+    if not candidate.direct_url:
+        return False
+    now = git_updates.source_from(candidate.name, candidate.direct_url)
+    was = git_updates.source_from(
+        candidate.name, installed.read_text("direct_url.json")
+    )
+    return now is not None and (was is None or was.commit != now.commit)
+
+
+def unpack_wheel(
+    wheel_path: Path, target_site_packages: Path, direct_url: str = ""
+) -> None:
+    """Install a wheel into `target_site_packages`.
+
+    `direct_url`, if given, is written into its dist-info as
+    ``direct_url.json`` (PEP 610), as pip does for an install from git.
+    """
     destination = SchemeDictionaryDestination(
         scheme_dict={
             "purelib": str(target_site_packages),
@@ -728,7 +788,8 @@ def unpack_wheel(wheel_path: Path, target_site_packages: Path) -> None:
         script_kind="posix" if sys.platform != "win32" else "win",
     )
     with WheelFile.open(wheel_path) as source:
-        install(source=source, destination=destination, additional_metadata={})
+        extra = {"direct_url.json": direct_url.encode()} if direct_url else {}
+        install(source=source, destination=destination, additional_metadata=extra)
 
 
 # Main Async Entry Point
@@ -763,6 +824,7 @@ async def install_resolved(
                 installed
                 and Version(installed.version) == candidate.version
                 and not force_reinstall
+                and not moved_on(installed, candidate)
             ):
                 continue
             link = candidate.link
@@ -802,7 +864,9 @@ async def install_resolved(
             )
         progress(f"Installing {candidate.name} {candidate.version}")
         try:
-            await asyncio.to_thread(unpack_wheel, wheel_path, target_dir)
+            await asyncio.to_thread(
+                unpack_wheel, wheel_path, target_dir, candidate.direct_url
+            )
         except (zipfile.BadZipFile, OSError) as exc:
             raise DependencyError(f"Failed to unpack {wheel_path.name}: {exc}") from exc
     if pending:
