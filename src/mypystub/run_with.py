@@ -24,42 +24,24 @@ import toga
 from mypystub.errors import guarded
 from mypystub.prompts import Field
 from mypystub.run_settings import (
-    MOVES,
     SYSTEM,
     EnvRow,
     EnvValue,
     Layer,
-    Move,
     RunSettings,
-    can_move,
     effective_rows,
     env_name_problem,
     env_value_problem,
-    move,
 )
-from togax_jkingok import Collapsible, refresh_on_new_width
+from togax_jkingok import Collapsible, EditableList, refresh_on_new_width
+from togax_jkingok.editable_list import ADD, DELETE, EDIT, GAP, tool
+from togax_jkingok.lists import fit_list, keep_selection, select_row
 
-# Toolbar-style buttons use symbols to fit a phone's width; the Help page
-# says what each one does. Not colour emoji: iOS greys out a disabled button
-# by tinting its text, and emoji ignore the tint
-MOVE_LABELS: dict[Move, str] = {
-    "top": "⤒",
-    "up": "↑",
-    "down": "↓",
-    "bottom": "⤓",
-}
-ADD, EDIT, DELETE, UNSET, VIEW = "+", "✎", "⌫", "⊘", "ⓘ"
-# Space between toolbar buttons, so their labels don't run together
-GAP = (0, 6)
-# Symbols are small at the default size
-SYMBOL_SIZE = 22
+# More toolbar symbols, beside EditableList's (the Help page says what each
+# one does)
+UNSET, VIEW = "⊘", "ⓘ"
 # Labels don't wrap on iOS, so notes are broken to fit an iPhone SE
 NOTE_WIDTH = 40
-# A list can't flex inside a ScrollContainer, so it is sized to its rows (a
-# DetailedList row with a subtitle is about this tall), up to a few rows; a
-# longer list scrolls within that
-ROW_HEIGHT = 60
-MOST_ROWS = 5
 
 
 class Screens(Protocol):
@@ -84,48 +66,9 @@ Tell = Callable[[str, str], Awaitable[None]]
 AskFields = Callable[..., Awaitable[list[str] | None]]
 
 
-def select_row(widget: toga.DetailedList, index: int | None) -> None:
-    """Show `index` as selected; Toga's DetailedList can't do this itself.
-
-    On iOS the native table is told directly. Elsewhere nothing is shown, but
-    the form keeps its own record of the selection, so the buttons still work.
-    """
-    if sys.platform != "ios" or index is None:
-        return
-    from toga_iOS.libs.foundation import NSIndexPath
-
-    path = NSIndexPath.indexPathForRow(index, inSection=0)
-    widget._impl.native.selectRowAtIndexPath(path, animated=False, scrollPosition=0)
-
-
-def keep_selection(widget: toga.DetailedList) -> None:
-    """Stop iOS clearing the list's selection whenever its screen reappears.
-
-    toga_iOS drives DetailedList with a UITableViewController, whose
-    clearsSelectionOnViewWillAppear defaults to YES, so the highlight was lost
-    each time the form came back from an editor.
-    """
-    if sys.platform == "ios":
-        widget._impl.native_controller.clearsSelectionOnViewWillAppear = False
-
-
 def shown(value: str) -> str:
     """A value as a list row shows it, so empty values are still visible."""
     return value if value else "(empty)"
-
-
-def list_height(rows: int) -> int:
-    """The height of a list showing `rows` rows, at most MOST_ROWS of them."""
-    return max(1, min(rows, MOST_ROWS)) * ROW_HEIGHT
-
-
-def fit_list(rows_list: toga.DetailedList, rows: int) -> None:
-    """Size a list to its rows, or hide it when it has none.
-
-    The section's title gives the count, so an empty list needs no label.
-    """
-    rows_list.style.height = list_height(rows)
-    rows_list.style.display = "pack" if rows else "none"
 
 
 class RunWithForm:
@@ -191,7 +134,16 @@ class RunWithForm:
         self.title = title
         self.screen_title = screen_title or f"Setup · {title}"
         self.with_args = args is not None
-        self.args = list(args or [])
+        # The arguments' editor owns the list; the form saves it on each change
+        self.args_editor = EditableList(
+            list(args or []),
+            lambda i, value: {"title": shown(value), "subtitle": f"Argument {i + 1}"},
+            on_add=self._ask_arg,
+            on_edit=self._ask_edit_arg,
+            on_change=lambda items: self.changed(),
+            movable=True,
+        )
+        self.args = self.args_editor.items
         self.env = dict(env)
         self.inherited = list(inherited)
         self.screens = screens
@@ -217,19 +169,15 @@ class RunWithForm:
         self._is_quick_start = is_quick_start
         self._qs_button: toga.Button | None = None
         self.share_button: toga.Button | None = None
-        self.arg_index: int | None = None
         self.env_name: str | None = None
         self._refreshing = False
         self.collapsible_sections = collapsible_sections
 
-        self.args_list = toga.DetailedList(on_select=self._arg_selected)
-        self.arg_buttons = {
-            "edit": self._tool(EDIT, self.edit_arg),
-            "delete": self._tool(DELETE, self.delete_arg),
-        }
-        self.move_buttons: dict[Move, toga.Button] = {
-            where: self._move_button(where) for where in MOVES
-        }
+        self.args_list = self.args_editor.list
+        self.arg_buttons = self.args_editor.buttons
+        self.move_buttons = self.args_editor.move_buttons
+        self.move_row = self.args_editor.move_row
+        self.args_tools = self.args_editor.toolbar
         self.env_list = toga.DetailedList(on_select=self._env_selected)
         self.env_note = toga.Label("", margin=(0, 8))
         self.env_buttons = {
@@ -248,7 +196,6 @@ class RunWithForm:
             if self.inherited
             else None
         )
-        keep_selection(self.args_list)
         keep_selection(self.env_list)
         # Each section's switch and the box it shows or hides, by name
         self.sections: dict[str, Collapsible] = {}
@@ -259,17 +206,9 @@ class RunWithForm:
 
     # -- Layout ---------------------------------------------------------------
 
-    def _move_button(self, where: Move) -> toga.Button:
-        return toga.Button(
-            MOVE_LABELS[where],
-            on_press=lambda w: self.move_arg(where),
-            margin=GAP,
-            font_size=SYMBOL_SIZE,
-        )
-
     @staticmethod
     def _tool(symbol: str, on_press: Callable[..., Any]) -> toga.Button:
-        return toga.Button(symbol, on_press=on_press, margin=GAP, font_size=SYMBOL_SIZE)
+        return tool(symbol, on_press)
 
     def _toolbar(
         self,
@@ -310,14 +249,7 @@ class RunWithForm:
     def _build(self, args_note: str | None) -> toga.Widget:
         children: list[toga.Widget] = []
         if self.with_args:
-            # One row saves space: moves at the left, add/edit/delete at the right
-            self.move_row = toga.Row(children=list(self.move_buttons.values()))
-            self.args_tools = self._toolbar(
-                self.add_arg, self.arg_buttons, lead=[self.move_row]
-            )
-            children += self._section(
-                "args", "Arguments", [self.args_tools, self.args_list]
-            )
+            children += self._section("args", "Arguments", [self.args_editor])
         elif args_note is not None:
             children.append(toga.Label(args_note, margin=(8, 8, 0, 8)))
         self.env_tools = self._toolbar(self.add_env, self.env_buttons)
@@ -506,20 +438,14 @@ class RunWithForm:
         """Redraw both lists and set which buttons can be pressed."""
         self._refreshing = True
         try:
-            self.args_list.data = [
-                {"title": shown(value), "subtitle": f"Argument {i + 1}"}
-                for i, value in enumerate(self.args)
-            ]
+            self.args_editor.refresh()
             rows = self.visible_rows()
             self.env_list.data = [self.row_data(row) for row in rows]
         finally:
             self._refreshing = False
-        if self.arg_index is not None and self.arg_index >= len(self.args):
-            self.arg_index = None
         names = [row.name for row in rows]
         if self.env_name not in names:
             self.env_name = None
-        select_row(self.args_list, self.arg_index)
         select_row(
             self.env_list,
             names.index(self.env_name) if self.env_name is not None else None,
@@ -528,12 +454,6 @@ class RunWithForm:
 
     def _update_buttons(self) -> None:
         self.workdir_label.text = self.workdir_text()
-        has_arg = self.arg_index is not None
-        for button in self.arg_buttons.values():
-            button.enabled = has_arg
-        for where, button in self.move_buttons.items():
-            button.enabled = can_move(len(self.args), self.arg_index, where)
-        fit_list(self.args_list, len(self.args))
         if "args" in self.sections:
             self.sections["args"].title = f"Arguments ({len(self.args)})"
 
@@ -581,14 +501,6 @@ class RunWithForm:
         self.env_note.text = textwrap.fill(note, NOTE_WIDTH)
 
     @guarded
-    def _arg_selected(self, widget: toga.DetailedList, **kwargs: Any) -> None:
-        if self._refreshing:
-            return
-        row = widget.selection
-        self.arg_index = None if row is None else widget.data.index(row)
-        self._update_buttons()
-
-    @guarded
     def _env_selected(self, widget: toga.DetailedList, **kwargs: Any) -> None:
         if self._refreshing:
             return
@@ -602,43 +514,34 @@ class RunWithForm:
 
     # -- Arguments ------------------------------------------------------------
 
+    @property
+    def arg_index(self) -> int | None:
+        """The selected argument's index, if one is selected."""
+        return self.args_editor.selected
+
+    @arg_index.setter
+    def arg_index(self, value: int | None) -> None:
+        self.args_editor.selected = value
+
+    @guarded
+    async def _ask_arg(self) -> str | None:
+        texts = await self.ask_fields("Add argument", "", [Field("Argument")])
+        return None if texts is None else texts[0]
+
+    @guarded
+    async def _ask_edit_arg(self, value: str) -> str | None:
+        texts = await self.ask_fields("Edit argument", "", [Field("Argument", value)])
+        return None if texts is None else texts[0]
+
     @guarded
     async def add_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Add an argument at the end."""
-        texts = await self.ask_fields("Add argument", "", [Field("Argument")])
-        if texts is not None:
-            self.args.append(texts[0])
-            self.arg_index = len(self.args) - 1
-            self.changed()
+        await self.args_editor.add_item()
 
     @guarded
     async def edit_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Change the selected argument."""
-        index = self.arg_index
-        if index is None:
-            return
-        texts = await self.ask_fields(
-            "Edit argument", "", [Field("Argument", self.args[index])]
-        )
-        if texts is not None and index < len(self.args):
-            self.args[index] = texts[0]
-            self.changed()
-
-    @guarded
-    def delete_arg(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
-        """Remove the selected argument."""
-        if self.arg_index is None:
-            return
-        del self.args[self.arg_index]
-        self.arg_index = None
-        self.changed()
-
-    def move_arg(self, where: Move) -> None:
-        """Move the selected argument; the selection follows it."""
-        if self.arg_index is None:
-            return
-        self.arg_index = move(self.args, self.arg_index, where)
-        self.changed()
+        await self.args_editor.edit_item()
 
     # -- Environment ----------------------------------------------------------
 

@@ -232,27 +232,3 @@ def merged_env(layers: Iterable[Mapping[str, EnvValue]]) -> dict[str, EnvValue]:
     for layer in layers:
         merged.update(layer)
     return merged
-
-
-def can_move(length: int, index: int | None, where: Move) -> bool:
-    """Whether the item at `index` can move `where` in a list of `length`."""
-    if index is None or not 0 <= index < length:
-        return False
-    if where in ("top", "up"):
-        return index > 0
-    return index < length - 1
-
-
-def move(items: list[str], index: int, where: Move) -> int:
-    """Move ``items[index]`` in place, returning its new index."""
-    if not can_move(len(items), index, where):
-        return index
-    item = items.pop(index)
-    new_index = {
-        "top": 0,
-        "up": index - 1,
-        "down": index + 1,
-        "bottom": len(items),
-    }[where]
-    items.insert(new_index, item)
-    return new_index

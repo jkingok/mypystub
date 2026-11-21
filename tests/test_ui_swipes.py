@@ -7,7 +7,6 @@ import asyncio
 import os
 import shutil
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -191,7 +190,7 @@ def test_run_with_form_edits_arguments(
         "Argument 3",
     ]
 
-    select(form.args_list, form._arg_selected, 0)
+    select(form.args_list, form.args_editor._selected, 0)
     enabled = {w: b.enabled for w, b in form.move_buttons.items()}
     assert enabled == {"top": False, "up": False, "down": True, "bottom": True}
     press(app, form.move_buttons["bottom"])
@@ -201,7 +200,7 @@ def test_run_with_form_edits_arguments(
     press(app, form.move_buttons["top"])
     assert form.args == ["--name", "Ada", "x"] and form.arg_index == 0
 
-    select(form.args_list, form._arg_selected, 1)
+    select(form.args_list, form.args_editor._selected, 1)
     press(app, form.arg_buttons["edit"])
     assert asked[-1] == ("Edit argument", [("Argument", "Ada")])
     assert form.args == ["--name", "Ada Lovelace", "x"]
@@ -391,21 +390,6 @@ def test_run_with_toolbars_use_spaced_symbols(
     for button in tools:
         assert button.style.margin_left > 0 and button.style.margin_right > 0
     form.done()
-
-
-def test_lists_keep_their_selection_when_the_form_reappears(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """On iOS, a reappearing table must not clear the highlighted row."""
-    from mypystub import run_with
-
-    native_controller = SimpleNamespace(clearsSelectionOnViewWillAppear=True)
-    widget = SimpleNamespace(_impl=SimpleNamespace(native_controller=native_controller))
-    run_with.keep_selection(widget)  # type: ignore[arg-type]
-    assert native_controller.clearsSelectionOnViewWillAppear  # not iOS: untouched
-    monkeypatch.setattr(run_with.sys, "platform", "ios")
-    run_with.keep_selection(widget)  # type: ignore[arg-type]
-    assert native_controller.clearsSelectionOnViewWillAppear is False
 
 
 # ---------------------------------------------------------------------------

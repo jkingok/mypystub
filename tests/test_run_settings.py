@@ -9,12 +9,10 @@ from mypystub.run_settings import (
     EnvRow,
     Layer,
     RunSettings,
-    can_move,
     effective_rows,
     env_name_problem,
     env_value_problem,
     merged_env,
-    move,
     settings_key,
     sorted_env,
     usable_env,
@@ -168,32 +166,3 @@ def test_effective_rows_show_where_inherited_values_come_from() -> None:
         EnvRow("GREETING", "Hello", "Setup"),
     ]
     assert [row.inherited for row in rows] == [True, False, True]
-
-
-@pytest.mark.parametrize(
-    ("index", "where", "result", "new_index"),
-    [
-        (2, "top", ["c", "a", "b", "d"], 0),
-        (2, "up", ["a", "c", "b", "d"], 1),
-        (1, "down", ["a", "c", "b", "d"], 2),
-        (1, "bottom", ["a", "c", "d", "b"], 3),
-        (0, "up", ["a", "b", "c", "d"], 0),
-        (3, "bottom", ["a", "b", "c", "d"], 3),
-    ],
-)
-def test_moving_arguments(
-    index: int, where: str, result: list[str], new_index: int
-) -> None:
-    """Arguments move in place; moving past an end leaves them as they are."""
-    items = ["a", "b", "c", "d"]
-    assert move(items, index, where) == new_index  # type: ignore[arg-type]
-    assert items == result
-
-
-def test_which_moves_are_possible() -> None:
-    """Top and Up need a row above; Down and Bottom need a row below."""
-    assert not can_move(3, None, "up")
-    assert not can_move(3, 0, "top") and not can_move(3, 0, "up")
-    assert can_move(3, 0, "down") and can_move(3, 0, "bottom")
-    assert can_move(3, 2, "up") and not can_move(3, 2, "bottom")
-    assert not can_move(1, 0, "up") and not can_move(1, 0, "down")

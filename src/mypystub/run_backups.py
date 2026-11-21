@@ -19,11 +19,11 @@ from typing import Any
 import toga
 
 from togax_jkingok import Collapsible
+from togax_jkingok.lists import fit_list
 
 from . import versions
 from .errors import guarded
 from .maintenance import human_size
-from .run_with import fit_list
 
 Ask = Callable[[str, str], Awaitable[bool]]
 Tell = Callable[[str, str], Awaitable[None]]

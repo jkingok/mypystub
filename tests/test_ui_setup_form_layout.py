@@ -20,8 +20,9 @@ os.environ["TOGA_BACKEND"] = "toga_dummy"
 
 import toga
 
-from mypystub import run_backups, run_with, ui, versions
+from mypystub import run_backups, ui, versions
 from tests.support_ui import row, run
+from togax_jkingok import lists
 
 NOW = datetime(2026, 11, 5, 14, 32, 7)
 
@@ -89,10 +90,10 @@ def test_lists_are_sized_to_their_rows(proto: ui.Prototype, config: Path) -> Non
     form.args += ["one", "two"]
     form.changed()
     assert form.args_list.style.display == "pack"
-    assert form.args_list.style.height == 2 * run_with.ROW_HEIGHT
+    assert form.args_list.style.height == 2 * lists.ROW_HEIGHT
     form.args += [str(n) for n in range(10)]
     form.changed()
-    assert form.args_list.style.height == run_with.MOST_ROWS * run_with.ROW_HEIGHT
+    assert form.args_list.style.height == lists.MOST_ROWS * lists.ROW_HEIGHT
     form.done()
 
 
@@ -170,7 +171,7 @@ def test_backup_rows_swipe_left_to_delete_and_right_to_restore(
     s.switch.value = True
     s.toggle(s.switch)
     assert s.details.style.display == "pack"
-    assert s.list.style.height == run_with.ROW_HEIGHT
+    assert s.list.style.height == lists.ROW_HEIGHT
 
 
 def test_swiping_a_backup_asks_then_acts(tool: Path, app: toga.App) -> None:

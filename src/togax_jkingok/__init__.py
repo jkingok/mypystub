@@ -21,6 +21,7 @@ only on that platform, when a widget needs it.
 """
 
 from .collapsible import Collapsible
+from .editable_list import EditableList
 from .labelled import LabelledActivity, LabelledProgress, LabelledSelection
 from .layout import refresh_on_new_width, relayout, relayout_on_resize
 from .orientation import OrientationBox
@@ -28,6 +29,7 @@ from .safe_area import Insets, SafeArea, SafeColumn
 
 __all__ = [
     "Collapsible",
+    "EditableList",
     "Insets",
     "LabelledActivity",
     "LabelledProgress",
