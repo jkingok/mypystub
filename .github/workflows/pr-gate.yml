@@ -52,6 +52,12 @@ jobs:
       - name: Run Tests
         run: uv run --locked pytest
 
+      - name: Check main depends on public repositories only
+        # A feature branch may use an internal branch (*-internal) while the
+        # two are developed together; main is mirrored public, so not there
+        if: github.base_ref == 'main'
+        run: uv run --locked python scripts/check_public_deps.py
+
   # -------------------------------------------------------------
   # Job 2: Icon Generation & Briefcase Xcode Build (Mac Mini)
   # -------------------------------------------------------------
