@@ -13,7 +13,8 @@ MyPyStub is a Python Briefcase/Toga prototype app for iOS, with macOS, Linux, an
 ## Rules
 
 - **Never commit to `main`.** Work on a `feature/...` branch and leave merging to the user.
-- **Push feature branches whenever it helps; never push to `main`.** That includes follow-up commits to a branch that already has a pull request. Don't force-push, and don't push to a branch someone else owns.
+- **Push feature branches whenever it helps; never push to `main`.** That includes follow-up commits to a branch that already has a pull request. Don't push to a branch someone else owns.
+- **Force-push only with `--force-with-lease`, only to a feature branch you created, and never to `main` or a `hold` PR.** Use it to rebase a stacked PR onto `main` after its parent is squash-merged (`git rebase --onto origin/main <old parent tip>`), so the PR shows only its own commits. Once a PR is under review, prefer merging `main` in unless asked, so review comments and tested commits stay put.
 - **Do not change the version.** Only Fastlane does. At release time it stamps the calver and build number into `pyproject.toml` with `scripts/set_version.py` and commits it (with `uv.lock`) alongside the release notes, so `main` carries the last released version (see README, "Releasing to TestFlight"). The CalVer header in `CHANGELOG` is also set by the TestFlight script.
 - **Do not edit generated or vendored output** (`build/`, `docs/`, `launcher.zip`).
 - **`main` depends only on public repositories.** Paired projects have a private `<name>-internal` repository and a public `<name>` one (`togax-jkingok-internal` and `togax-jkingok`). A feature branch may depend on an in-development branch of an internal repository; before it merges, point it at the public repository and a released tag. The PR gate checks this for PRs into `main` (`scripts/check_public_deps.py`).
