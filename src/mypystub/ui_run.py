@@ -324,6 +324,7 @@ class RunMixin(NativeMixin):
                     required_packages,
                     target_user_packages,
                     on_progress=self.script_activity.update,
+                    on_count=self.script_activity.count,
                     aliases={
                         **self.configured_aliases(),
                         **(getattr(selected_row, "aliases", None) or {}),

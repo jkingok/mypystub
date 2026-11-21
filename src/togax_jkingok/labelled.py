@@ -45,21 +45,58 @@ class LabelledProgress(toga.Box):
 
 
 class LabelledActivity(toga.Box):
-    """An activity indicator with a line of status text beside it."""
+    """An activity indicator with a line of status text, and a count when known.
+
+    While the work's size is unknown only the indicator spins. Once it is known
+    (:meth:`count`), a progress bar with "3/10" appears under the text, and
+    goes again when the activity stops. The text and the bar share a column
+    beside the indicator, so both get the row's full width on a narrow phone.
+    """
 
     def __init__(self, **kwargs: Any) -> None:
-        """Make the indicator and its label; `kwargs` style the row."""
+        """Make the indicator, its label and its (hidden) count; `kwargs` style it."""
         self.activity = toga.ActivityIndicator()
-        self.text = toga.Label("", flex=1)
-        super().__init__(direction="row", children=[self.activity, self.text], **kwargs)
+        self.text = toga.Label("")
+        self.progress = LabelledProgress(display="none")
+        self.column = toga.Column(flex=1, children=[self.text, self.progress])
+        super().__init__(
+            direction="row",
+            children=[self.activity, self.column],
+            **kwargs,
+        )
+
+    @property
+    def counting(self) -> bool:
+        """Whether the count is showing."""
+        return self.progress.style.display != "none"
 
     def update(self, value: str = "", on: bool = True) -> None:
-        """Show `value`, with the indicator spinning while `on`."""
+        """Show `value`, with the indicator spinning while `on`.
+
+        Stopping (`on` False) also takes the count away.
+        """
         if on:
             self.activity.start()
         else:
             self.activity.stop()
+            self.stop_count()
         self.text.text = value
+
+    def count(self, done: int, total: int) -> None:
+        """Show `done` of `total` steps; a new `total` starts the bar again."""
+        if total <= 0:
+            self.stop_count()
+            return
+        if not self.counting or self.progress.bar.max != total:
+            self.progress.start(total)
+            self.progress.style.display = "pack"
+        self.progress.update(min(done, total))
+
+    def stop_count(self) -> None:
+        """Hide the count."""
+        if self.counting:
+            self.progress.stop()
+            self.progress.style.display = "none"
 
 
 class LabelledSelection(toga.Box):

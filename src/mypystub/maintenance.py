@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import shutil
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -186,11 +186,18 @@ def find_updates(
     client: httpx2.Client,
     inventory: Mapping[str, str],
     critical: Iterable[str] = (),
+    on_check: Callable[[str], None] | None = None,
 ) -> list[Update]:
-    """Packages in `inventory` (name -> version) with a newer version on PyPI."""
+    """Packages in `inventory` (name -> version) with a newer version on PyPI.
+
+    `on_check` is called with each package's name as it is checked, one request
+    each, so a caller can count them (from the thread this runs on).
+    """
     critical_names = {canonicalize_name(n) for n in critical}
     updates: list[Update] = []
     for name, version in sorted(inventory.items()):
+        if on_check is not None:
+            on_check(name)
         latest = latest_on_pypi(client, name)
         try:
             installed = Version(version)

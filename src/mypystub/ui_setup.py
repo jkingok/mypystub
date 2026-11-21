@@ -318,22 +318,48 @@ class SetupMixin(PrototypeBase):
         """Check user packages on PyPI, and the app's Python and bundled packages.
 
         The two checks are independent: if one can't be made (offline), the
-        other's result is still shown.
+        other's result is still shown. Each request is counted on the progress
+        bar: one per package, plus GitHub's Releases and python.org.
         """
         self.setup_activity.update("Checking PyPI and python.org")
-        user_message = await self.check_user_packages()
-        health_message = await self.check_app_health()
+        user = pip.get_package_inventory(self.site_packages)
+        bundled = pip.get_bundled_inventory(self.site_packages)
+        tick = self.check_counter(len(user) + len(bundled) + 2)
+        user_message = await self.check_user_packages(tick)
+        health_message = await self.check_app_health(tick)
         self.render_setup_page()
         self.setup_activity.update(
             "; ".join(m for m in (user_message, health_message) if m), on=False
         )
 
-    async def check_user_packages(self) -> str:
+    def check_counter(self, total: int) -> Callable[[str], None]:
+        """A tick for each check made, from any thread: "Checking <name>", n/total.
+
+        The checks run one after another, so the count needs no lock.
+        """
+        done = [0]
+
+        def show(name: str, number: int) -> None:
+            self.setup_activity.update(f"Checking {name}")
+            self.setup_activity.count(number, total)
+
+        def tick(name: str) -> None:
+            self.app.loop.call_soon_threadsafe(show, name, done[0])
+            done[0] += 1
+
+        return tick
+
+    async def check_user_packages(
+        self, tick: Callable[[str], None] | None = None
+    ) -> str:
         """Ask PyPI whether user packages have newer versions; a status line."""
         inventory = pip.get_package_inventory(self.site_packages)
         try:
             updates = await asyncio.to_thread(
-                self.with_client, maintenance.find_updates, inventory
+                self.with_client,
+                lambda client: maintenance.find_updates(
+                    client, inventory, on_check=tick
+                ),
             )
         except maintenance.MaintenanceError as e:
             self.pending_updates = []
@@ -346,7 +372,7 @@ class SetupMixin(PrototypeBase):
         self.update_all_button.enabled = bool(updates)
         return f"{len(updates)} package update(s)" if updates else "Packages up to date"
 
-    async def check_app_health(self) -> str:
+    async def check_app_health(self, tick: Callable[[str], None] | None = None) -> str:
         """Is this the latest build? If so, check Python and the bundled packages.
 
         GitHub's Releases are asked first: one cheap request. If a newer build
@@ -355,6 +381,8 @@ class SetupMixin(PrototypeBase):
         """
         build = None
         self.build_error = None
+        if tick is not None:
+            tick("GitHub Releases")
         try:
             build = await asyncio.to_thread(
                 self.with_client, release_check.check_build, self.app.version
@@ -368,9 +396,11 @@ class SetupMixin(PrototypeBase):
         bundled = pip.get_bundled_inventory(self.site_packages)
 
         def check(client: httpx2.Client) -> maintenance.Health:
+            if tick is not None:
+                tick("python.org")
             python = maintenance.check_python(client, platform.python_version())
             updates = maintenance.find_updates(
-                client, bundled, critical=maintenance.APP_CRITICAL
+                client, bundled, critical=maintenance.APP_CRITICAL, on_check=tick
             )
             return maintenance.Health(python, updates, build)
 
@@ -394,6 +424,7 @@ class SetupMixin(PrototypeBase):
                 requirements,
                 self.site_packages,
                 on_progress=self.setup_activity.update,
+                on_count=self.setup_activity.count,
             )
         except Exception as e:  # noqa: BLE001
             self.setup_activity.update("Update failed", on=False)

@@ -741,17 +741,21 @@ async def install_resolved(
     require_pure: bool,
     force_reinstall: bool = False,
     progress: Callable[[str], None] = lambda message: None,
+    on_count: Callable[[int, int], None] | None = None,
 ) -> int:
     """Install what was resolved, returning how many: all of it, or nothing.
 
     Every wheel is fetched and checked first, so a refused one can't leave the
-    packages that depend on it installed without it.
+    packages that depend on it installed without it. `on_count` gets each step
+    done of the total: first through the packages to fetch and check, then,
+    starting again, through those to install.
     """
+    count = on_count or (lambda done, total: None)
     pending: list[tuple[Candidate, Path, Any]] = []
+    wanted = [c for c in mapping.values() if not (c.is_system or c.is_installed)]
     async with httpx2.AsyncClient(timeout=30.0) as async_http:
-        for candidate in mapping.values():
-            if candidate.is_system or candidate.is_installed:
-                continue
+        for done, candidate in enumerate(wanted):
+            count(done, len(wanted))
             installed = await asyncio.to_thread(
                 get_installed_distribution, target_dir, candidate.name
             )
@@ -785,7 +789,8 @@ async def install_resolved(
                 )
             pending.append((candidate, wheel_path, installed))
 
-    for candidate, wheel_path, installed in pending:
+    for done, (candidate, wheel_path, installed) in enumerate(pending):
+        count(done, len(pending))
         if installed:
             log.info(
                 f"upgrading {candidate.name} from {installed.version} "
@@ -800,6 +805,8 @@ async def install_resolved(
             await asyncio.to_thread(unpack_wheel, wheel_path, target_dir)
         except (zipfile.BadZipFile, OSError) as exc:
             raise DependencyError(f"Failed to unpack {wheel_path.name}: {exc}") from exc
+    if pending:
+        count(len(pending), len(pending))
     return len(pending)
 
 
@@ -823,13 +830,16 @@ async def resolve_and_install_async(
     on_progress: Callable[[str], None] | None = None,
     aliases: Mapping[str, Alias] | None = None,
     pure_only: bool | None = None,
+    on_count: Callable[[int, int], None] | None = None,
 ) -> None:
     """
     Async dependency resolver and installer compatible with Toga / asyncio event loops.
 
     Blocking work (resolution, metadata scans, unpacking) runs in worker threads.
     `on_progress` receives short status messages, always on the event loop thread,
-    so it may update widgets directly. `aliases` (from launcher.toml or the
+    so it may update widgets directly, as does `on_count` (steps done of the
+    total, while fetching and then installing; see install_resolved), which
+    ends with ``(0, 0)``: nothing left to count. `aliases` (from launcher.toml or the
     script) are merged over the built-in ALIASES.
     """
     loop = asyncio.get_running_loop()
@@ -943,6 +953,7 @@ async def resolve_and_install_async(
             pure_only_by_default(sys.platform) if pure_only is None else pure_only,
             force_reinstall,
             progress,
+            on_count,
         )
         if changed:
             # Python may have cached "nothing here" for target_dir while it was
@@ -951,6 +962,8 @@ async def resolve_and_install_async(
         log.info("successfully met all requirements")
         progress("Dependencies ready" if changed else "Dependencies already satisfied")
     finally:
+        if on_count:
+            on_count(0, 0)  # finished, or failed: nothing left to count
         if is_temp_cache and cache_dir.exists():
             log.info("removing temporary wheel cache")
             await asyncio.to_thread(shutil.rmtree, cache_dir, True)
