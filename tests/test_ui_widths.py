@@ -1,4 +1,4 @@
-"""Laying a tab's content out again once it has a width (mypystub.ui_widgets)."""
+"""Laying a tab's content out again once it has a width (togax_jkingok)."""
 
 from types import SimpleNamespace
 
@@ -6,8 +6,8 @@ import pytest
 
 pytest.importorskip("toga_dummy")
 
-from mypystub.ui_widgets import refresh_on_new_width
 from tests import support_ui  # noqa: F401 (selects the dummy backend)
+from togax_jkingok import refresh_on_new_width
 
 
 def watched() -> tuple[SimpleNamespace, list[int]]:

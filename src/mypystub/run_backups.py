@@ -18,10 +18,12 @@ from typing import Any
 
 import toga
 
+from togax_jkingok import Collapsible
+
 from . import versions
 from .errors import guarded
 from .maintenance import human_size
-from .run_with import collapsible, fit_list, show_body
+from .run_with import fit_list
 
 Ask = Callable[[str, str], Awaitable[bool]]
 Tell = Callable[[str, str], Awaitable[None]]
@@ -51,13 +53,12 @@ class BackupsSection:
             on_primary_action=self.swipe_delete,
             on_secondary_action=self.swipe_restore,
         )
-        self.switch, self.details = collapsible(
-            "Backup versions",
-            [self.list],
-            open=False,
-            on_change=self.toggle,
+        self.section = Collapsible(
+            "Backup versions", [self.list], open=False, on_change=self.toggle
         )
-        self.content = toga.Column(children=[self.switch, self.details])
+        # The heading switch and the body it folds, as the tests and form use them
+        self.switch, self.details = self.section.toggle, self.section.body
+        self.content = self.section
         self.refresh()
 
     def backup_for(self, row: Any) -> versions.Backup | None:
@@ -79,17 +80,19 @@ class BackupsSection:
             for b in self.found
         ]
         count = len(self.found)
-        self.switch.text = f"Backup versions ({count})" if count else "Backup versions"
-        self.switch.enabled = count > 0 or bool(self.switch.value)
+        self.section.title = (
+            f"Backup versions ({count})" if count else "Backup versions"
+        )
+        self.switch.enabled = count > 0 or self.section.open
         fit_list(self.list, count)
-        show_body(self.switch, self.details, has_rows=count > 0)
+        self.section.has_content = count > 0
 
     async def report_error(self, error: Exception, where: str) -> None:
         """Where :func:`guarded` reports an error from one of the handlers."""
         await self.tell("Error", f"{type(error).__name__}: {error}\n\n(in {where})")
 
     @guarded
-    def toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
+    def toggle(self, widget: Any, **kwargs: Any) -> None:
         self.refresh()
 
     @guarded

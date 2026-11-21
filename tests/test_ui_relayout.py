@@ -13,9 +13,8 @@ pytest.importorskip("toga_dummy")
 import toga
 import toga_dummy.window as dummy_window
 
-from mypystub.ui_widgets import relayout, relayout_on_resize
-from mypystub.widgets import OrientationBox
 from tests import support_ui
+from togax_jkingok import OrientationBox, relayout, relayout_on_resize
 
 
 @pytest.fixture
@@ -89,7 +88,7 @@ def test_a_resize_lays_out_again_once_per_size_and_keeps_the_old_handler(
     relayout_on_resize(window)
     relayout_on_resize(window)  # a second install changes nothing
     laid: list[Any] = []
-    monkeypatch.setattr("mypystub.ui_widgets.relayout", lambda w: laid.append(w))
+    monkeypatch.setattr("togax_jkingok.layout.relayout", lambda w: laid.append(w))
     window.content = toga.Box()
     window.on_resize()
     window.on_resize()  # same size: the old handler still runs, no new layout

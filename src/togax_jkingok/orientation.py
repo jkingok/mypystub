@@ -1,7 +1,6 @@
-"""Reusable Toga widgets that don't depend on the rest of the launcher.
+"""OrientationBox: two widgets, stacked in portrait and side by side in landscape.
 
-Only Toga's public API and its style applicator are used, so these can move
-into their own package, or be offered to Toga.
+Only Toga's public API and its style applicator are used.
 """
 
 from __future__ import annotations

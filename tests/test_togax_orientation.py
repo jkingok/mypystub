@@ -1,4 +1,4 @@
-"""Tests for the launcher's reusable widgets (mypystub.widgets), on Toga's dummy backend."""
+"""Tests for togax_jkingok.OrientationBox, on Toga's dummy backend."""
 
 import os
 
@@ -9,7 +9,7 @@ os.environ["TOGA_BACKEND"] = "toga_dummy"
 
 import toga
 
-from mypystub.widgets import OrientationBox
+from togax_jkingok import OrientationBox
 
 
 @pytest.fixture(autouse=True)

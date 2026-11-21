@@ -37,7 +37,7 @@ from mypystub.run_settings import (
     env_value_problem,
     move,
 )
-from mypystub.ui_widgets import refresh_on_new_width
+from togax_jkingok import Collapsible, refresh_on_new_width
 
 # Toolbar-style buttons use symbols to fit a phone's width; the Help page
 # says what each one does. Not colour emoji: iOS greys out a disabled button
@@ -126,31 +126,6 @@ def fit_list(rows_list: toga.DetailedList, rows: int) -> None:
     """
     rows_list.style.height = list_height(rows)
     rows_list.style.display = "pack" if rows else "none"
-
-
-def collapsible(
-    title: str,
-    children: Sequence[toga.Widget],
-    *,
-    open: bool,
-    on_change: Callable[..., Any],
-) -> tuple[toga.Switch, toga.Box]:
-    """A section's switch, and the box of `children` it shows or hides.
-
-    The caller's `on_change` should call :func:`show_body`, after anything else
-    it does.
-    """
-    switch = toga.Switch(
-        title, value=open, on_change=on_change, margin=(8, 8, 0, 8), font_weight="bold"
-    )
-    body = toga.Column(children=list(children))
-    show_body(switch, body)
-    return switch, body
-
-
-def show_body(switch: toga.Switch, body: toga.Widget, has_rows: bool = True) -> None:
-    """Show `body` while its switch is on (and it has anything to show)."""
-    body.style.display = "pack" if switch.value and has_rows else "none"
 
 
 class RunWithForm:
@@ -276,7 +251,7 @@ class RunWithForm:
         keep_selection(self.args_list)
         keep_selection(self.env_list)
         # Each section's switch and the box it shows or hides, by name
-        self.sections: dict[str, tuple[toga.Switch, toga.Box]] = {}
+        self.sections: dict[str, Collapsible] = {}
         self.button_row = toga.Row()
         self.scroll = toga.ScrollContainer()
         self.content = self._build(args_note)
@@ -326,11 +301,11 @@ class RunWithForm:
         """
         if not self.collapsible_sections:
             return list(children)
-        switch, body = collapsible(
+        section = Collapsible(
             title, children, open=True, on_change=self._toggle_section
         )
-        self.sections[name] = (switch, body)
-        return [switch, body]
+        self.sections[name] = section
+        return [section]
 
     def _build(self, args_note: str | None) -> toga.Widget:
         children: list[toga.Widget] = []
@@ -377,8 +352,9 @@ class RunWithForm:
         if self.fill:
             # The list scrolls itself, so nothing goes in a ScrollContainer
             self.env_list.style.flex = 1
-            for switch, body in self.sections.values():
-                body.style.flex = 1
+            for section in self.sections.values():
+                section.body.style.flex = 1
+                self._fit_section(section)
             body_column = toga.Column(flex=1, children=children)
         else:
             self.scroll = toga.ScrollContainer(
@@ -406,10 +382,13 @@ class RunWithForm:
         return toga.Column(flex=1, children=[body_column, self.button_row])
 
     @guarded
-    def _toggle_section(self, widget: toga.Switch, **kwargs: Any) -> None:
-        for switch, body in self.sections.values():
-            if switch is widget:
-                show_body(switch, body)
+    def _toggle_section(self, section: Collapsible, **kwargs: Any) -> None:
+        self._fit_section(section)
+
+    def _fit_section(self, section: Collapsible) -> None:
+        """Filling the screen, an open section shares the room; a closed one doesn't."""
+        if self.fill:
+            section.style.flex = 1 if section.shown else 0
 
     def _quick_start_button(self) -> toga.Button:
         """The button that makes this thing the launch Quick Start."""
@@ -556,7 +535,7 @@ class RunWithForm:
             button.enabled = can_move(len(self.args), self.arg_index, where)
         fit_list(self.args_list, len(self.args))
         if "args" in self.sections:
-            self.sections["args"][0].text = f"Arguments ({len(self.args)})"
+            self.sections["args"].title = f"Arguments ({len(self.args)})"
 
         row = self.selected_env()
         self.env_buttons["edit"].enabled = row is not None
@@ -574,7 +553,7 @@ class RunWithForm:
             fit_list(self.env_list, visible)
         if "env" in self.sections:
             # The rows listed; they are still sorted A–Z
-            self.sections["env"][0].text = f"Environment ({visible})"
+            self.sections["env"].title = f"Environment ({visible})"
         self.env_note.style.display = "pack" if row is not None else "none"
         self.env_buttons["view"].enabled = row is not None
         if row is not None and row.inherited and row.source == SYSTEM:

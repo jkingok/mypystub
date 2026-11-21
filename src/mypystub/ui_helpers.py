@@ -10,15 +10,19 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import toga
 
+import togax_jkingok
+
 from .bridge import (
     UIModalPresentationFormSheet,
     UIPopoverArrowDirectionDown,
 )
 
 # The app's own Python source, as shipped inside the bundle: this package's
-# folder. Sharing it is a backstop to the About page's Source link, so anyone
-# can read exactly what is running without trusting that link.
+# folder, and the widget package beside it (#323). Sharing it is a backstop to
+# the About page's Source link, so anyone can read exactly what is running
+# without trusting that link.
 APP_SOURCE_DIR = Path(__file__).resolve().parent
+SOURCE_DIRS = (APP_SOURCE_DIR, Path(togax_jkingok.__file__).resolve().parent)
 
 
 def follow_tab_sizes(
@@ -60,9 +64,9 @@ def _tab_resized(on_shown: Callable[[], Any] | None) -> Callable[[Any], None]:
 
 
 def create_source_zip(app: toga.App) -> Path:
-    """Zip the app's own Python source (this package) for sharing or review.
+    """Zip the app's own Python source (its packages) for sharing or review.
 
-    Everything in the package folder as shipped is included, in sorted order so
+    Everything in the package folders as shipped is included, in sorted order so
     the listing is stable, apart from ``__pycache__``. The file is named with
     the app's version, and written to the cache directory for a transient share.
     """
@@ -70,10 +74,11 @@ def create_source_zip(app: toga.App) -> Path:
     app.paths.cache.mkdir(parents=True, exist_ok=True)
     dest = app.paths.cache / name
     with ZipFile(dest, "w", ZIP_DEFLATED) as archive:
-        for item in sorted(APP_SOURCE_DIR.rglob("*")):
-            relative = item.relative_to(APP_SOURCE_DIR)
-            if item.is_file() and "__pycache__" not in relative.parts:
-                archive.write(item, Path(APP_SOURCE_DIR.name) / relative)
+        for source in SOURCE_DIRS:
+            for item in sorted(source.rglob("*")):
+                relative = item.relative_to(source)
+                if item.is_file() and "__pycache__" not in relative.parts:
+                    archive.write(item, Path(source.name) / relative)
     return dest
 
 

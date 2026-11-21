@@ -11,6 +11,13 @@ from typing import Any, cast
 import toga
 from toga.style import Pack
 
+from togax_jkingok import (
+    LabelledSelection,
+    refresh_on_new_width,
+    relayout,
+    relayout_on_resize,
+)
+
 from . import (
     about,
     build_info,
@@ -35,12 +42,6 @@ from .ui_resume import ResumeMixin
 from .ui_run import RunMixin
 from .ui_setup import SetupMixin
 from .ui_swipe import SwipeMixin
-from .ui_widgets import (
-    LabelledSelection,
-    refresh_on_new_width,
-    relayout,
-    relayout_on_resize,
-)
 
 # The Logs tab's buttons: monochrome symbols, like the Setup toolbars, so the
 # row looks quiet (Help says what each does). Reload, jump to the newest line,

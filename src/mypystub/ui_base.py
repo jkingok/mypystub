@@ -13,6 +13,8 @@ from typing import Any
 import toga
 from toga.style import Pack
 
+from togax_jkingok import LabelledActivity, OrientationBox
+
 from . import (
     examples_copy,
     logfile,
@@ -31,8 +33,6 @@ from .errors import guarded
 from .pages import html_page
 from .run_settings import SYSTEM, Layer, env_name_problem, env_value_problem
 from .safe_area import SafeArea, SafeColumn
-from .ui_widgets import LabelledActivity
-from .widgets import OrientationBox
 
 # Text colour for a run's stderr: an orange that reads as a warning, with
 # enough contrast on both the light and the dark background

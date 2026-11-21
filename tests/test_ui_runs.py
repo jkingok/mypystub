@@ -273,7 +273,7 @@ def test_hide_lasts_until_the_next_write(
 def test_script_output_container_is_orientation_aware(proto: ui.Prototype) -> None:
     """Output and errors share the Script tab: stacked in portrait, side by side
     in landscape."""
-    from mypystub.widgets import OrientationBox
+    from togax_jkingok import OrientationBox
 
     assert isinstance(proto.script_output, OrientationBox)
     assert proto.script_output.children == [proto.print_text, proto.error_pane]

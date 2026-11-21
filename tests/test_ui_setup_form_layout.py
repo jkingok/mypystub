@@ -28,10 +28,9 @@ NOW = datetime(2026, 11, 5, 14, 32, 7)
 
 def flip(form: Any, name: str, value: bool) -> toga.Box:
     """Turn a section's switch on or off, as the user would; its body."""
-    switch, body = form.sections[name]
-    switch.value = value
-    form._toggle_section(switch)
-    return body
+    section = form.sections[name]
+    section.toggle.value = value  # its on_change refits the section
+    return section.body
 
 
 def walk(widget: toga.Widget) -> list[toga.Widget]:
@@ -63,8 +62,8 @@ def test_sections_scroll_above_a_fixed_row_of_buttons(
 def test_each_section_folds_under_its_switch(proto: ui.Prototype, config: Path) -> None:
     form = proto.open_run_with(row(proto, "top"))
     assert set(form.sections) == {"args", "env", "workdir"}
-    for name, (switch, body) in form.sections.items():
-        assert switch.value is True and body.style.display == "pack", name
+    for name, section in form.sections.items():
+        assert section.open and section.body.style.display == "pack", name
         assert flip(form, name, False).style.display == "none"
         assert flip(form, name, True).style.display == "pack"
     form.done()
@@ -72,8 +71,8 @@ def test_each_section_folds_under_its_switch(proto: ui.Prototype, config: Path) 
 
 def test_section_titles_count_what_they_hold(proto: ui.Prototype, config: Path) -> None:
     form = proto.open_run_with(row(proto, "top"))
-    args_switch = form.sections["args"][0]
-    env_switch = form.sections["env"][0]
+    args_switch = form.sections["args"].toggle
+    env_switch = form.sections["env"].toggle
     assert args_switch.text == "Arguments (0)" and env_switch.text == "Environment (0)"
     form.args += ["one", "two"]
     form.env["GREETING"] = "Hello"

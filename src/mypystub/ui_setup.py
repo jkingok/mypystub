@@ -12,6 +12,8 @@ from typing import Any, ClassVar
 import httpx2
 import toga
 
+from togax_jkingok import LabelledActivity
+
 from . import (
     about,
     backups,
@@ -33,7 +35,6 @@ from .ui_base import PrototypeBase
 from .ui_helpers import (
     open_share_sheet,
 )
-from .ui_widgets import LabelledActivity
 
 
 class SetupMixin(PrototypeBase):

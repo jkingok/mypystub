@@ -1,4 +1,9 @@
-"""Small widgets the launcher builds its screens from."""
+"""Layout helpers: lay content out again when Toga doesn't do it by itself.
+
+Toga lays a scroll view's content out to the size it had at the time, and some
+backends don't do it again after rotation, a split view, or a tab that wasn't
+showing. These helpers ask for the layout again when it can have changed.
+"""
 
 from __future__ import annotations
 
@@ -78,73 +83,3 @@ def relayout_on_resize(window: Any) -> None:
 
     window.on_resize = resized
     window._relayout_on_resize = True
-
-
-class LabelledProgress(toga.Box):
-    def __init__(self, **kwargs: Any) -> None:
-        self.bar = toga.ProgressBar(flex=1)
-        self.text = toga.Label("")
-        super().__init__(direction="row", children=[self.bar, self.text], **kwargs)
-
-    def start(self, limit: int = 0) -> None:
-        self.bar.max = limit if limit > 0 else None
-        self.bar.start()
-        self.update(0)
-
-    def update(self, value: int) -> None:
-        if self.bar.max:
-            if self.bar.max == 100:
-                self.text.text = f"{value}%"
-            else:
-                self.text.text = f"{value}/{self.bar.max}"
-        else:
-            self.text.text = ""
-        self.bar.value = value
-
-    def stop(self) -> None:
-        if self.bar.max:
-            self.update(int(self.bar.max))
-        self.bar.stop()
-
-
-class LabelledActivity(toga.Box):
-    def __init__(self, **kwargs) -> None:
-        self.activity = toga.ActivityIndicator()
-        self.text = toga.Label("", flex=1)
-        super().__init__(direction="row", children=[self.activity, self.text], **kwargs)
-
-    def update(self, value: str = "", on: bool = True) -> None:
-        self.activity.start() if on else self.activity.stop()
-        self.text.text = value
-
-
-class LabelledSelection(toga.Box):
-    """
-    Toga Box combining a text Label and Selection dropdown widget.
-
-    :param label_text: Label text prefix.
-    :type label_text: str
-    :param value_text: Initially selected item value.
-    :type value_text: str
-    :param value_list: List of available selection items.
-    :type value_list: list
-    :param callback: Change event callback handler.
-    :type callback: callable
-    :param id: Widget identifier.
-    :type id: str
-    """
-
-    def __init__(self, label_text: str, **kwargs):
-        self.selection = toga.Selection(flex=1, **kwargs)
-        super().__init__(
-            direction="row",
-            align_items="center",
-            children=[
-                toga.Label(label_text + ": "),
-                self.selection,
-            ],
-        )
-
-    @property
-    def value(self):
-        return self.selection.value

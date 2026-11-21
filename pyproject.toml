@@ -41,7 +41,7 @@ line-length = 88
 extend-exclude = ["build", "docs", "src/launcher"]
 
 [tool.pyright]
-include = ["src/mypystub"]
+include = ["src/mypystub", "src/togax_jkingok"]
 exclude = ["src/launcher", "build", "docs"]
 venvPath = "."
 venv = ".venv"
@@ -80,6 +80,8 @@ to interact with basic console scripts.
 """
 sources = [
     "src/mypystub",
+    # Widgets planned to become the togax-jkingok package (#323)
+    "src/togax_jkingok",
 ]
 test_sources = [
     "tests",

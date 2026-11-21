@@ -14,7 +14,7 @@ from mypystub.ui_helpers import create_source_zip
 
 
 def test_source_zip_holds_the_package_and_skips_pycache(tmp_path: Path) -> None:
-    """The zip is this package's folder, named with the version, without caches."""
+    """The zip is the app's package folders, named with the version, no caches."""
     app = SimpleNamespace(
         formal_name="MyPyStub",
         version="9.9",
@@ -26,6 +26,7 @@ def test_source_zip_holds_the_package_and_skips_pycache(tmp_path: Path) -> None:
         names = zf.namelist()
     assert "mypystub/ui.py" in names
     assert "mypystub/ui_helpers.py" in names
+    assert "togax_jkingok/collapsible.py" in names  # the widgets (#323)
     assert not any("__pycache__" in name for name in names)
 
 
