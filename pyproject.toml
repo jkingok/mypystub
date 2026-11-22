@@ -15,7 +15,8 @@ dependencies = [
     "pygments",
     # Names the kind of pasted text (magic.from_buffer); also what scripts get
     # for `import magic` (a "bundled" alias for python-magic, package_aliases.py)
-    "python-magic-pure",
+    # an sdist only on PyPI so we use Git as a workaround
+    "python-magic-pure @ git+https://github.com/jkapelner/python-magic-pure@5a40cd3",
     "resolvelib",
     "tomlkit",
     # Setup's Experimental Console (pure Python; no PyPI release yet)
