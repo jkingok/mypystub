@@ -1,5 +1,31 @@
 # What's New
 
+## 2026.11.22.1 (2026-11-22)
+
+### New
+
+- A script's description on its Info page is now shown as Markdown (lists, `code`, links and emphasis), with the same safety as READMEs.
+- Setup's **Backup** no longer freezes the app, and backs up only your Documents and settings (not installed packages or other downloads). A new **Restore** button beside it puts a backup back, keeping anything it replaces. Setup's buttons can now show icons.
+- Setup's Environment list now fills the screen, inherited variables can be marked with an icon, and they're shown straight away when there are none of your own. Setup › Packages folds its list of user packages, like the other sections.
+- With the Experimental Console, the window's title starts with ⏳ while a script runs and ⌨️ while it waits for you to type, and the keyboard comes up once when it starts waiting. The status row steps aside while you type.
+- Each script's Setup has a **Working folder**: its own folder, a folder in the cache, or one in Documents. Swipe right on Examples or Documents to set it for everything in them. Examples now run in the cache by default, so examples that write files (such as `fancy.py`) work.
+- Check for updates shows a progress bar counting through the packages it asks about, and installing a script's or project's dependencies, or Update all, counts through the downloads and installs.
+- New examples: Snake Game, a classic snake game drawn on a canvas with arrow buttons, pause and a speed-up as you score; and paste_to_html, which saves the text you've copied as an HTML file.
+- Check for updates now notices when Toga or toga-console, which the app takes from their git repositories, have newer commits, with a link to what changed. Before, toga-console was never checked and Toga was compared with its last PyPI release.
+- Check for updates remembers its answers for the day, so checking again soon is quick and asks only about what's changed, and the Packages page shows the last results and when they were found. The wording no longer mentions TestFlight, as Android builds come from elsewhere.
+- Packages you install from a git repository (name @ git+https://…) now remember the commit they came from, so Check for updates tells you when their branch has newer commits, and Update all brings them up to date.
+- The result of Check for updates is a short line with emoji that fits a small phone, such as 📦 ✅ up to date · 📱 ⚠️ 4 behind, instead of running off the edge. Setup's progress row lines up its spinner, text and bar. An empty section's switch is greyed out. Arguments show just the argument, and inherited environment variables show just their value, with where they come from under ⓘ.
+- Paste now works out what the text you copied is: a web page is saved as .html, Markdown as .md, JSON as .json, a notebook as .ipynb, and Python as .py as before, instead of always as a Python script. When it can't tell, it asks: end the name in .py, .html, .md or another ending to choose, or it is saved as .txt.
+- Packages that PyPI offers only as source (no wheel) are now built on the device when a prototype needs them, if they are pure Python, as well as installed from wheels.
+
+### Fixed
+
+- Starting a script while another is still running (waiting for input, or with its own screen still up) now says "Another script is already running" and shows the Script tab, instead of running both at once and mixing up their input and output.
+- Scripts that write bytes to `sys.stdout.buffer` or `sys.stderr.buffer`, read bytes from `sys.stdin.buffer` (Experimental Console), or call `sys.stdout.reconfigure()` now work in the app as they do at a terminal.
+- On iPad, the tabs use the system's own tab bar again, with nothing hidden under it: List's New, New Folder and Paste row shows, and Logs and Setup no longer open blank.
+- The app's own diagnostics (SafeArea's layout readings, package installs, launches and so on) no longer appear among a running script's output: everything the app logs goes to the Logs tab only. A script's own logging goes there too unless the script sets logging up itself.
+- Source dependencies (a git or archive URL) install on iPhone and iPad again; building them failed on iOS with "module 'os' has no attribute 'system'".
+
 ## 2026.11.19.1 (2026-11-19)
 
 ### New
