@@ -25,6 +25,7 @@ SHARED = {
     "src/app_template/logfile.py": "src/mypystub/logfile.py",
     "src/app_template/run_status.py": "src/mypystub/run_status.py",
     "src/app_template/script_tab.py": "src/mypystub/script_tab.py",
+    ".claude/skills/mypystub-app/SKILL.md": "skills/mypystub-app/SKILL.md",
     "generate_icons.py": "generate_icons.py",
 }
 
