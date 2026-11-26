@@ -52,7 +52,7 @@ def test_sections_scroll_above_a_fixed_row_of_buttons(
     assert form.content.children == [form.scroll, form.button_row]
     assert form.scroll.style.flex == 1 and form.scroll.horizontal is False
     buttons = [w for w in form.button_row.children if isinstance(w, toga.Button)]
-    assert [b.text for b in buttons] == ["Make Quick Start", "Done"]
+    assert [b.text for b in buttons] == ["Make Quick Start", "Share", "Done"]
     assert all(b.style.flex == 1 for b in buttons)
     # Everything else is in the scrolling part
     inside = walk(form.scroll)

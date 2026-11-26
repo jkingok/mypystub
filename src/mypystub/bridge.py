@@ -20,8 +20,6 @@ from togax_jkingok import clipboard
 # UIKit constants, plain numbers that are the same wherever this is imported
 # A form sheet is a full-width sheet from the bottom on iPhone and a centred card
 # on iPad. Left to itself, iOS 26 shows the share sheet as a small corner panel.
-UIModalPresentationFormSheet = 2  # UIModalPresentationStyle.formSheet
-UIPopoverArrowDirectionDown = 2  # UIPopoverArrowDirection.down
 
 if sys.platform == "ios":
     from rubicon.objc import (  # pyright: ignore[reportMissingImports]
@@ -32,9 +30,6 @@ if sys.platform == "ios":
         load_library,
     )
     from toga_iOS.libs import UIApplication, uikit
-
-    # UIKit: not declared in toga_iOS.libs.uikit
-    UIActivityViewController = ObjCClass("UIActivityViewController")
 
     def app_settings_url() -> str:
         """UIApplicationOpenSettingsURLString: opens this app's Settings page."""

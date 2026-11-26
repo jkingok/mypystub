@@ -74,6 +74,7 @@ def test_clear_now_is_on_the_logs_tab_and_always_enabled(proto: ui.Prototype) ->
     assert [b.text for b in buttons([logs.content])] == [
         ui.LOG_RELOAD,
         ui.LOG_BOTTOM,
+        ui.LOG_SHARE,
         ui.LOG_CLEAR,
     ]
     assert clear_button(proto).enabled is True

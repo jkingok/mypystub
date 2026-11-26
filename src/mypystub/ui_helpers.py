@@ -11,11 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import toga
 
 import togax_jkingok
-
-from .bridge import (
-    UIModalPresentationFormSheet,
-    UIPopoverArrowDirectionDown,
-)
+from togax_jkingok import share
 
 # The app's own Python source, as shipped inside the bundle: this package's
 # folder, and the widget package beside it (#323). Sharing it is a backstop to
@@ -82,88 +78,31 @@ def create_source_zip(app: toga.App) -> Path:
     return dest
 
 
-def share_anchor_rect(width: float, height: float) -> tuple[float, float, float, float]:
+# Where share sheets point, and how they're shown: now togax_jkingok.share's
+share_anchor_rect = share.anchor_rect
+configure_share_presentation = share.present_as_form_sheet
+
+
+def open_share_sheet(w: toga.Widget, file_path: Path) -> bool:
     """
-    Where a share popover points: a zero-size spot at the bottom centre of a view.
+    Offers a file to the user's choice of app (togax_jkingok.share).
 
-    Never the whole view, which leaves a popover no room but a sliver at the side.
+    The share sheet on iOS and Android (#217), the share menu on macOS, and
+    the file manager on other desktops. On Android the file goes out through
+    the app's own documents provider (:mod:`android_share`).
 
-    :param width: The presenting view's width, in points.
-    :param height: The presenting view's height, in points.
-    :returns: ``(x, y, width, height)`` of the anchor, inside the view.
+    :param w: The widget the share starts from; its window shows the sheet.
+    :param file_path: The file to share.
+    :returns: False if nothing could be shown.
     """
-    return (width / 2, max(height - 1, 0.0), 0.0, 0.0)
-
-
-def configure_share_presentation(
-    activity_vc: Any,
-    presenting_view: Any,
-    make_rect: Callable[[float, float, float, float], Any],
-) -> None:
-    """
-    Presents a share sheet as a form sheet, anchored safely if iOS makes it a popover.
-
-    rubicon reads ``popoverPresentationController`` as a method, because UIKit
-    declares it in a category, so it has to be called. Setting attributes on it
-    uncalled only touches a Python object, and an iPad then ends the app for
-    want of a source view.
-
-    :param activity_vc: The ``UIActivityViewController`` about to be presented.
-    :param presenting_view: The view of the controller that presents it.
-    :param make_rect: Builds a native rectangle from ``(x, y, width, height)``.
-    """
-    activity_vc.modalPresentationStyle = UIModalPresentationFormSheet
-    popover = activity_vc.popoverPresentationController()
-    if popover is not None:
-        size = presenting_view.bounds.size
-        popover.sourceView = presenting_view
-        popover.sourceRect = make_rect(*share_anchor_rect(size.width, size.height))
-        popover.permittedArrowDirections = UIPopoverArrowDirectionDown
-
-
-def open_share_sheet(w: toga.Widget, file_path: Path) -> None:
-    """
-    Opens the native share sheet for a file: iOS's, or Android's (#217).
-
-    :param w: The active Toga widget instance initiating the share.
-    :param file_path: Absolute string path to the local file.
-    """
+    android_uri = None
     if sys.platform == "android":
         from java import jclass  # pyright: ignore[reportMissingImports]
 
         from . import android_share
 
-        android_share.share_file(jclass, file_path)
-        return
-    if sys.platform == "ios":
-        from rubicon.objc import NSMakeRect
-        from toga_iOS.libs import NSURL, NSMutableArray
+        def android_uri(path: Path) -> object:
+            return android_share.content_uri(jclass, path)
 
-        from .bridge import UIActivityViewController
-
-        # 1. Ensure the file path exists and convert it into a native file URL
-        absolute_path = str(file_path.resolve())
-        file_url = NSURL.fileURLWithPath_(absolute_path)
-
-        # 2. Add the URL asset into an Objective-C array of items to share
-        share_items = NSMutableArray.alloc().init()
-        share_items.addObject_(file_url)
-
-        # 3. Initialize the native UIActivityViewController
-        # Pass None for custom applicationActivities to use standard system defaults
-        activity_vc = UIActivityViewController.alloc().initWithActivityItems(
-            share_items, applicationActivities=None
-        )
-
-        # 4. Grab the native UIViewController backing your Toga Window
-        if w.app and w.app.main_window:
-            assert isinstance(w.app.main_window, toga.MainWindow)
-            presenting_vc = w.app.main_window._impl.native.rootViewController
-
-            # 5. A full-width sheet, with a safe anchor in case iOS uses a popover
-            configure_share_presentation(activity_vc, presenting_vc.view, NSMakeRect)
-
-            # 6. Present the share sheet asynchronously over the top of the interface
-            presenting_vc.presentViewController(
-                activity_vc, animated=True, completion=None
-            )
+    window = w.window or (w.app.main_window if w.app else None)
+    return share.share_file(file_path, window, android_uri=android_uri)

@@ -28,8 +28,10 @@ SHARE_FOLDER = "share"
 
 
 def share_available() -> bool:
-    """Whether sharing is offered: iOS's share sheet, or Android's (#217)."""
-    return sys.platform in ("ios", "android")
+    """Whether Share is offered: phones' share sheets (#217), desktops' fallbacks."""
+    from togax_jkingok import share
+
+    return share.available()
 
 
 def skipped(relative: Path) -> bool:
@@ -71,3 +73,23 @@ def prepare_share(source: Path, cache_dir: Path) -> Path:
     scratch = cache_dir / SHARE_FOLDER
     shutil.rmtree(scratch, ignore_errors=True)
     return zip_project(source, scratch)
+
+
+def log_copy(log_path: Path, cache: Path, name: str) -> Path:
+    """Copy the log into the cache's share folder, named `name` with a timestamp.
+
+    The copy is what's shared: it holds still while the app goes on logging,
+    and a ``.txt`` name opens anywhere. Earlier copies are removed.
+    """
+    import time
+
+    folder = cache / SHARE_FOLDER
+    folder.mkdir(parents=True, exist_ok=True)
+    prefix = name.split("{stamp}")[0]
+    for old in folder.glob(f"{prefix}*"):
+        old.unlink(missing_ok=True)
+    if (flush := getattr(sys.stdout, "flush", None)) is not None:
+        flush()
+    copy = folder / name.format(stamp=time.strftime("%Y-%m-%d %H.%M.%S"))
+    shutil.copyfile(log_path, copy)
+    return copy

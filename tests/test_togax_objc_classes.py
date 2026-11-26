@@ -37,3 +37,4 @@ def test_no_class_is_looked_up_in_two_places() -> None:
     assert len(package) == len(set(package))
     assert not set(package) & lookups(BRIDGE)
     assert "UIPasteboard" in package  # the clipboard's, now
+    assert {"UIActivityViewController", "NSSharingServicePicker"} <= set(package)

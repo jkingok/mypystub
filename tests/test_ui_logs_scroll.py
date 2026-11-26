@@ -108,6 +108,11 @@ def test_the_logs_tab_has_reload_and_a_jump_button(proto: ui.Prototype) -> None:
             walk(child)
 
     walk(logs.content)
-    assert [b.text for b in found] == [ui.LOG_RELOAD, ui.LOG_BOTTOM, ui.LOG_CLEAR]
+    assert [b.text for b in found] == [
+        ui.LOG_RELOAD,
+        ui.LOG_BOTTOM,
+        ui.LOG_SHARE,
+        ui.LOG_CLEAR,
+    ]
     # Monochrome symbols, sized like the Setup toolbars', not words or emoji
     assert all(b.style.font_size == ui.SYMBOL_SIZE for b in found)

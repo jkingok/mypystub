@@ -143,7 +143,7 @@ def test_help_about_switch(
         "Packages",
     ]
     assert "Setup → Packages" in pages[-1] and "Bundled packages" not in pages[-1]
-    assert proto.about_share.style.visibility == "hidden"  # not iOS
+    assert proto.about_share.style.visibility == "visible"  # desktops share too
 
     proto.help_selection.selection.value = "Help"
     proto.show_help_page()

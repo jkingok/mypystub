@@ -48,8 +48,10 @@ log = logging.getLogger(__name__)
 
 # The Logs tab's buttons: monochrome symbols, like the Setup toolbars, so the
 # row looks quiet (Help says what each does). Reload, jump to the newest line,
-# and clear the log
-LOG_RELOAD, LOG_BOTTOM, LOG_CLEAR = "↻", "⤓", "⌫"
+# share the log, and clear it
+LOG_RELOAD, LOG_BOTTOM, LOG_SHARE, LOG_CLEAR = "↻", "⤓", "⇪", "⌫"
+# What a shared copy of the log is called: a .txt opens anywhere
+LOG_SHARE_NAME = "MyPyStub log {stamp}.txt"
 # Symbols are small at the default size (as run_with.SYMBOL_SIZE)
 SYMBOL_SIZE = 22
 
@@ -96,6 +98,19 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
     def jump_to_log_bottom(self, widget: toga.Widget, **kwargs: Any) -> None:
         """Go to the newest line of the log from wherever it is scrolled to."""
         self.log_text.scroll_to_bottom()
+
+    @guarded
+    async def handle_log_share(self, widget: toga.Widget, **kwargs: Any) -> None:
+        """Share a copy of the log as it is now, as a text file."""
+        redirector = logfile.current()
+        if redirector is None:
+            await self.info("There is no log file in this run to share.", "Share Log")
+            return
+        copy = share_items.log_copy(
+            redirector.path, Path(self.cache_path), LOG_SHARE_NAME
+        )
+        if not open_share_sheet(widget, copy):
+            await self.info("This device has nowhere to share the log.", "Share Log")
 
     @guarded
     async def handle_clear_now(self, widget: toga.Widget, **kwargs: Any) -> None:
@@ -385,6 +400,12 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
                                     toga.Button(
                                         LOG_BOTTOM,
                                         on_press=self.jump_to_log_bottom,
+                                        flex=1,
+                                        font_size=SYMBOL_SIZE,
+                                    ),
+                                    toga.Button(
+                                        LOG_SHARE,
+                                        on_press=self.handle_log_share,
                                         flex=1,
                                         font_size=SYMBOL_SIZE,
                                     ),

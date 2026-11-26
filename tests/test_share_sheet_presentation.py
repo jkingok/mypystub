@@ -12,12 +12,13 @@ from typing import Any
 
 import pytest
 
-from mypystub.bridge import UIModalPresentationFormSheet, UIPopoverArrowDirectionDown
 from mypystub.ui_helpers import configure_share_presentation, share_anchor_rect
+from togax_jkingok.share import ARROW_DOWN as UIPopoverArrowDirectionDown
+from togax_jkingok.share import FORM_SHEET as UIModalPresentationFormSheet
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "mypystub"
 SHARE_CODE = [
-    SRC / "ui_helpers.py",
+    SRC.parent / "togax_jkingok" / "share.py",
     SRC / "resources/examples/contrib/jkingok/media_hub/src/media_hub/widgets.py",
 ]
 

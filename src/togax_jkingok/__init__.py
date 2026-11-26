@@ -13,7 +13,8 @@ Platform support:
 - **Desktop (macOS, GTK, Windows): working.** Everything has a desktop
   fallback: widgets work, more plainly where a phone-only feature doesn't
   apply (SafeArea is then a plain Box), and services use the desktop's own
-  (the clipboard reads and writes the system clipboard).
+  (the clipboard reads and writes the system clipboard; sharing uses macOS's
+  share menu, or shows the file in the file manager).
 - **Web and Textual: limited or none,** but never broken on import.
 
 Whatever the platform, ``import togax_jkingok`` (and each public module in it)
@@ -23,10 +24,12 @@ module (``_android_insets``, ``_ios_clipboard``, …) holds one platform's nativ
 code, and is imported only on that platform, when it's needed.
 
 Besides widgets, the package wraps platform services an app reaches through
-its UI: :mod:`togax_jkingok.clipboard` reads and writes the clipboard.
+its UI: :mod:`togax_jkingok.clipboard` reads and writes the clipboard, and
+:mod:`togax_jkingok.share` hands a file to the share sheet (or, on a desktop
+without one, the file manager).
 """
 
-from . import clipboard
+from . import clipboard, share
 from .collapsible import Collapsible
 from .editable_list import EditableList
 from .labelled import LabelledActivity, LabelledProgress, LabelledSelection
@@ -48,4 +51,5 @@ __all__ = [
     "refresh_on_new_width",
     "relayout",
     "relayout_on_resize",
+    "share",
 ]

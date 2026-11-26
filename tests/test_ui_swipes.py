@@ -347,7 +347,7 @@ def test_setup_forms_finish_with_done(proto: ui.Prototype, config: Path) -> None
     """Changes save as they're made, so there's no Save button; a runnable
     row also offers Make Quick Start, and the environment form just Done."""
     expected = {
-        proto.open_run_with(row(proto, "top")): ["Make Quick Start", "Done"],
+        proto.open_run_with(row(proto, "top")): ["Make Quick Start", "Share", "Done"],
         proto.open_setup_environment(): ["Done"],
     }
     for form, want in expected.items():
