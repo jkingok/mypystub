@@ -77,7 +77,7 @@ class RunMixin(NativeMixin):
         The run ends when the body returns, or, if it took over the window, when
         its takeover is popped off the content stack (see runner.RunLifetime).
         """
-        log.info("Starting...")
+        log.debug("Starting...")
         self.run_id += 1
         run_id = self.run_id
         stack = self.content_stack()

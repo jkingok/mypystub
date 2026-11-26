@@ -257,7 +257,7 @@ def bootstrap_application() -> Any:
         except OSError as e:
             log.warning(f"Failed to write placeholder: {e}")
 
-    log.info(f"creating MyApp with user_documents_dir: {user_documents_dir}")
+    log.debug(f"creating MyApp with user_documents_dir: {user_documents_dir}")
     return MyApp(user_documents_dir)
 
 
@@ -290,7 +290,7 @@ def main() -> toga.App | None:
         return bootstrap_application()
     elif activity_was_recreated(a):
         # Build the UI again, for the new Activity, as a first launch does
-        log.info("Android recreated the Activity: building the UI again")
+        log.warning("Android recreated the Activity: building the UI again")
         for old in list(a.windows):  # Android allows only one window; the old
             a.windows.discard(old)  # one belongs to the Activity that was destroyed
         # Startup has run once: a window made now would build menus through a

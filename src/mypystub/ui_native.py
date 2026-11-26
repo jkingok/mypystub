@@ -108,7 +108,7 @@ class NativeMixin(RowSettingsMixin):
 
         With `interactive`, the input field stays up and sends lines to stdin.
         """
-        log.info(f"Native: {' '.join(command[:4])} …")
+        log.debug(f"Native: {' '.join(command[:4])} …")
         self.script_runner.begin_run()
         process = await asyncio.create_subprocess_exec(
             *command,

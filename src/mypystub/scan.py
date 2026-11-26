@@ -434,7 +434,7 @@ def scan_all_prototypes(
     """
     folders: list[Mapping[str, Any]] = []
     prototypes: list[Mapping[str, Any]] = []
-    log.info(f"Scanning for launcher prototypes in: {base_dir}")
+    log.debug(f"Scanning for launcher prototypes in: {base_dir}")
 
     if not base_dir.is_dir():
         return prototypes

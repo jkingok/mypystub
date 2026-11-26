@@ -84,11 +84,24 @@ class LogRedirector:
 _current: LogRedirector | None = None
 
 
-# The app's own packages log at INFO; everything else keeps logging's default
-# (WARNING). These are levels only: where records go is decided once, for
-# every logger, by the handler of last resort (see install)
+# The app's own packages log at INFO or DEBUG; depending upon a setting,
+# everything else keeps logging's default (WARNING). These are levels only:
+# where records go is decided once, for every logger, by the handler of
+# last resort (see install)
 APP_LOGGERS = ("mypystub", "togax_jkingok")
 LOG_FORMAT = "%(levelname)s %(name)s: %(message)s"
+
+
+# Whether debug lines are written. Set from the stamp file in the cache folder
+# (see stamp_path): the setting is read before the first launcher logging, so
+# nothing is kept back and then lost
+DEBUG_STAMP = "debug_logging"
+_debugging = False
+
+
+def stamp_path(cache: Path) -> Path:
+    """The file whose presence in the cache folder turns debug logging on."""
+    return Path(cache) / DEBUG_STAMP
 
 
 class LogFileHandler(logging.Handler):
@@ -106,9 +119,10 @@ class LogFileHandler(logging.Handler):
         self.setFormatter(logging.Formatter(LOG_FORMAT))
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Write one record as a line."""
+        """Write one record as a line; debug lines only while debugging is on."""
         try:
-            self.redirector.write(self.format(record) + "\n")
+            if record.levelno >= logging.INFO or _debugging:
+                self.redirector.write(self.format(record) + "\n")
         except Exception:  # noqa: BLE001  (logging must never raise)
             self.handleError(record)
 
@@ -128,11 +142,20 @@ def install(log_path: Path) -> LogRedirector:
     sys.stdout = _current  # type: ignore[assignment]
     sys.stderr = _current  # type: ignore[assignment]
     logging.lastResort = LogFileHandler(_current)
+    # The app's modules always create debug records; whether they are written
+    # is decided by enable_debugging (so none are missed before the setting)
     for name in APP_LOGGERS:
-        logging.getLogger(name).setLevel(logging.INFO)
+        logging.getLogger(name).setLevel(logging.DEBUG)
     return _current
 
 
 def current() -> LogRedirector | None:
     """The redirector :func:`install` made, if any (None in tests and dev runs)."""
     return _current
+
+
+def enable_debugging(on: bool) -> None:
+    """Write the app's debug lines to the log (on), or only what is at INFO (off)."""
+    global _debugging
+    _debugging = on
+    logging.getLogger(__name__).debug("Debug logging %s", "on" if on else "off")

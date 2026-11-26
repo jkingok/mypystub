@@ -14,8 +14,9 @@ dependencies = [
     # Syntax highlighting for code in the Help page (pure Python)
     "pygments",
     # Names the kind of pasted text (magic.from_buffer); also what scripts get
-    # for `import magic` (a "bundled" alias for python-magic, package_aliases.py)
-    # an sdist only on PyPI so we use Git as a workaround
+    # for `import magic` (a "bundled" alias for python-magic, package_aliases.py).
+    # Published only as a source distribution: Briefcase builds it on the Mac.
+    # Briefcase installs with --only-binary, so the sdist on PyPI can't be used
     "python-magic-pure @ git+https://github.com/jkapelner/python-magic-pure@5a40cd3",
     "resolvelib",
     "tomlkit",
@@ -102,7 +103,9 @@ requires = [
     # Syntax highlighting for code in the Help page (pure Python)
     "pygments",
     # Names the kind of pasted text (magic.from_buffer); also what scripts get
-    # for `import magic` (a "bundled" alias for python-magic, package_aliases.py)
+    # for `import magic` (a "bundled" alias for python-magic, package_aliases.py).
+    # Published only as a source distribution: Briefcase builds it on the Mac.
+    # Briefcase installs with --only-binary, so the sdist on PyPI can't be used
     "python-magic-pure @ git+https://github.com/jkapelner/python-magic-pure@5a40cd3",
     "resolvelib",
     "tomlkit",

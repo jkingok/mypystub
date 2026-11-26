@@ -15,7 +15,7 @@ from togax_jkingok.safe_area import AndroidMeasure, Insets, SafeColumn
 def test_readings_and_padding_are_logged_once_per_change(
     caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    caplog.set_level(logging.INFO, logger="togax_jkingok.safe_area")
+    caplog.set_level(logging.DEBUG, logger="togax_jkingok.safe_area")
     area = SafeColumn(children=[toga.MultilineTextInput(flex=1)])
     measure = AndroidMeasure(
         Insets(48, 0, 126, 0), 0, (0, 0, 1080, 2400), (1080.0, 2400.0)

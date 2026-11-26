@@ -100,7 +100,9 @@ class PrototypeBase:
         self.cache_path = self.app.paths.cache
         self.fetching_icons: set[str] = set()  # online web app icons being fetched
         self.data_path = getattr(self.app, "user_documents_dir", self.app.paths.data)
-        log.info(f"Prototype initialized with data_path: {self.data_path}")
+        # Debug logging is on from here if the stamp file is in the cache (#347)
+        logfile.enable_debugging(logfile.stamp_path(self.cache_path).exists())
+        log.debug(f"Prototype initialized with data_path: {self.data_path}")
         self.this_path = Path(__file__).resolve().parent
         self.examples_path = self.examples_location()
         self.icon_path = self.this_path / "resources" / "icons"
@@ -374,6 +376,25 @@ class PrototypeBase:
         self.settings.set_flag(PRESERVE_LOGS_SETTING, preserve)
 
     @property
+    def debug_logs(self) -> bool:
+        """Whether debug lines are logged: the stamp file is in the cache folder."""
+        return logfile.stamp_path(self.cache_path).exists()
+
+    def set_debug_logs(self, debug: bool) -> None:
+        """Turn Show debug level in Logs on or off: the stamp file, applied now.
+
+        The stamp is read at the next launch before anything is logged, so it
+        covers the start of the launch as well.
+        """
+        stamp = logfile.stamp_path(self.cache_path)
+        if debug:
+            stamp.parent.mkdir(parents=True, exist_ok=True)
+            stamp.touch()
+        else:
+            stamp.unlink(missing_ok=True)
+        logfile.enable_debugging(debug)
+
+    @property
     def native_mode(self) -> bool:
         """Desktop runs use pip and a subprocess (#280): on by default."""
         return native.available() and self.settings.get_flag(native.SETTING, True)
@@ -383,7 +404,11 @@ class PrototypeBase:
         self.settings.set_flag(native.SETTING, on)
 
     def apply_log_policy(self) -> None:
-        """At launch, empty the log unless Preserve Logs is on."""
+        """At launch, empty the log unless Preserve Logs is on, then apply debugging.
+
+        Debug lines kept from before this point are written after the empty log,
+        so the start of the launch is there when debugging is on.
+        """
         redirector = logfile.current()
         if redirector is not None and not self.preserve_logs:
             redirector.truncate()

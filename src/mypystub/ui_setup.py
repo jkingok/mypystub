@@ -290,6 +290,11 @@ class SetupMixin(PrototypeBase):
         self.set_preserve_logs(bool(widget.value))
 
     @guarded
+    def handle_debug_logs_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
+        """The switch for showing debug-level logging (#347)."""
+        self.set_debug_logs(bool(widget.value))
+
+    @guarded
     def handle_native_toggle(self, widget: toga.Switch, **kwargs: Any) -> None:
         """Desktop only: the real pip and Python, or the mobile ways (#280)."""
         self.set_native_mode(bool(widget.value))
@@ -619,6 +624,12 @@ class SetupMixin(PrototypeBase):
                 "Preserve Logs",
                 value=self.preserve_logs,
                 on_change=self.handle_preserve_logs_toggle,
+                margin=(4, 8),
+            ),
+            toga.Switch(
+                "Show debug level in Logs",
+                value=self.debug_logs,
+                on_change=self.handle_debug_logs_toggle,
                 margin=(4, 8),
             ),
             toga.Switch(

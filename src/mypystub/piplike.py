@@ -787,18 +787,18 @@ class ResolutionProgressReporter(resolvelib.BaseReporter):
         self.on_progress = on_progress
 
     def starting(self) -> None:
-        log.info("[Resolver] Starting dependency graph resolution...")
+        log.debug("[Resolver] Starting dependency graph resolution...")
 
     def starting_round(self, index: int) -> None:
-        log.info(f"[Resolver] Round {index}...")
+        log.debug(f"[Resolver] Round {index}...")
 
     def pinning(self, candidate) -> None:
-        log.info(f"[Resolver] -> Pinned candidate: {candidate}")
+        log.debug(f"[Resolver] -> Pinned candidate: {candidate}")
         if self.on_progress:
             self.on_progress(f"Resolved {candidate.name} {candidate.version}")
 
     def rejecting_candidate(self, criterion, candidate) -> None:
-        log.info(f"[Resolver] -> Backtracking: Rejected {candidate}")
+        log.debug(f"[Resolver] -> Backtracking: Rejected {candidate}")
 
 
 # Helper Functions
@@ -902,7 +902,7 @@ async def install_resolved(
             # A wheel built from source is already here (#257)
             if not wheel_path.exists():
                 wheel_path.parent.mkdir(parents=True, exist_ok=True)
-                log.info(f"downloading {link}")
+                log.debug(f"downloading {link}")
                 progress(f"Downloading {candidate.name} {candidate.version}")
                 await download_wheel_async(
                     async_http, direct_refs.urldefrag(link.url).url, wheel_path
@@ -974,7 +974,7 @@ async def resolve_and_install_async(
     loop = asyncio.get_running_loop()
 
     def progress(message: str) -> None:
-        log.info(f"[Progress] {message}")
+        log.debug(f"[Progress] {message}")
         if on_progress:
             on_progress(message)
 
@@ -1004,7 +1004,7 @@ async def resolve_and_install_async(
                 await asyncio.to_thread(tempfile.mkdtemp, prefix="wheel_cache_")
             )
             is_temp_cache = True
-            log.info(f"Temporary wheel cache is {cache_dir}")
+            log.debug(f"Temporary wheel cache is {cache_dir}")
         except OSError as exc:
             raise DependencyError(
                 f"Failed to create temporary cache directory: {exc}"
@@ -1090,13 +1090,13 @@ async def resolve_and_install_async(
             # Python may have cached "nothing here" for target_dir while it was
             # missing or empty; forget that so the new packages can be imported
             importlib.invalidate_caches()
-        log.info("successfully met all requirements")
+        log.debug("successfully met all requirements")
         progress("Dependencies ready" if changed else "Dependencies already satisfied")
     finally:
         if on_count:
             on_count(0, 0)  # finished, or failed: nothing left to count
         if is_temp_cache and cache_dir.exists():
-            log.info("removing temporary wheel cache")
+            log.debug("removing temporary wheel cache")
             await asyncio.to_thread(shutil.rmtree, cache_dir, True)
 
 

@@ -275,7 +275,7 @@ class SafeArea(toga.Box):
         if sys.platform == "ios":
             self._native_no_adjustment(scrolling_widgets(self.content))
         self.content.style.margin = tuple(insets)
-        log.info(
+        log.debug(
             "%s padding applied: %s%s",
             self.describe(),
             tuple(insets),
@@ -481,7 +481,7 @@ class SafeArea(toga.Box):
         if rounded == getattr(self, "_last_reading", None):
             return
         self._last_reading = rounded
-        log.info(
+        log.debug(
             "%s %s reading: %s",
             self.describe(),
             platform,
