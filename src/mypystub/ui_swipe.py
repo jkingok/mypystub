@@ -19,7 +19,7 @@ from . import (
 from .errors import guarded
 from .pages import html_page, readme_html, without_title
 from .run_backups import BackupsSection
-from .run_settings import RunSettings, quick_start_name
+from .run_settings import Layer, RunSettings, quick_start_name
 from .run_with import RunWithForm
 from .ui_helpers import open_share_sheet
 from .ui_rowsettings import RowSettingsMixin
@@ -139,6 +139,9 @@ class SwipeMixin(WorkdirPickerMixin, RowSettingsMixin):
         if kind == "category":
             self.open_category_setup(str(row.category))
             return
+        if kind == "folder":
+            self.open_folder_setup(row)  # as a category: what it's inherited (#348)
+            return
         if not row_info.runnable(kind) and kind != "package":
             message = row_info.run_with_message(kind, title, self.up_destination(row))
             await self.info(message, title)
@@ -151,28 +154,64 @@ class SwipeMixin(WorkdirPickerMixin, RowSettingsMixin):
         Environment variables and the working folder; Examples' folder is the
         cache unless changed here.
         """
-        key = self.category_key(category)
+        return self.container_setup(
+            category,
+            self.category_key(category),
+            inherited=[self.system_layer(), self.setup_layer()],
+            note=f"Everything in {category} inherits these.",
+            inherited_workdir=(workdirs.default_for(category), "the default"),
+        )
+
+    def open_folder_setup(self, row: Any) -> RunWithForm:
+        """Setup for a folder: what everything in it inherits (#348).
+
+        The same page as a category's, inheriting from the category, its parent
+        folders and Setup, and the working folder the same way.
+        """
+        title = str(getattr(row, "title", ""))
+        return self.container_setup(
+            title,
+            self.row_key(row),
+            inherited=self.inherited_layers(row),
+            note=f"Everything in {title} inherits these.",
+            inherited_workdir=self.inherited_workdir(row),
+        )
+
+    def container_setup(
+        self,
+        title: str,
+        key: str,
+        *,
+        inherited: list[Layer],
+        note: str,
+        inherited_workdir: tuple[str, str],
+    ) -> RunWithForm:
+        """The Setup page for a category or folder: variables and working folder.
+
+        Both kinds share it, so they can't drift apart (#348). Inherited rows
+        carry the inherited icon, as in the other Setup pages (#349).
+        """
         saved = self.settings.get_run_with(key)
 
         def save(settings: RunSettings) -> None:
             self.settings.set_run_with(key, settings, with_args=False)
 
-        default = workdirs.default_for(category)
         form = RunWithForm(
-            category,
+            title,
             args=None,
             env=saved.env,
-            inherited=[self.system_layer(), self.setup_layer()],
+            inherited=inherited,
             screens=self,
             on_save=save,
             ask=self.ask,
             tell=self.tell,
             ask_fields=self.ask_fields,
-            args_note=f"Everything in {category} inherits these.",
+            args_note=note,
             show_inherited=self.show_inherited_env,
             on_show_inherited=self.set_show_inherited_env,
+            inherited_icon=self.inherited_icon,
             workdir=saved.workdir,
-            inherited_workdir=(default, "the default"),
+            inherited_workdir=inherited_workdir,
             pick_workdir=self.pick_workdir,
         )
         form.open()

@@ -73,6 +73,26 @@ class RowSettingsMixin(PrototypeBase):
         """The key a category's own Setup is saved under (#308)."""
         return settings_key(category, PurePath())
 
+    def folders_around(self, row: Any) -> list[tuple[str, str]]:
+        """The folders a row sits in, outermost first, as (name, settings key) (#348).
+
+        Only folders inside the row's category; the category is its own layer. A
+        folder's own folder is left out: its Setup inherits from its parents.
+        """
+        if self.category is None or row_info.row_type(row) == "category":
+            return []
+        path = self.row_path(row)
+        if path is None:
+            return []
+        try:
+            relative = path.resolve().relative_to(self.get_category_dir().resolve())
+        except ValueError:
+            return []
+        parents = [p for p in reversed(list(relative.parents)) if p.as_posix() != "."]
+        return [
+            (parent.name, settings_key(self.category, parent)) for parent in parents
+        ]
+
     def inherited_workdir(self, row: Any) -> tuple[str, str]:
         """The working folder a row inherits, and where from (#308).
 
@@ -83,6 +103,10 @@ class RowSettingsMixin(PrototypeBase):
             package = self.settings.get_run_with(self.row_key(row, entry=False))
             if workdirs.is_valid(package.workdir):
                 return str(package.workdir), str(row.package_title)
+        for name, key in reversed(self.folders_around(row)):  # innermost first
+            folder = self.settings.get_run_with(key)
+            if workdirs.is_valid(folder.workdir):
+                return str(folder.workdir), name
         category = self.category or ""
         if row_info.row_type(row) != "category":
             own = self.settings.get_run_with(self.category_key(category))
@@ -111,6 +135,8 @@ class RowSettingsMixin(PrototypeBase):
         if self.category is not None and row_info.row_type(row) != "category":
             category = self.settings.get_run_with(self.category_key(self.category))
             layers.append(Layer(self.category, category.env))
+        for name, key in self.folders_around(row):
+            layers.append(Layer(name, self.settings.get_run_with(key).env))
         if row_info.row_type(row) == "entry":
             package = self.settings.get_run_with(self.row_key(row, entry=False))
             layers.append(Layer(str(row.package_title), package.env))

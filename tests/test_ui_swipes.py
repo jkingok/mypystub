@@ -73,16 +73,11 @@ def test_launcher_list_has_info_and_run_with_swipes(proto: ui.Prototype) -> None
 def test_swipes_on_rows_that_cannot_run_say_why(
     proto: ui.Prototype, app: toga.App, messages: list[tuple]
 ) -> None:
-    """Folders and ".." explain, by name, why there's nothing to show or run."""
+    """ ".." explains, by name, why there's nothing to show or run (folders: #348)."""
     proto.handle_run_with(proto.script_list, row=row(proto, "a"))
     run(app, asyncio.sleep(0.01))
-    assert messages[-1] == (
-        "a",
-        (
-            "a is a folder, so there's nothing to run. Open it and swipe a script "
-            "or project inside."
-        ),
-    )
+    assert proto.run_with_form is not None  # a folder opens its Setup page
+    assert proto.run_with_form.title == "a"
     run(app, proto.show_info(row(proto, "a")))
     assert messages[-1] == (
         "a",
