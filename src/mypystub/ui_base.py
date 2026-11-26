@@ -132,16 +132,26 @@ class PrototypeBase:
         # The Script tab. While input() or getpass() asks, its box takes the
         # activity row's place at the bottom (see toggle_box).
         self.script_box = toga.Column()
-        self.input_prompt = toga.Label("Input")
+        # The question goes above its field, or beside it in landscape, where
+        # a small phone has about 40 points above the keyboard (#305)
+        self.input_prompt = toga.Label("Input", margin=(0, 4))
         self.input_text = toga.TextInput(style=Pack(flex=1))
-        self.input_box = toga.Column(
-            children=[self.input_prompt, self.input_text], text_align="center"
+        self.input_box = OrientationBox(
+            self.input_prompt,
+            self.input_text,
+            equal=False,
+            text_align="center",
+            align_items="center",
         )
         # getpass() asks here instead, so the password isn't shown (#121)
-        self.password_prompt = toga.Label("Password")
+        self.password_prompt = toga.Label("Password", margin=(0, 4))
         self.password_text = toga.PasswordInput(style=Pack(flex=1))
-        self.password_box = toga.Column(
-            children=[self.password_prompt, self.password_text], text_align="center"
+        self.password_box = OrientationBox(
+            self.password_prompt,
+            self.password_text,
+            equal=False,
+            text_align="center",
+            align_items="center",
         )
         # A MultilineTextInput scrolls itself. Inside a ScrollContainer it is laid
         # out at its own small minimum, and isn't laid out again when the space

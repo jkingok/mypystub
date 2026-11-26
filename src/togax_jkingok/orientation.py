@@ -35,14 +35,28 @@ class OrientationBox(toga.Box):
     the box doesn't flip it.
 
     A child hidden with ``display="none"`` takes no space, and the other then
-    fills the box.
+    fills the box. With ``equal=False`` the widgets aren't made to share the
+    space: a question above its field in portrait goes beside it in landscape,
+    where a phone with the keyboard up has little height to spare.
     """
 
-    def __init__(self, first: toga.Widget, second: toga.Widget, **kwargs: Any) -> None:
-        """Hold `first` (top or left) and `second` (bottom or right)."""
+    def __init__(
+        self,
+        first: toga.Widget,
+        second: toga.Widget,
+        *,
+        equal: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        """Hold `first` (top or left) and `second` (bottom or right).
+
+        With `equal` False the two keep their own ``flex``, so a label can
+        take only its own size beside or above a field that fills the rest.
+        """
         super().__init__(children=[first, second], direction="column", **kwargs)
-        first.style.flex = 1
-        second.style.flex = 1
+        if equal:
+            first.style.flex = 1
+            second.style.flex = 1
         self.applicator = _BoundsApplicator()
 
     @property

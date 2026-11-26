@@ -28,6 +28,7 @@ Small scripts and projects to learn from and copy. Tap a folder to open it, and 
     - `where_am_i.py`: ask for location permission and print where you are. In the Simulator, set a location with Features → Location.
     - `take_photo.py`: take a photo and save it to your photo library. It needs a real device; the Simulator has no camera.
     - `router_check.py`: check whether your router answers (needs the local network permission).
+    - `safe_area_probe.py`: what the system reports about the screen's safe area and the keyboard, live. On iOS it's drawn on the screen (the safe area, the status bar, the keyboard); on Android it lists the window's insets (status and navigation bars, display cutout, keyboard); elsewhere it shows Toga's window and screen sizes. Rotate and raise the keyboard to see what content has to keep clear of.
     - `paste_diagnostics.py`: copy something first, then run this to see everything on the pasteboard (iPhone, iPad) or clipboard (Android) and what **Paste** would do with it. It saves `paste_report.txt` and the raw data in `paste_dump/` to share.
 
 Every script here also runs unchanged with plain `python`, or as a standalone Briefcase app.

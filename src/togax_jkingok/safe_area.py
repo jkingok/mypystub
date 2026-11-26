@@ -42,6 +42,8 @@ class Insets(NamedTuple):
 
 
 NO_INSETS = Insets()
+# Seconds after a rotation to read the insets again (see _read_again_if_resized)
+REREAD_DELAY = 0.5
 
 # Platforms where SafeArea works out the padding itself
 NATIVE = ("ios", "android")
@@ -97,6 +99,48 @@ def insets_for(
     return Insets(
         points(safe.top), points(safe.right), points(bottom), points(safe.left)
     )
+
+
+def window_share(window_safe: Insets, frame: tuple[float, ...]) -> Insets:
+    """The part of the window's safe-area insets that falls on a view.
+
+    `frame` is the view's frame in window coordinates and the window's size,
+    ``(x, y, width, height, window_width, window_height)``. UIKit's own
+    ``safeAreaInsets`` for a view inside a tab can come back as 0 at the sides
+    in landscape (seen on iPhone 13 mini simulators, iOS 26.5 and 27.2, #305),
+    though the view runs under the notch; the window's insets still say where
+    the notch is.
+    """
+    if len(frame) < 6:
+        return NO_INSETS
+    x, y, width, height, window_width, window_height = frame[:6]
+    bottom_edge = min(y + height, window_height)
+    return Insets(
+        max(0.0, window_safe.top - y),
+        max(0.0, window_safe.right - (window_width - (x + width))),
+        max(0.0, window_safe.bottom - (window_height - bottom_edge)),
+        max(0.0, window_safe.left - x),
+    )
+
+
+def visible_height(height: float, frame: tuple[float, ...]) -> float:
+    """How much of a view's `height` is inside its window (see window_share).
+
+    The bottom padding is worked out from this, not from the view's whole
+    height: when the padded content can't fit, Toga makes the box taller than
+    its space, and padding from the taller box would make it taller again, a
+    step at a time, without end (#305, landscape with the keyboard on a small
+    phone).
+    """
+    if len(frame) < 6:
+        return height
+    _, y, _, _, _, window_height = frame[:6]
+    return max(0.0, min(height, window_height - y))
+
+
+def widest(*insets: Insets) -> Insets:
+    """Side by side, the largest of each edge."""
+    return Insets(*(max(edges) for edges in zip(*insets, strict=True)))
 
 
 class AndroidMeasure(NamedTuple):
@@ -209,6 +253,7 @@ class SafeArea(toga.Box):
         self._squeezed: list[toga.Widget] = []
         self._observer: Any = None  # the native object watching the box
         self._box_observer: Any = None  # iOS: a second one, for the box's size
+        self._last_size: tuple[float, float] | None = None  # iOS: see native_changed
         # Squeezed text views' own top and bottom padding, by id, to put back
         self._paddings: dict[int, tuple[float, float]] = {}
         layout = {name: kwargs.pop(name) for name in CONTENT_LAYOUT if name in kwargs}
@@ -438,23 +483,42 @@ class SafeArea(toga.Box):
         app's loop rather than by laying Toga out from in here.
         """
         native = self._impl.native
-        safe = native.safeAreaInsets
-        height = float(native.bounds.size.height)
+        reported = native.safeAreaInsets
+        frame = self._frame_in_window(native)
+        window = self._window_safe(native)
+        safe = widest(
+            Insets(reported.top, reported.right, reported.bottom, reported.left),
+            window_share(window, frame),
+        )
+        height = visible_height(float(native.bounds.size.height), frame)
         clear = float(self._observer.frame.size.height)
         self._log_reading(
             "iOS",
-            safe=(safe.top, safe.right, safe.bottom, safe.left),
-            box=self._frame_in_window(native),
+            safe=(reported.top, reported.right, reported.bottom, reported.left),
+            window=tuple(window),
+            box=frame,
             clear=clear,
         )
-        insets = insets_for(
-            Insets(safe.top, safe.right, safe.bottom, safe.left),
-            height,
-            clear,
-            self.keyboard,
-        )
+        insets = insets_for(safe, height, clear, self.keyboard)
         keyboard_up = self.keyboard and height > 0 and height - clear > safe.bottom + 1
         self._schedule(insets, keyboard_up)
+        self._read_again_if_resized(frame)
+
+    def _read_again_if_resized(self, frame: tuple[float, ...]) -> None:
+        """After a change of size (a rotation), read once more a moment later.
+
+        The scene's reference window (see _ios_reference) turns a little after
+        the app's own, so the first reading can still have the old insets,
+        and nothing else lays the box out again once it has settled.
+        """
+        size = (frame[4], frame[5]) if len(frame) >= 6 else None
+        if size is None or size == self._last_size:
+            return
+        self._last_size = size
+        app = toga.App.app
+        loop = getattr(app, "loop", None) if app is not None else None
+        if loop is not None:
+            loop.call_later(REREAD_DELAY, self.native_changed)
 
     def _observe_android(self) -> None:
         """Have Android tell this box when its insets or position change."""
@@ -487,6 +551,28 @@ class SafeArea(toga.Box):
             platform,
             ", ".join(f"{name}={value}" for name, value in rounded.items()),
         )
+
+    @staticmethod
+    def _window_safe(native: Any) -> Insets:
+        """The safe-area insets of the view's window, or none before it has one.
+
+        Toga's window can keep its portrait insets in landscape, so the
+        insets of a window made for the same scene the current way are used
+        when there are any (see _ios_reference).
+        """
+        from . import _ios_reference
+
+        try:
+            window = _value(native.window)
+            if window is None:
+                return NO_INSETS
+            scene = _ios_reference.scene_insets(window)
+            if scene is not None:
+                return Insets(*scene)
+            safe = window.safeAreaInsets
+            return Insets(safe.top, safe.right, safe.bottom, safe.left)
+        except Exception:  # noqa: BLE001  (a reading must never break layout)
+            return NO_INSETS
 
     @staticmethod
     def _frame_in_window(native: Any) -> tuple[float, ...]:
