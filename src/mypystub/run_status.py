@@ -1,13 +1,11 @@
-"""How a run ended, as the Script tab's status row says it (#293).
+"""How a run ended, as the Script view's status row says it (#293).
 
 ✅ for a normal end, ❌ for a failure, ⚠️ when it couldn't run at all, and ⏹
-when it was stopped. Shared by in-process runs (ui_run) and Native mode's
-subprocess runs (ui_native).
+when it was stopped. An exception class with ``could_not_run = True`` means
+the code couldn't be run at all. Standard library only.
 """
 
 from __future__ import annotations
-
-from . import runner
 
 FINISHED = "✅ Finished"
 DEPENDENCY_FAILED = "❌ Dependency install failed"
@@ -31,7 +29,7 @@ def run_status(error: BaseException | None) -> str:
         if isinstance(code, int):
             return f"❌ Exited with status {code}"
         return f"❌ Exited: {code}"
-    if isinstance(error, (runner.NotRunnable, runner.UnsupportedGui)):
+    if getattr(type(error), "could_not_run", False):
         return "⚠️ Couldn't run"
     return f"❌ Failed: {type(error).__name__}"
 

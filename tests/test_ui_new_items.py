@@ -161,16 +161,30 @@ def bootstrap_on(app: toga.App, bootstrap: Any) -> Any:
     host = bootstrap.Bootstrap.__new__(bootstrap.Bootstrap)
     host.__dict__.update(window=app.main_window, _formal_name="Weather Now")
     type(host).loop = property(lambda self: app.loop)  # type: ignore[attr-defined]
-    host.script = bootstrap.ScriptView(app, host.run_app)
+    host.make_view()
     return host
 
 
+@pytest.fixture
+def unhooked() -> Any:
+    """Put print, input and the streams back after a run the test started."""
+    hosts: list[Any] = []
+    yield hosts.append
+    for host in hosts:
+        host.runner.end_run()
+
+
+def status(host: Any) -> str:
+    return str(host.script.activity.text.text)
+
+
 def test_the_bootstrap_shows_an_error_and_offers_restart(
-    app: toga.App, made: Any, monkeypatch: pytest.MonkeyPatch
+    app: toga.App, made: Any, monkeypatch: pytest.MonkeyPatch, unhooked: Any
 ) -> None:
     the_app, bootstrap = made
     saved = (app.main_window.title, app.main_window.content)
     host = bootstrap_on(app, bootstrap)
+    unhooked(host)
 
     def broken() -> None:
         raise RuntimeError("boom")
@@ -178,40 +192,46 @@ def test_the_bootstrap_shows_an_error_and_offers_restart(
     monkeypatch.setattr(the_app, "main", broken)
     try:
         host.run_app()
-        wait_for(app, lambda: host.script.restart.enabled)
-        assert app.main_window.content is host.script.box
-        assert host.script.status.text == "Stopped with an error"
+        wait_for(app, lambda: host.restart.enabled)
+        assert app.main_window.content is host.view
+        assert status(host) == "❌ Failed: RuntimeError"
+        assert "RuntimeError: boom" in host.script.error_text.value  # the app's
     finally:
         app.main_window.title, app.main_window.content = saved
 
 
 def test_the_bootstrap_offers_restart_when_the_app_finishes(
-    app: toga.App, made: Any, monkeypatch: pytest.MonkeyPatch
+    app: toga.App, made: Any, monkeypatch: pytest.MonkeyPatch, unhooked: Any
 ) -> None:
     the_app, bootstrap = made
     saved = (app.main_window.title, app.main_window.content)
     host = bootstrap_on(app, bootstrap)
-    monkeypatch.setattr(the_app, "main", lambda: None)
+    unhooked(host)
+    monkeypatch.setattr(the_app, "main", lambda: print("hello from the app"))
     try:
         host.run_app()
-        wait_for(app, lambda: host.script.restart.enabled)
-        assert host.script.status.text == "Finished"
+        wait_for(app, lambda: host.restart.enabled)
+        assert status(host) == "✅ Finished"
+        assert "hello from the app" in host.script.print_text.value
     finally:
         app.main_window.title, app.main_window.content = saved
 
 
-def test_the_bootstrap_leaves_a_takeover_alone(app: toga.App, made: Any) -> None:
+def test_the_bootstrap_leaves_a_takeover_alone(
+    app: toga.App, made: Any, unhooked: Any
+) -> None:
     _, bootstrap = made
     saved = (app.main_window.title, app.main_window.content)
     stack = getattr(app.main_window, "content_stack", None)
     host = bootstrap_on(app, bootstrap)
+    unhooked(host)
     try:
         if stack is not None:
             delattr(app.main_window, "content_stack")
         host.run_app()
-        wait_for(app, lambda: app.main_window.content is not host.script.box)
+        wait_for(app, lambda: app.main_window.content is not host.view)
         settle(app)
-        assert host.script.status.text == "Running" and not host.script.restart.enabled
+        assert status(host) == "Running" and not host.restart.enabled
     finally:
         app.main_window.title, app.main_window.content = saved
         if stack is not None:
@@ -219,36 +239,60 @@ def test_the_bootstrap_leaves_a_takeover_alone(app: toga.App, made: Any) -> None
 
 
 def test_input_and_getpass_wait_for_the_script_view(
-    app: toga.App, made: Any, monkeypatch: pytest.MonkeyPatch
+    app: toga.App, made: Any, monkeypatch: pytest.MonkeyPatch, unhooked: Any
 ) -> None:
     """main()'s thread waits; Return answers; getpass() isn't echoed."""
+    import getpass
+
     the_app, bootstrap = made
     window = app.main_window
     saved = (window.title, window.content)
     host = bootstrap_on(app, bootstrap)
+    unhooked(host)
     answers: list[str] = []
 
     def asks() -> None:
-        answers.append(host.script.ask("Name? "))
-        answers.append(host.script.ask_secret("Password: "))
+        answers.append(input("Name? "))
+        answers.append(getpass.getpass("Password: "))
 
     monkeypatch.setattr(the_app, "main", asks)
     view = host.script
     try:
         host.run_app()
-        wait_for(app, lambda: view.question.style.visibility == "visible")
-        assert view.prompt.text == "Name? "
-        view.answer.value = "Sam"
-        view.answered(view.answer)
-        wait_for(app, lambda: view.prompt.text == "Password: ")
-        assert view.secret.style.display == "pack"
-        view.secret.value = "hunter2"
-        view.answered(view.secret)
+        wait_for(app, lambda: view.input_box.parent is not None)
+        assert view.input_prompt.text == "Name? "
+        view.input_text.value = "Sam"
+        host.runner.handle_ui_submit(view.input_text)
+        wait_for(app, lambda: view.password_box.parent is not None)
+        assert view.password_prompt.text == "Password: "
+        view.password_text.value = "hunter2"
+        host.runner.handle_ui_submit(view.password_text)
         wait_for(app, lambda: len(answers) == 2)
         assert answers == ["Sam", "hunter2"]
-        wait_for(app, lambda: view.restart.enabled)
+        wait_for(app, lambda: host.restart.enabled)
+        assert "Name? Sam" in view.print_text.value
+        assert "hunter2" not in view.print_text.value
     finally:
         window.title, window.content = saved[0], saved[1]
+
+
+def test_a_question_after_a_takeover_brings_the_view_back(
+    app: toga.App, made: Any
+) -> None:
+    """input() asked over the app's own screen shows the view, then puts it back."""
+    _, bootstrap = made
+    window = app.main_window
+    saved = (window.title, window.content)
+    host = bootstrap_on(app, bootstrap)
+    own = toga.Box()
+    try:
+        window.content = own
+        host.runner.toggle_input(True)
+        assert window.content is host.view
+        host.runner.toggle_input(False)
+        assert window.content is own
+    finally:
+        window.title, window.content = saved
 
 
 def test_android_back_pops_the_apps_own_stack(app: toga.App, made: Any) -> None:

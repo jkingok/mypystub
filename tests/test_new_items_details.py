@@ -95,18 +95,10 @@ def test_the_template_icons_script_is_the_launchers() -> None:
 
 def test_input_from_main_on_the_main_thread_is_refused() -> None:
     """Waiting there would freeze the app, so it raises instead."""
-    toga = pytest.importorskip("toga")
     pytest.importorskip("toga_dummy")
-    import importlib.util
+    from mypystub.hooks import ScriptRunner
 
-    path = new_items.PROJECT_TEMPLATE / "src/app_template/script_view.py"
-    spec = importlib.util.spec_from_file_location("script_view_t", path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     assert threading.current_thread() is threading.main_thread()
-    view = module.ScriptView.__new__(module.ScriptView)
-    view._given = threading.Event()
+    runner = ScriptRunner.__new__(ScriptRunner)
     with pytest.raises(RuntimeError, match="main thread"):
-        view.ask("Name? ")
-    assert toga  # imported for the module under test
+        runner._ask("Name? ", secret=False)

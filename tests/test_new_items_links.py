@@ -21,6 +21,10 @@ SHARED = {
         "assets/android/java/au/id/jking/mypystub/PyBackCallback.java"
     ),
     "src/app_template/android_back.py": "src/mypystub/android_back.py",
+    "src/app_template/hooks.py": "src/mypystub/hooks.py",
+    "src/app_template/logfile.py": "src/mypystub/logfile.py",
+    "src/app_template/run_status.py": "src/mypystub/run_status.py",
+    "src/app_template/script_tab.py": "src/mypystub/script_tab.py",
     "generate_icons.py": "generate_icons.py",
 }
 

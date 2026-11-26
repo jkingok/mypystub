@@ -363,10 +363,7 @@ class Prototype(RunMixin, SwipeMixin, ActionsMixin, ResumeMixin, SetupMixin, Bac
         one is asked (see toggle_box). The box is a SafeArea, so that row stays
         above the keyboard.
         """
-        self.script_box = SafeColumn(
-            children=[self.splash, self.script_output, self.script_activity],
-        )
-        return self.script_box
+        return self.script_tab.box
 
     def get_content(self) -> toga.Widget:
         # return toga.OptionContainer(

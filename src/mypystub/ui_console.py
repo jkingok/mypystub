@@ -14,19 +14,10 @@ console on a phone isn't handled yet.
 
 from __future__ import annotations
 
-import logging
-from typing import Any
-
-log = logging.getLogger(__name__)
+from . import script_tab
 
 SETTING = "experimental_console"  # launcher.toml flag, off by default
 
 
-def make_console() -> Any | None:
-    """A new console for the Script tab, or None if toga-console can't load."""
-    try:
-        from toga_console import Console  # pyright: ignore[reportMissingImports]
-    except ImportError as error:
-        log.warning(f"Experimental Console unavailable: {error}")
-        return None
-    return Console(readonly=True, follow=True, flex=1)
+# The factory lives with the Script tab, which the project template shares
+make_console = script_tab.make_console

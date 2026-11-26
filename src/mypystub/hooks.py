@@ -39,22 +39,39 @@ def clean_ansi(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text)
 
 
-# Packages whose writes are the launcher's or the framework's, never the
+# Packages whose writes are the host app's or the framework's, never the
 # prototype's (toga_iOS and the other toga_* backends count too)
 LAUNCHER_PACKAGES = frozenset({"mypystub", "toga", "travertino", "rubicon"})
+# What counts as framework now: packages, or modules within one (see
+# set_framework). MyPyStub's own package by default.
+_framework: frozenset[str] = LAUNCHER_PACKAGES
+
+
+def set_framework(*names: str) -> None:
+    """Say which packages or modules are the host's, not the running code's.
+
+    Each name is a package (``toga``) or a module (``my_app.bootstrap``);
+    anything inside one counts too. A project whose app shares a package with
+    its own start-up code names the start-up modules, so the app's writes are
+    shown and the start-up code's aren't. Toga's packages always count.
+    """
+    global _framework
+    _framework = frozenset({"toga", "travertino", "rubicon", *names})
 
 
 def frame_owner(frame: Any) -> bool | None:
     """Whether code in `frame` is the prototype's: None for the standard library.
 
-    The launcher's and Toga's own code is not the prototype's; anything else
-    outside the standard library is.
+    The host's and Toga's own code (see :func:`set_framework`) is not the
+    prototype's; anything else outside the standard library is.
     """
     name = frame.f_globals.get("__name__") or ""
     top = name.split(".", 1)[0]
     if not top or top in sys.stdlib_module_names:
         return None
-    return not (top in LAUNCHER_PACKAGES or top.startswith("toga_"))
+    if top.startswith("toga_"):
+        return False
+    return not any(name == f or name.startswith(f + ".") for f in _framework)
 
 
 def written_by_prototype(frame: Any) -> bool:
@@ -87,8 +104,8 @@ def report_exception(
 ) -> None:
     """Write an uncaught exception's full traceback to sys.stderr.
 
-    The launcher's exception hooks write it, so the write itself would be
-    the launcher's. During a run, a traceback through the prototype's code
+    The host app's exception hooks write it, so the write itself would be
+    the host's. During a run, a traceback through the prototype's code
     is shown in the Script tab too, wherever it was caught: on the script
     thread, in a main-thread callback, or in Rubicon's run loop.
     """
@@ -506,9 +523,9 @@ class ScriptRunner:
         self._original_streams: tuple[Any, Any] | None = None
         # Whether the current run has shown any output in the Script tab
         self.printed = False
-        # Setup's Experimental Console: a toga-console Console that shows the
+        # An optional console widget (toga-console's Console) that shows the
         # run's output and answers input() instead of print_field and
-        # input_field. Chosen per run by the launcher (None: not used).
+        # input_field. Chosen per run by the host app (None: not used).
         self.console: Any = None
         # Told on the main thread when the console's stdin starts or stops
         # waiting for typing (#306)
@@ -639,7 +656,13 @@ class ScriptRunner:
         return self._ask(str(prompt), secret=True)
 
     def _ask(self, prompt: str, secret: bool) -> str:
-        """Ask the user a question and wait on the script thread for the answer."""
+        """Ask the user a question and wait on the script thread for the answer.
+
+        On the main thread the wait would freeze the app (the answer can only
+        come from it), so that raises instead.
+        """
+        if threading.current_thread() is threading.main_thread():
+            raise RuntimeError("input() would freeze the app on its main thread")
         use_password = secret and self.password_field is not None
         label = self.password_label if use_password else self.input_label
         field = self.password_field if use_password else self.input_field
@@ -714,7 +737,7 @@ class ScriptRunner:
         """
         text = self._prompt + ("" if self._secret else self._input_value) + "\n"
         # The log gets it directly: writing to sys.stdout from here would be
-        # the launcher's own, which is log-only anyway
+        # the host's own, which is log-only anyway
         log = (self._original_streams or (sys.stdout,))[0]
         log.write(text)
         self.mainthread_append_to_log(clean_ansi(text))

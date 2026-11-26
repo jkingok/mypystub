@@ -3,11 +3,14 @@
 App Template description
 
 - `src/app_template/app.py` is your app: its `main()` builds the screen.
-- `src/app_template/bootstrap.py` starts it as an app of its own, like
-  MyPyStub's Script tab: a window showing its output (`script_view.py`), where
-  `input()` and `getpass()` are answered, a log in the app's Documents, a
-  **Restart** button, and Android's Back (`android_back.py`). In MyPyStub the
-  launcher does all that instead, so the bootstrap only calls `app.main()`.
+- `src/app_template/bootstrap.py` starts it as an app of its own, with
+  MyPyStub's own Script view: a window showing its output, where `input()`
+  and `getpass()` are answered, a log in the app's Documents, a **Restart**
+  button, and Android's Back. In MyPyStub the launcher does all that instead,
+  so the bootstrap only calls `app.main()`.
+- `hooks.py`, `script_tab.py`, `run_status.py`, `logfile.py` and
+  `android_back.py` are MyPyStub's own modules, shared with every project.
+  Don't edit them: updating the project replaces them.
 - `android/java/` holds the two Java classes Android needs: the documents
   provider (Documents in the Files app) and Back.
 - `assets/src_icon.png` is the icon; replace it with your own (a large square

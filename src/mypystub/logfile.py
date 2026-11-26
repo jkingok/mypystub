@@ -108,7 +108,7 @@ class LogFileHandler(logging.Handler):
     """Writes log records to the log file (through `redirector`), never stdout.
 
     ``sys.stdout`` is a running script's output while it runs, so a handler
-    on it (as logging's own default, on stderr) would show the launcher's
+    on it (as logging's own default, on stderr) would show the app's own
     diagnostics among the script's. This one holds the redirector itself.
     """
 

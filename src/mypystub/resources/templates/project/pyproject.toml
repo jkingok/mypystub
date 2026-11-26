@@ -39,6 +39,10 @@ test_sources = ["tests"]
 requires = [
     # Toga's backends come from git, so their toga-core and travertino must too
     "toga-core @ git+https://github.com/beeware/toga.git#subdirectory=core",
+    # Optional: the Script tab's Experimental Console (toga-console), used when
+    # it's installed. Without it the Script tab shows plain output. Pinned to a
+    # commit, as Toga is
+    "toga-console @ git+https://github.com/beeware/toga-console@8b08eb11269cb8cdbbb4735d461bcf3b99269a88",
     "travertino @ git+https://github.com/beeware/toga.git#subdirectory=travertino",
     # Your own packages go in [project] dependencies above, not here
 ]

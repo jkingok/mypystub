@@ -44,9 +44,13 @@ _REFERENCE = re.compile(
 class NotRunnable(Exception):
     """An entry point names something that can't be called or run."""
 
+    could_not_run = True  # run_status: ⚠️ Couldn't run
+
 
 class UnsupportedGui(Exception):
     """A GUI entry point starts its own Toga app, which the launcher can't host."""
+
+    could_not_run = True  # run_status: ⚠️ Couldn't run
 
 
 @dataclass(frozen=True)

@@ -164,7 +164,7 @@ def test_switching_off_returns_to_the_usual_output_next_run(
 def test_run_end_puts_the_consoles_keyboard_away(proto: Any, monkeypatch: Any) -> None:
     """When a run ends, the console is read-only and its keyboard is closed."""
     closed: list[Any] = []
-    proto.console_widget = object()
+    proto.script_tab.console_widget = object()
     monkeypatch.setattr(proto, "close_keyboard", lambda widget: closed.append(widget))
     monkeypatch.setattr(proto.script_runner, "end_run", lambda: None)
     monkeypatch.setattr(proto, "end_script", lambda *a, **k: None)

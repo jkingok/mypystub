@@ -14,7 +14,7 @@ from typing import Any
 import toga
 from toga.style import Pack
 
-from togax_jkingok import LabelledActivity, OrientationBox, SafeArea, SafeColumn
+from togax_jkingok import SafeArea, SafeColumn
 
 from . import (
     examples_copy,
@@ -27,18 +27,15 @@ from . import (
     ui_console,
     web_meta,
 )
-from . import hooks as h
 from . import piplike as pip
 from . import settings as s
 from .errors import guarded
 from .pages import html_page
 from .run_settings import SYSTEM, Layer, env_name_problem, env_value_problem
+from .script_tab import KEYBOARD_GRACE, WARNING_COLOUR, ScriptTab  # noqa: F401
 
 log = logging.getLogger(__name__)
 
-# Text colour for a run's stderr: an orange that reads as a warning, with
-# enough contrast on both the light and the dark background
-WARNING_COLOUR = "#d9480f"
 
 # Default list icons by scanned entry kind (see CREDITS.md). Missing files are
 # skipped, so rows show no icon until the icon is downloaded.
@@ -74,10 +71,6 @@ ENTRY_ICONS = {
 RUNNING, WAITING = "⏳", "⌨️"
 PRESERVE_LOGS_SETTING = "preserve_logs"  # launcher.toml: keep the log
 RESUME_SETTING = "resume"  # launcher.toml: false starts fresh every time
-
-
-# Seconds a closed question waits for the next one before its keyboard goes
-KEYBOARD_GRACE = 0.3
 
 
 class PrototypeBase:
@@ -129,78 +122,38 @@ class PrototypeBase:
         # freshly built launcher would overwrite what is about to be restored
         self.resume_ready = False
         self._resume_written: resume.Resume | None = None
-        # The Script tab. While input() or getpass() asks, its box takes the
-        # activity row's place at the bottom (see toggle_box).
-        self.script_box = toga.Column()
-        # The question goes above its field, or beside it in landscape, where
-        # a small phone has about 40 points above the keyboard (#305)
-        self.input_prompt = toga.Label("Input", margin=(0, 4))
-        self.input_text = toga.TextInput(style=Pack(flex=1))
-        self.input_box = OrientationBox(
-            self.input_prompt,
-            self.input_text,
-            equal=False,
-            text_align="center",
-            align_items="center",
-        )
-        # getpass() asks here instead, so the password isn't shown (#121)
-        self.password_prompt = toga.Label("Password", margin=(0, 4))
-        self.password_text = toga.PasswordInput(style=Pack(flex=1))
-        self.password_box = OrientationBox(
-            self.password_prompt,
-            self.password_text,
-            equal=False,
-            text_align="center",
-            align_items="center",
-        )
-        # A MultilineTextInput scrolls itself. Inside a ScrollContainer it is laid
-        # out at its own small minimum, and isn't laid out again when the space
-        # changes (rotation, the error pane hiding), so it fills the box itself.
-        self.print_text = toga.MultilineTextInput(readonly=True, flex=1)
-        # The run's stderr, shown beside or below its output (#119). It's
-        # hidden until something is written to it, and Hide hides it again
-        # until the next write.
-        self.error_text = toga.MultilineTextInput(
-            readonly=True, color=WARNING_COLOUR, flex=1
-        )
-        self.error_pane = toga.Column(
-            display="none",
-            children=[
-                toga.Row(
-                    align_items="center",
-                    margin=(0, 4),
-                    children=[
-                        toga.Label("Errors and warnings", color=WARNING_COLOUR, flex=1),
-                        toga.Button("Hide", on_press=self.hide_errors),
-                    ],
-                ),
-                self.error_text,
-            ],
-        )
-        self.script_runner = h.ScriptRunner(
+        # The Script tab (script_tab, shared with the project template). While
+        # input() or getpass() asks, its box takes the activity row's place
+        # at the bottom (see toggle_box). Its widgets keep their names here.
+        self.splash = toga.ImageView(style=Pack(flex=0))
+        tab = ScriptTab(
             host_app,
-            self.input_prompt,
-            self.input_text,
-            self.print_text,
-            self.toggle_input,
-            self.toggle_print,
-            on_error_output=self.show_error_output,
-            password_label=self.password_prompt,
-            password_field=self.password_text,
-            toggle_password=self.toggle_password,
-            on_console_wait=self.console_waiting,
+            # Looked up when needed, so a replaced close_keyboard is the one used
+            close_keyboard=lambda field: self.close_keyboard(field),
+            splash=self.splash,
+            console_wanted=lambda: self.experimental_console,
         )
-        self.script_output = OrientationBox(self.print_text, self.error_pane, flex=1)
+        self.script_tab = tab
+        self.script_box = tab.box
+        self.input_prompt, self.input_text = tab.input_prompt, tab.input_text
+        self.input_box = tab.input_box
+        self.password_prompt, self.password_text = (
+            tab.password_prompt,
+            tab.password_text,
+        )
+        self.password_box = tab.password_box
+        self.print_text = tab.print_text
+        self.error_text, self.error_pane = tab.error_text, tab.error_pane
+        self.script_runner = tab.runner(on_console_wait=self.console_waiting)
+        self.script_output = tab.output
         # Setup's Experimental Console, made when a run first wants it
-        self.console_widget: Any = None
         # The window title's state while a console run is on screen (#306):
         # RUNNING, WAITING, or "" (none); and the run's lifetime, which says
         # whether it has taken the window over (then the title is its own)
         self.title_prefix = ""
         self.run_lifetime: Any = None
         self.run_took_over = False  # sticky for the run, once it pushed a screen
-        self.script_activity = LabelledActivity()
-        self.splash = toga.ImageView(style=Pack(flex=0))
+        self.script_activity = tab.activity
         # Category being browsed (None: the list of categories), and the folder
         # within it, relative to the category's root
         self.category: str | None = None
@@ -354,27 +307,14 @@ class PrototypeBase:
         """Turn the Experimental Console on or off, from the next run."""
         self.settings.set_flag(ui_console.SETTING, on)
 
-    def choose_output(self) -> None:
-        """At the start of a run: the console or the usual output, emptied.
+    @property
+    def console_widget(self) -> Any:
+        """The Experimental Console in use, if any (see ScriptTab.choose_output)."""
+        return self.script_tab.console_widget
 
-        The choice is made per run, so the Setup switch takes effect from the
-        next one. If toga-console can't be loaded, the usual output is used.
-        """
-        wanted = None
-        if self.experimental_console:
-            if self.console_widget is None:
-                self.console_widget = ui_console.make_console()
-            wanted = self.console_widget
-        shown = wanted if wanted is not None else self.print_text
-        current = self.script_output.children[0]
-        if current is not shown:
-            self.script_output.replace(current, shown)
-            shown.style.flex = 1
-        self.script_runner.console = wanted
-        if wanted is not None:
-            wanted.clear()
-            wanted.readonly = True
-        self.print_text.value = ""
+    def choose_output(self) -> None:
+        """At the start of a run: the console or the usual output (see ScriptTab)."""
+        self.script_tab.choose_output()
 
     @property
     def preserve_logs(self) -> bool:
@@ -862,74 +802,34 @@ class PrototypeBase:
         return True
 
     def toggle_input(self, on: bool) -> None:
-        self.toggle_box(self.input_box, on)
+        """Show or hide the field that input() asks with (see ScriptTab)."""
+        self.script_tab.toggle_input(on)
 
     def toggle_password(self, on: bool) -> None:
         """Show or hide the password field that getpass() asks with."""
-        self.toggle_box(self.password_box, on)
+        self.script_tab.toggle_password(on)
 
     def toggle_box(self, box: toga.Box, on: bool) -> None:
-        """Swap `box` (input's or getpass's) in for the activity row, or back.
-
-        The question goes at the bottom of the Script tab, under the output it
-        follows, as at a terminal. The keyboard doesn't hide it: on iOS and
-        Android the tab's SafeArea keeps the tab above the keyboard. While it
-        asks, the activity row ("Running ...") gives it its place, so the output
-        keeps the room that is left.
-        """
-        script_box = self.script_box
-        activity = self.script_activity
-        if on:
-            if box.parent is not None:
-                return
-            if activity.parent is not None:  # it only ever sits in the Script tab
-                script_box.replace(activity, box)
-            else:  # already asking with the other box
-                script_box.add(box)
-        elif box.parent is not None:
-            field = self.password_text if box is self.password_box else self.input_text
-            self.close_keyboard_soon(field)
-            asking = [b for b in (self.input_box, self.password_box) if b.parent]
-            if len(asking) == 1 and activity.parent is None:
-                script_box.replace(box, activity)
-            else:
-                script_box.remove(box)
+        """Swap a question's box in for the activity row, or back (ScriptTab)."""
+        self.script_tab.toggle_box(box, on)
 
     def close_keyboard_soon(self, field: toga.Widget) -> None:
-        """Put the keyboard away if no question follows the one just answered.
-
-        Android leaves its keyboard up when the focused field is taken away,
-        and moves the focus to the tab bar, so it is closed here. A script that
-        asks again straight away (a REPL's next prompt) keeps the keyboard up,
-        so the check waits a moment for the next question first.
-        """
-
-        def unless_asking() -> None:
-            if self.input_box.parent is None and self.password_box.parent is None:
-                self.close_keyboard(field)
-
-        loop = getattr(self.app, "loop", None)
-        if loop is None:
-            unless_asking()
-        else:
-            loop.call_later(KEYBOARD_GRACE, unless_asking)
+        """Put the keyboard away unless another question follows (ScriptTab)."""
+        self.script_tab.close_keyboard_soon(field)
 
     def toggle_print(self, on: bool) -> None:
-        if on:
-            self.splash.style.flex = 0
-            self.script_output.style.flex = 1
+        """Give the output pane the room once there is output."""
+        self.script_tab.toggle_print(on)
 
     @guarded
     def show_error_output(self, text: str) -> None:
         """Add a run's stderr text, showing the pane if it was hidden."""
-        self.error_text.value += text
-        self.error_pane.style.display = "pack"
-        self.toggle_print(True)
+        self.script_tab.show_error_output(text)
 
     @guarded
     def hide_errors(self, widget: toga.Widget | None = None, **kwargs: Any) -> None:
         """Hide the stderr pane until something is next written to it."""
-        self.error_pane.style.display = "none"
+        self.script_tab.hide_errors(widget)
 
     @guarded
     def do_on_done_callback(self, widget: toga.Widget, **kwargs: Any) -> None:
