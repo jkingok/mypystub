@@ -19,6 +19,10 @@ ALLOWED = {
     "travertino",
     "rubicon",
     "java",
+    # The desktop backends' own libraries: toga_gtk's PyGObject and
+    # toga_winforms' pythonnet (the clipboard's fallbacks use them)
+    "gi",
+    "System",
     "android",
 }
 

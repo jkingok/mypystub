@@ -1,14 +1,18 @@
-"""Android clipboard text for Paste, with the Chaquopy ``java`` module faked."""
+"""The Android clipboard (togax_jkingok), with Chaquopy's ``java`` module faked."""
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from mypystub import android_clipboard, bridge
+from mypystub import bridge
+from togax_jkingok import _android_clipboard as android_clipboard
+from togax_jkingok import clipboard
 
 
 class Item:
@@ -40,11 +44,26 @@ class Manager:
     def __init__(self, clip: Clip | None) -> None:
         self.clip = clip
 
+    def setPrimaryClip(self, clip: Clip) -> None:
+        self.clip = clip
+
     def hasPrimaryClip(self) -> bool:
         return self.clip is not None
 
     def getPrimaryClip(self) -> Clip | None:
         return self.clip
+
+
+def run_private(coroutine: Any) -> Any:
+    """Run `coroutine` on a loop of its own, leaving the current loop alone.
+
+    asyncio.run() would leave none current, which later UI tests need.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coroutine)
+    finally:
+        loop.close()
 
 
 def fake_java(monkeypatch: pytest.MonkeyPatch, manager: Manager | None) -> None:
@@ -59,6 +78,9 @@ def fake_java(monkeypatch: pytest.MonkeyPatch, manager: Manager | None) -> None:
             singletonThis=Activity()
         ),
         "android.content.Context": types.SimpleNamespace(CLIPBOARD_SERVICE="clip"),
+        "android.content.ClipData": types.SimpleNamespace(
+            newPlainText=lambda label, text: Clip([Item(text)])
+        ),
     }
     module = types.ModuleType("java")
     module.jclass = classes.__getitem__  # type: ignore[attr-defined]
@@ -84,8 +106,14 @@ def test_nothing_readable_is_none(
 def test_bridge_pastes_text_on_android(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:
-    import asyncio
-
     fake_java(monkeypatch, Manager(Clip([Item("x = 1")])))
     monkeypatch.setattr(sys, "platform", "android")
-    assert asyncio.run(bridge.read_pasteboard(tmp_path)) == ("text", "x = 1")
+    assert run_private(bridge.read_pasteboard(tmp_path)) == ("text", "x = 1")
+
+
+def test_text_written_can_be_read_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = Manager(None)
+    fake_java(monkeypatch, manager)
+    monkeypatch.setattr(sys, "platform", "android")
+    assert clipboard.write_text("copied") is True
+    assert run_private(clipboard.read(Path("."))) == clipboard.Text("copied")

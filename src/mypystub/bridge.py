@@ -11,12 +11,11 @@ Re-check this list against toga_iOS.libs when Toga is upgraded: anything it
 gains should be imported from there instead.
 """
 
-import asyncio
 import sys
 from pathlib import Path
 from typing import Any
 
-from . import paste_import
+from togax_jkingok import clipboard
 
 # UIKit constants, plain numbers that are the same wherever this is imported
 # A form sheet is a full-width sheet from the bottom on iPhone and a centred card
@@ -46,120 +45,26 @@ if sys.platform == "ios":
         shared = UIApplication.sharedApplication
         return shared() if callable(shared) else shared
 
-    # UIKit's pasteboard (the clipboard); toga_iOS doesn't declare it
-    UIPasteboard = ObjCClass("UIPasteboard")
-
     # Photos: Toga doesn't load this framework, so it's loaded here
     photos = load_library("Photos")
     PHPhotoLibrary = ObjCClass("PHPhotoLibrary")
     PHAccessLevelAddOnly = 1  # PHAccessLevel.addOnly
 
 
-# Seconds to wait for a copied file, which might have to download from iCloud
-PASTE_TIMEOUT = 120.0
-
-# Blocks whose callback may still come after the wait gave up: rubicon frees a
-# Block's callback along with the Block, so these have to outlive the wait
-_abandoned_blocks: list[Any] = []
-
-
-async def _load_file(provider: Any, uti: str, into: Path) -> Path:
-    """Copy what `provider` holds as `uti` into the folder `into`.
-
-    The system's file only lasts until the callback returns, and the callback
-    comes on a background thread, so it's copied there and the result is handed
-    back to the event loop.
-    """
-    from rubicon.objc import (  # pyright: ignore[reportMissingImports]
-        Block,
-        ObjCInstance,
-        objc_id,
-    )
-
-    loop = asyncio.get_running_loop()
-    loaded: asyncio.Future[Path] = loop.create_future()
-
-    def deliver(path: Path | None, problem: OSError | None) -> None:
-        if loaded.done():  # the wait gave up
-            return
-        if path is None:
-            loaded.set_exception(problem or OSError("The file couldn't be read."))
-        else:
-            loaded.set_result(path)
-
-    def finished(url: Any, error: Any) -> None:
-        path, problem = None, None
-        try:
-            if url:
-                source = Path(str(ObjCInstance(url).path))
-                path = paste_import.keep_copy(source, into)
-            elif error:
-                message = str(ObjCInstance(error).localizedDescription)
-                problem = OSError(f"{message}. If iOS asks, choose Allow Paste.")
-        except OSError as failure:
-            problem = failure
-        loop.call_soon_threadsafe(deliver, path, problem)
-
-    block = Block(finished, None, objc_id, objc_id)
-    provider.loadFileRepresentationForTypeIdentifier(uti, completionHandler=block)
-    try:
-        return await asyncio.wait_for(loaded, PASTE_TIMEOUT)
-    except TimeoutError:
-        _abandoned_blocks.append(block)
-        raise OSError("The copied file took too long to arrive.") from None
-
-
 async def read_pasteboard(into: Path) -> tuple[str, str] | None:
-    """What the system pasteboard (clipboard) holds, or None if nothing useful.
+    """What the clipboard holds, as ``("file", path)`` or ``("text", string)``.
 
-    Returns ``("file", path)`` for a copied file, which is preferred, or
-    ``("text", string)`` for copied text. On Android only text is read (see
-    android_clipboard); on other platforms this returns None.
-
-    The Files app offers a copied file through an item provider, not a URL, so
-    the file is copied into the folder `into`, replacing what was there from the
-    last paste. A file URL lives outside the app, so its security-scoped access
-    is started here and left open for the copy that follows; the system reclaims
-    it when the app quits. Raises ValueError for a copied folder, and OSError if
-    the file can't be read.
+    None if nothing useful. See togax_jkingok.clipboard, which does the work:
+    a copied folder raises ValueError, an unreadable file OSError.
     """
-    if sys.platform == "android":
-        from . import android_clipboard
-
-        text = android_clipboard.read_text()
-        return ("text", text) if text else None
-    if sys.platform != "ios":
-        return None
-    pasteboard = UIPasteboard.generalPasteboard
-    if pasteboard.hasURLs:
-        url = pasteboard.URL
-        if url is not None and url.isFileURL:
-            url.startAccessingSecurityScopedResource()
-            return ("file", str(url.path))
-    has_text = bool(pasteboard.hasStrings)
-    providers = list(pasteboard.itemProviders)
-    if providers:  # only the first of several copied files
-        types = [str(uti) for uti in providers[0].registeredTypeIdentifiers]
-        if paste_import.is_folder(types):
-            raise ValueError(paste_import.FOLDER_MESSAGE)
-        uti = paste_import.file_type(types, has_text)
-        if uti is not None:
-            return ("file", str(await _load_file(providers[0], uti, into)))
-    if has_text:
-        text = pasteboard.string
-        if text is not None and str(text):
-            return ("text", str(text))
+    content = await clipboard.read(into)
+    if isinstance(content, clipboard.File):
+        return ("file", str(content.path))
+    if isinstance(content, clipboard.Text):
+        return ("text", content.text)
     return None
 
 
 def suggested_name() -> str | None:
-    """The name the app that copied the pasteboard's item gave it, if any.
-
-    For example ``interest tracker.py`` for a script copied from another app.
-    Only iOS has pasteboards: elsewhere this returns None.
-    """
-    if sys.platform != "ios":
-        return None
-    providers = list(UIPasteboard.generalPasteboard.itemProviders)
-    name = providers[0].suggestedName if providers else None
-    return str(name) if name else None
+    """The name the copying app gave the clipboard's item, if any (iOS only)."""
+    return clipboard.suggested_name()

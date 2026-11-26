@@ -51,22 +51,35 @@ def move(items: list[Any], index: int, where: Move) -> int:
 def select_row(widget: toga.DetailedList, index: int | None) -> None:
     """Show `index` as selected; Toga's DetailedList can't do this itself.
 
-    On iOS the native table is told directly. Elsewhere nothing is shown, so
-    the caller keeps its own record of the selection.
+    On iOS and macOS the native table is told directly (on macOS that also
+    reports the selection to ``on_select``, as a click would). Elsewhere
+    nothing is shown, so the caller keeps its own record of the selection.
     """
-    if sys.platform != "ios" or index is None:
+    if index is None:
         return
-    from toga_iOS.libs.foundation import NSIndexPath
+    if sys.platform == "ios":
+        from toga_iOS.libs.foundation import NSIndexPath
 
-    path = NSIndexPath.indexPathForRow(index, inSection=0)
-    widget._impl.native.selectRowAtIndexPath(path, animated=False, scrollPosition=0)
+        path = NSIndexPath.indexPathForRow(index, inSection=0)
+        widget._impl.native.selectRowAtIndexPath(path, animated=False, scrollPosition=0)
+    elif sys.platform == "darwin":
+        try:
+            from toga_cocoa.libs import NSIndexSet  # pyright: ignore[reportMissingImports]
+
+            table = widget._impl.native_detailedlist
+        except (ImportError, AttributeError):  # not the Cocoa backend
+            return
+        table.selectRowIndexes(
+            NSIndexSet.indexSetWithIndex(index), byExtendingSelection=False
+        )
 
 
 def keep_selection(widget: toga.DetailedList) -> None:
     """Stop iOS clearing the list's selection whenever its screen reappears.
 
     toga_iOS drives DetailedList with a UITableViewController, whose
-    clearsSelectionOnViewWillAppear defaults to YES.
+    clearsSelectionOnViewWillAppear defaults to YES. Other platforms keep the
+    selection already, so there's nothing to do there.
     """
     if sys.platform == "ios":
         widget._impl.native_controller.clearsSelectionOnViewWillAppear = False
