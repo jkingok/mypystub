@@ -210,6 +210,10 @@ class PrototypeBase:
             from . import android_list
 
             android_list.install()  # a long press must not also run the row
+        elif sys.platform == "darwin":
+            from . import cocoa_list
+
+            cocoa_list.install()  # nor a right-click on macOS
         self.script_list = toga.DetailedList(
             on_refresh=self.reload_menu,
             primary_action="Info",
