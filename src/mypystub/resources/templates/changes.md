@@ -1,5 +1,19 @@
 # What's New
 
+## 2026.11.26.1 (2026-11-26)
+
+### New
+
+- A folder has a Setup page like a category's: the environment variables and working folder set there apply to every script inside it, and inherited values carry the inherited icon.
+- Projects made with **New** use MyPyStub's own Script view when run on their own, so their output, errors and questions look and behave as they do in MyPyStub.
+- New projects come with instructions for coding agents (AGENTS.md) and a skill describing how to build an app that runs both in MyPyStub and on its own. A second skill helps a chatbot write a complete single-file script to paste into MyPyStub.
+- The Logs tab has a Share button (⇪) that sends a copy of the log as a text file, for bug reports. Share now works on a Mac too (its share menu), and shows the file in its folder on other computers.
+
+### Fixed
+
+- On macOS, right-clicking a row in the List shows Info and Setup without also running the script or opening the folder, so Setup and Info act on the row you clicked, including `..` and the categories.
+- On a small iPhone in landscape, an input() or getpass() question now sits beside its field so both stay visible above the keyboard, and the Script tab no longer keeps growing behind the keyboard.
+
 ## 2026.11.22.1 (2026-11-22)
 
 ### New
